@@ -45,6 +45,17 @@ def test_leaves_a_plugin_url_alone():
     assert strip_credentials(url) == url
 
 
+def test_redacts_a_credential_carried_in_a_query_string():
+    assert strip_credentials("https://cdn/media.mkv?token=s3cret") == "https://cdn/media.mkv?<redacted>"
+
+
+def test_a_query_string_credential_never_reaches_the_model():
+    item = {"item": {**EPISODE_ITEM["item"], "file": "https://cdn/tv/S01E01.mkv?token=s3cret"}}
+    media = MediaResolver(_kodi(item=item)).resolve()
+    assert media is not None
+    assert "s3cret" not in (media.file or "")
+
+
 def test_resolves_an_episode_with_show_ids_from_the_parent():
     media = MediaResolver(_kodi()).resolve()
     assert media is not None

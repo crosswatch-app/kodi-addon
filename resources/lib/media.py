@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from resources.lib.kodi import KodiApi
-from resources.lib.log import get_logger, log_timing
+from resources.lib.log import get_logger, log_timing, redact
 from resources.lib.models import MediaItem
 
 _log = get_logger("media")
@@ -27,22 +27,28 @@ _ITEM_PROPERTIES = ["title", "showtitle", "season", "episode", "year", "tvshowid
 
 
 def strip_credentials(path: str) -> str:
-    """Remove user:password@ from a VFS path.
+    """Remove user:password@ and redact any query string from a VFS path.
 
     Kodi carries share credentials inline and strips them in FileOperations but not on the
     Player.GetItem path, so without this they reach the payload and the log.
+
+    The query string goes through the logging layer's own redaction rather than a second
+    rule here. A token in a stream URL is a credential too, and payload.py copies this
+    value verbatim into the POST body, so the log being safe is not enough: one rule has to
+    cover both places or the two will drift apart.
     """
     text = str(path or "")
-    if "://" not in text or "@" not in text:
+    if "://" not in text:
         return text
-    try:
-        parts = urlsplit(text)
-    except ValueError:
-        return text
-    if "@" not in parts.netloc:
-        return text
-    host = parts.netloc.rsplit("@", 1)[-1]
-    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+    if "@" in text:
+        try:
+            parts = urlsplit(text)
+        except ValueError:
+            return text
+        if "@" in parts.netloc:
+            host = parts.netloc.rsplit("@", 1)[-1]
+            text = urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+    return redact(text)
 
 
 def _clean_ids(uniqueid: Any) -> dict[str, str]:
