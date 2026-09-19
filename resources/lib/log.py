@@ -177,6 +177,13 @@ def _write_file(line: str) -> None:
 
 
 class StructuredLogger:
+    """The event name is positional-only.
+
+    Field names must be unconstrained: a caller logging an event field, a name field or a
+    self field is ordinary, and reserving those words turns a log line into a TypeError at
+    the moment something has already gone wrong.
+    """
+
     def __init__(self, name: str, bound: dict[str, Any] | None = None) -> None:
         self._name = name
         self._bound = dict(bound or {})
@@ -193,16 +200,16 @@ class StructuredLogger:
         if _debug:
             _write_file(line)
 
-    def debug(self, event: str, **fields: Any) -> None:
+    def debug(self, event: str, /, **fields: Any) -> None:
         self._emit(DEBUG, event, fields)
 
-    def info(self, event: str, **fields: Any) -> None:
+    def info(self, event: str, /, **fields: Any) -> None:
         self._emit(INFO, event, fields)
 
-    def warning(self, event: str, **fields: Any) -> None:
+    def warning(self, event: str, /, **fields: Any) -> None:
         self._emit(WARNING, event, fields)
 
-    def error(self, event: str, **fields: Any) -> None:
+    def error(self, event: str, /, **fields: Any) -> None:
         self._emit(ERROR, event, fields)
 
 
@@ -228,7 +235,7 @@ class Timer:
 
 
 @contextmanager
-def log_timing(log: StructuredLogger, event: str, **fields: Any) -> Iterator[Timer]:
+def log_timing(log: StructuredLogger, event: str, /, **fields: Any) -> Iterator[Timer]:
     """Time an operation, reporting duration and outcome even when it raises.
 
     A slow failure is usually the strongest signal, so the line is emitted from a finally

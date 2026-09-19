@@ -158,3 +158,19 @@ def test_a_phase_named_like_a_reserved_field_cannot_mask_the_real_exception(tmp_
         timer.mark("outcome")
         raise ValueError("real")
     logmod.reset()
+
+
+def test_a_field_may_be_called_event_because_the_event_name_is_positional(lines):
+    logmod.get_logger("reporter").info("reporter.event", event="stop", outcome="ok")
+    assert lines == ["[reporter] reporter.event | event=stop, outcome=ok"]
+
+
+def test_log_timing_accepts_fields_named_after_its_own_parameters(tmp_path):
+    logmod.reset()
+    logmod.configure(log_dir=str(tmp_path), debug=True, sink=lambda msg, level: None)
+    with logmod.log_timing(logmod.get_logger("x"), "e", event="stop", log="n"):
+        pass
+    contents = (tmp_path / "crosswatch.log").read_text(encoding="utf-8")
+    assert "event=stop" in contents
+    assert "log=n" in contents
+    logmod.reset()
