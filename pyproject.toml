@@ -16,8 +16,11 @@ source = ["resources/lib"]
 omit = ["*/__pycache__/*", "tests/*"]
 
 [tool.coverage.report]
-# Raised in the verification task once the adapters exist; it only ever goes up.
-fail_under = 0
+# The floor is the level measured once every module existed, including the adapters, which
+# are only testable after they are written. Taking it earlier would have locked in a false
+# baseline. It ratchets up and is never lowered to make a change pass: raise it in the same
+# change that earns it.
+fail_under = 91
 
 [tool.vulture]
 paths = ["resources/lib"]
