@@ -21,7 +21,7 @@ The add-on finds the ids and the viewers. CrossWatch does the routing, throttlin
 ## Endpoint
 
 ```
-POST /webhook/kodi?token=<token>
+POST /webhook/kodiwatcher?token=<token>
 Content-Type: application/json
 ```
 
