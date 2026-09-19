@@ -1,0 +1,52 @@
+# Kodi Media Center language file
+# Addon Name: CrossWatch
+# Addon id: service.crosswatch
+# Addon Provider: Rouzax
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en_GB\n"
+
+msgctxt "#30000"
+msgid "CrossWatch"
+msgstr ""
+
+msgctxt "#30001"
+msgid "Webhook URL"
+msgstr ""
+
+msgctxt "#30002"
+msgid "Webhook token"
+msgstr ""
+
+msgctxt "#30003"
+msgid "Device id (blank to generate)"
+msgstr ""
+
+msgctxt "#30010"
+msgid "Viewers"
+msgstr ""
+
+msgctxt "#30011"
+msgid "Configure viewers and playlists"
+msgstr ""
+
+msgctxt "#30012"
+msgid "Ask who watched a film"
+msgstr ""
+
+msgctxt "#30020"
+msgid "Advanced"
+msgstr ""
+
+msgctxt "#30021"
+msgid "Progress report interval (percent)"
+msgstr ""
+
+msgctxt "#30022"
+msgid "Playlist refresh interval (minutes)"
+msgstr ""
+
+msgctxt "#30023"
+msgid "Enable debug logging (records viewing history to disk)"
+msgstr ""
