@@ -60,6 +60,10 @@ class EventSink(Protocol):
     def report(self, event: PlaybackEvent, device: Device) -> bool: ...
 
 
+class EventQueue(Protocol):
+    def submit(self, event: PlaybackEvent) -> bool: ...
+
+
 class LogReporter:
     """The default when no webhook is configured. Mechanism at INFO, identity at DEBUG."""
 
