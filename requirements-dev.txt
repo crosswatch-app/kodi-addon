@@ -1,3 +1,10 @@
+# Direct dev dependencies, pinned. Edit this file, then regenerate the lock:
+#
+#   uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes \
+#       --no-header -o requirements-dev.lock
+#
+# CI installs from requirements-dev.lock with --require-hashes, so the transitive closure
+# is fixed too. Neither file is packaged into the addon zip.
 pytest==8.3.3
 pytest-cov==7.1.0
 ruff==0.16.4
