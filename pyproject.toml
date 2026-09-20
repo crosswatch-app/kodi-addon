@@ -23,5 +23,7 @@ omit = ["*/__pycache__/*", "tests/*"]
 fail_under = 91
 
 [tool.vulture]
-paths = ["resources/lib"]
+# The whitelist declares names that an external caller owns, so vulture can keep its
+# confidence threshold rather than having it lowered to accommodate them.
+paths = ["resources/lib", "tests/vulture_whitelist.py"]
 min_confidence = 80

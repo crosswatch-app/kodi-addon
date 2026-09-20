@@ -15,6 +15,9 @@ class Recorder:
     def on_resumed(self) -> None:
         self.calls.append("resumed")
 
+    def on_seek(self) -> None:
+        self.calls.append("seek")
+
     def on_stopped(self, completed: bool) -> None:
         self.calls.append(f"stopped:{completed}")
 
@@ -65,3 +68,19 @@ def test_settings_changes_reach_the_handler():
     seen: list[int] = []
     ServiceMonitor(Recorder(), on_settings_changed=lambda: seen.append(1)).onSettingsChanged()
     assert seen == [1]
+
+
+def test_both_seek_callbacks_forward():
+    recorder = Recorder()
+    monitor = PlaybackMonitor(recorder)
+    monitor.onPlayBackSeek(120000, 5000)
+    monitor.onPlayBackSeekChapter(3)
+    assert recorder.calls == ["seek", "seek"]
+
+
+def test_a_raising_controller_does_not_escape_the_seek_callback():
+    class Exploder(Recorder):
+        def on_seek(self) -> None:
+            raise RuntimeError("boom")
+
+    PlaybackMonitor(Exploder()).onPlayBackSeek(1, 1)  # must not raise

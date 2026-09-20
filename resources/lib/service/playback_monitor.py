@@ -38,6 +38,14 @@ class PlaybackMonitor(xbmc.Player):
     def onPlayBackResumed(self) -> None:
         self._safely("onPlayBackResumed", self._controller.on_resumed)
 
+    def onPlayBackSeek(self, time: int, seekOffset: int) -> None:
+        # Neither argument is used: they describe the requested seek, and the tick re-samples
+        # the position Kodi actually reached.
+        self._safely("onPlayBackSeek", self._controller.on_seek)
+
+    def onPlayBackSeekChapter(self, chapter: int) -> None:
+        self._safely("onPlayBackSeekChapter", self._controller.on_seek)
+
     def onPlayBackStopped(self) -> None:
         self._safely("onPlayBackStopped", lambda: self._controller.on_stopped(completed=False))
 

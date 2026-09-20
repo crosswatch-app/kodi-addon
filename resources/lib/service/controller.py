@@ -124,6 +124,14 @@ class Controller:
         self._paused = False
         self._emit_for_live("resume")
 
+    def on_seek(self) -> None:
+        """Record the jump. The tick emits, because a callback must not submit."""
+        session = self._session
+        if session is None:
+            _log.info("service.event_dropped", kind="seek", reason="no_session")
+            return
+        session.note_seek()
+
     def on_stopped(self, completed: bool) -> None:
         """Park only. Emission happens from the tick, so the callback stays trivial."""
         session = self._session

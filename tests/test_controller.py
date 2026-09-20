@@ -536,3 +536,22 @@ def test_a_library_scan_clears_the_memoised_show_ids(tmp_path):
     controller.on_av_started()
     lookups = len([c for c in kodi.calls if c[0] == "VideoLibrary.GetTVShowDetails"])
     assert lookups == 2
+
+
+def test_a_seek_makes_the_next_eligible_tick_emit_progress(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_seek()
+    for _ in range(10):
+        controller.on_tick()
+    assert collector.kinds().count("progress") >= 1
+
+
+def test_a_seek_with_no_session_is_harmless(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_seek()  # must not raise
+    assert collector.kinds() == []
