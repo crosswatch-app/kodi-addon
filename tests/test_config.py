@@ -12,8 +12,8 @@ def test_defaults_when_nothing_is_configured():
 
 
 def test_webhook_url_assembles_base_and_token():
-    kodi = FakeKodi(settings={"webhook_base_url": "http://host:8787/webhook/kodi", "webhook_token": "tok"})
-    assert read_settings(kodi).webhook_url() == "http://host:8787/webhook/kodi?profile=tok"
+    kodi = FakeKodi(settings={"webhook_base_url": "http://host:8787/webhook/kodiwatcher", "webhook_token": "tok"})
+    assert read_settings(kodi).webhook_url() == "http://host:8787/webhook/kodiwatcher?token=tok"
 
 
 def test_webhook_url_is_none_without_a_base():
@@ -21,13 +21,18 @@ def test_webhook_url_is_none_without_a_base():
 
 
 def test_webhook_url_is_none_without_a_token():
-    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodi"})
+    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodiwatcher"})
     assert read_settings(kodi).webhook_url() is None
 
 
+def test_a_token_with_url_unsafe_characters_is_encoded():
+    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodiwatcher", "webhook_token": "a b&c#d"})
+    assert read_settings(kodi).webhook_url() == "http://host/webhook/kodiwatcher?token=a+b%26c%23d"
+
+
 def test_a_base_url_with_a_trailing_slash_does_not_double_up():
-    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodi/", "webhook_token": "tok"})
-    assert read_settings(kodi).webhook_url() == "http://host/webhook/kodi?profile=tok"
+    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodiwatcher/", "webhook_token": "tok"})
+    assert read_settings(kodi).webhook_url() == "http://host/webhook/kodiwatcher?token=tok"
 
 
 def test_movie_prompts_can_be_switched_off():

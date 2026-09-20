@@ -38,7 +38,7 @@ class Settings:
             return None
         # Encoded, not interpolated: a token containing #, & or a space would otherwise
         # truncate the credential or corrupt the request line.
-        query = urlencode({"profile": self.webhook_token})
+        query = urlencode({"token": self.webhook_token})
         return f"{self.webhook_base_url.rstrip('/')}?{query}"
 
 
