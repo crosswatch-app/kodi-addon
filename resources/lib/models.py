@@ -22,6 +22,10 @@ class Viewer:
 class Device:
     id: str
     name: str
+    # Lifted to the top level of the payload by payload.py rather than sent inside device,
+    # which is what the contract asks for. It lives here because Device is already "what
+    # this installation is" and is built once, at the composition root.
+    addon_version: str = ""
 
 
 @dataclass(frozen=True)

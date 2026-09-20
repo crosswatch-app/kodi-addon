@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from dataclasses import replace
 
 from resources.lib import log as logmod
 from resources.lib import paths
@@ -58,7 +59,10 @@ def main() -> None:
     # on stop, the reporter waits on it during a retry backoff.
     abort = threading.Event()
     sink = _build_sink(settings.webhook_url(), log, token=settings.webhook_token, abort=abort)
-    queue = ReporterQueue(sink, device_identity(kodi, settings, paths.device_path(kodi)), abort)
+    # device_identity owns identity, not versioning, and is used by tests that should not
+    # need a Kodi handle just to produce a version string.
+    device = replace(device_identity(kodi, settings, paths.device_path(kodi)), addon_version=kodi.addon_version())
+    queue = ReporterQueue(sink, device, abort)
     controller = Controller(
         kodi=kodi,
         viewer_store=JsonViewerStore(paths.viewers_path(kodi)),

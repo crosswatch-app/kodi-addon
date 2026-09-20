@@ -129,3 +129,12 @@ def test_empty_viewers_is_an_empty_list_and_source_is_omitted():
     body = build_payload(_event(viewers=(), viewers_source=None), DEVICE)
     assert body["viewers"] == []
     assert "viewers_source" not in body
+
+
+def test_a_device_can_carry_the_addon_version():
+    assert Device(id="htpc-1", name="Living room", addon_version="1.0.0").addon_version == "1.0.0"
+
+
+def test_an_unknown_addon_version_is_representable():
+    """Defaulted so a device built before the version is known is still constructible."""
+    assert Device(id="htpc-1", name="Living room").addon_version == ""
