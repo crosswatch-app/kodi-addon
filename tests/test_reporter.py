@@ -7,7 +7,11 @@ from typing import Any
 import pytest
 
 from resources.lib import log as logmod
-from resources.lib.constants import RETRY_BUDGET_SECONDS
+from resources.lib.constants import (
+    HTTP_TIMEOUT_SECONDS,
+    RETRY_BUDGET_SECONDS,
+    SHUTDOWN_HTTP_TIMEOUT_SECONDS,
+)
 from resources.lib.models import Device, EventKind, MediaItem, PingEvent, PlaybackEvent
 from resources.lib.reporter import (
     EventSink,
@@ -543,3 +547,35 @@ def test_an_unparseable_server_version_is_not_warned_about(lines, reporter_facto
     )
     reporter.report(_event(), DEVICE)
     assert not any("reporter.server_too_old" in line for line in lines)
+
+
+def test_a_connection_opened_after_abort_uses_the_short_timeout():
+    """Kodi kills the interpreter 5000ms after abort; a ten second socket cannot fit."""
+    abort = threading.Event()
+    abort.set()
+    seen: list[float] = []
+
+    def factory(scheme, host, port, timeout):
+        seen.append(timeout)
+        return FakeConnection()
+
+    HttpReporter("http://host/hook", token="t", abort=abort, connection_factory=factory).report(
+        _event(), DEVICE
+    )
+    assert seen == [SHUTDOWN_HTTP_TIMEOUT_SECONDS]
+
+
+def test_a_keep_alive_socket_is_dropped_once_abort_is_observed():
+    """A socket opened before abort carries the long timeout, so it must not be reused."""
+    abort = threading.Event()
+    seen: list[float] = []
+
+    def factory(scheme, host, port, timeout):
+        seen.append(timeout)
+        return FakeConnection()
+
+    reporter = HttpReporter("http://host/hook", token="t", abort=abort, connection_factory=factory)
+    reporter.report(_event(), DEVICE)
+    abort.set()
+    reporter.report(_event(), DEVICE)
+    assert seen == [HTTP_TIMEOUT_SECONDS, SHUTDOWN_HTTP_TIMEOUT_SECONDS]

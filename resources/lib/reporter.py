@@ -29,6 +29,7 @@ from resources.lib.constants import (
     RETRY_BACKOFF_SECONDS,
     RETRY_BUDGET_SECONDS,
     SHUTDOWN_DRAIN_SECONDS,
+    SHUTDOWN_HTTP_TIMEOUT_SECONDS,
 )
 from resources.lib.log import get_logger, is_debug, redact
 from resources.lib.models import Device, PingEvent, PlaybackEvent
@@ -171,7 +172,11 @@ class HttpReporter:
 
     def _connect(self) -> Any:
         if self._connection is None:
-            self._connection = self._factory(self._scheme, self._host, self._port, self._timeout)
+            # A connection opened after abort gets the short timeout. Kodi kills the
+            # interpreter 5000ms after abort and a ten second socket cannot finish inside
+            # that; the contract's timeout applies to normal operation.
+            timeout = SHUTDOWN_HTTP_TIMEOUT_SECONDS if self._abort.is_set() else self._timeout
+            self._connection = self._factory(self._scheme, self._host, self._port, timeout)
         return self._connection
 
     def close(self) -> None:
@@ -190,6 +195,10 @@ class HttpReporter:
         must never land after the next playback's start. Blocking the worker is harmless;
         nothing waits on it and the service thread is a different thread.
         """
+        if self._abort.is_set():
+            # Drop any live keep-alive socket: it was opened with the long timeout, and
+            # reusing it would carry that timeout past abort.
+            self.close()
         body = json.dumps(build_payload(event, device)).encode("utf-8")
         kind = event_kind(event)
         deadline = self._clock() + RETRY_BUDGET_SECONDS
