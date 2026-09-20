@@ -1,7 +1,7 @@
 from dataclasses import replace
 from typing import Any
 
-from resources.lib.models import Device, MediaItem, PlaybackEvent
+from resources.lib.models import Device, MediaItem, PingEvent, PlaybackEvent
 from resources.lib.payload import build_payload
 
 DEVICE = Device(id="htpc-1", name="Living room")
@@ -138,3 +138,14 @@ def test_a_device_can_carry_the_addon_version():
 def test_an_unknown_addon_version_is_representable():
     """Defaulted so a device built before the version is known is still constructible."""
     assert Device(id="htpc-1", name="Living room").addon_version == ""
+
+
+def test_a_ping_carries_viewers_and_neither_media_nor_a_session():
+    ping = PingEvent(event_id="e-1", sent_at="2026-09-19T20:00:00Z", viewers=("anna", "bob"))
+    assert ping.viewers == ("anna", "bob")
+    assert not hasattr(ping, "media")
+    assert not hasattr(ping, "session_id")
+
+
+def test_a_ping_counts_no_skipped_pkc_playbacks_by_default():
+    assert PingEvent(event_id="e-1", sent_at="2026-09-19T20:00:00Z", viewers=()).pkc_skipped == 0

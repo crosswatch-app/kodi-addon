@@ -58,3 +58,22 @@ class PlaybackEvent:
     duration_ms: int | None
     percent: float | None
     completed: bool = False
+
+
+@dataclass(frozen=True)
+class PingEvent:
+    """The heartbeat that tells CrossWatch this Kodi is reporting and need not be polled.
+
+    A separate type rather than a PlaybackEvent with optional fields: nothing that handles
+    playback can ever receive one, so an optional media would be a None that every consumer
+    has to defend against and none can actually see.
+    """
+
+    event_id: str
+    sent_at: str
+    viewers: tuple[str, ...]
+    # Running count of PlexKodiConnect playbacks declined. It rides on the ping because the
+    # addon has no status UI and CrossWatch does, so the number surfaces where someone can
+    # act on it. Proposed to the CrossWatch maintainer, not yet agreed: if declined, drop
+    # this field and the single line in payload.py that emits it. Nothing else reads it.
+    pkc_skipped: int = 0
