@@ -45,19 +45,24 @@
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
+                <setting id="skip_pkc" type="boolean" label="30013">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
             </group>
         </category>
         <category id="advanced" label="30020">
             <group id="1">
-                <setting id="progress_step" type="integer" label="30021">
+                <setting id="progress_interval_seconds" type="integer" label="30021">
                     <level>1</level>
-                    <default>25</default>
+                    <default>60</default>
                     <constraints>
-                        <minimum>5</minimum>
-                        <step>5</step>
-                        <maximum>50</maximum>
+                        <minimum>30</minimum>
+                        <step>30</step>
+                        <maximum>600</maximum>
                     </constraints>
-                    <control type="slider" format="percentage"/>
+                    <control type="slider" format="integer"/>
                 </setting>
                 <setting id="index_ttl_minutes" type="integer" label="30022">
                     <level>2</level>

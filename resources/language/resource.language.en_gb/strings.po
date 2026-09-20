@@ -35,12 +35,16 @@ msgctxt "#30012"
 msgid "Ask who watched a film"
 msgstr ""
 
+msgctxt "#30013"
+msgid "Skip PlexKodiConnect playback"
+msgstr ""
+
 msgctxt "#30020"
 msgid "Advanced"
 msgstr ""
 
 msgctxt "#30021"
-msgid "Progress report interval (percent)"
+msgid "Progress report interval (seconds)"
 msgstr ""
 
 msgctxt "#30022"

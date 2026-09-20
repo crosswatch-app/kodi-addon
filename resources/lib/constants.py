@@ -4,7 +4,18 @@
 ADDON_ID = "service.crosswatch"
 LOG_NAME = "crosswatch"
 
-DEFAULT_PROGRESS_STEP = 25
+# Progress cadence is wall clock, not percentage: the contract asks for an event every
+# 60 seconds and after a seek, and CrossWatch does its own throttling on top.
+DEFAULT_PROGRESS_INTERVAL_SECONDS = 60
+
+# The heartbeat that tells CrossWatch to stop polling this Kodi. It falls back to polling
+# after 15 minutes of silence, so 5 minutes leaves room for two lost pings.
+PING_INTERVAL_SECONDS = 300
+
+# Older servers coerce a missing percent to zero, which destroys the viewer's resume point
+# in the downstream sink. Warn rather than refuse: the user may not control the server.
+MIN_CROSSWATCH_VERSION = "0.13.0"
+
 DEFAULT_INDEX_TTL_SECONDS = 3600
 # The contract's request timeout, and the budget a failed delivery may consume. The budget
 # is far larger than Kodi's 5000ms shutdown window, which is why the backoff waits on an

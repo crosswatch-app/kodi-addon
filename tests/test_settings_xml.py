@@ -2,7 +2,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from resources.lib import config
-from resources.lib.constants import DEFAULT_INDEX_TTL_SECONDS, DEFAULT_PROGRESS_STEP
+from resources.lib.constants import DEFAULT_INDEX_TTL_SECONDS, DEFAULT_PROGRESS_INTERVAL_SECONDS
 
 SETTINGS = Path(__file__).resolve().parents[1] / "resources" / "settings.xml"
 STRINGS = (
@@ -48,8 +48,9 @@ def test_setting_ids_match_the_config_keys():
         config.KEY_BASE_URL,
         config.KEY_TOKEN,
         config.KEY_DEVICE_ID,
-        config.KEY_PROGRESS_STEP,
+        config.KEY_PROGRESS_INTERVAL,
         config.KEY_MOVIE_PROMPTS,
+        config.KEY_SKIP_PKC,
         config.KEY_INDEX_TTL,
         config.KEY_DEBUG,
     ):
@@ -60,9 +61,10 @@ def test_defaults_match_the_constants():
     settings = _settings()
 
     def default_of(key: str) -> str:
+        # find() is Optional, so the assertion has to happen before .text is read.
         node = settings[key].find("default")
         assert node is not None, key
         return (node.text or "").strip()
 
-    assert default_of(config.KEY_PROGRESS_STEP) == str(DEFAULT_PROGRESS_STEP)
+    assert default_of(config.KEY_PROGRESS_INTERVAL) == str(DEFAULT_PROGRESS_INTERVAL_SECONDS)
     assert default_of(config.KEY_INDEX_TTL) == str(DEFAULT_INDEX_TTL_SECONDS // 60)

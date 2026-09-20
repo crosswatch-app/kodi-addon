@@ -72,10 +72,10 @@ class Controller:
     # -- lifecycle ---------------------------------------------------------
 
     def on_settings_changed(self, settings: Settings, thresholds: Thresholds) -> None:
-        step_changed = settings.progress_step != self._settings.progress_step
+        interval_changed = settings.progress_interval_seconds != self._settings.progress_interval_seconds
         self._settings = settings
         self._thresholds = thresholds
-        if step_changed and self._session is not None:
+        if interval_changed and self._session is not None:
             # The cadence bucket is stored in units of the old step, so leaving it would
             # silence progress for the rest of the session or skip a block of steps.
             self._session.reset_cadence()
@@ -175,7 +175,7 @@ class Controller:
             self._park(session, reason="liveness")
             return
         session.sample(*self._kodi.player_times())
-        if session.should_emit_progress(self._settings.progress_step):
+        if session.should_emit_progress(self._settings.progress_interval_seconds):
             self._emit("progress", session)
 
     def _tick_idle(self) -> None:

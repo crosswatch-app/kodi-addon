@@ -4,9 +4,10 @@ from tests.fakes import FakeKodi
 
 def test_defaults_when_nothing_is_configured():
     got: Settings = read_settings(FakeKodi())
-    assert got.progress_step == 25
+    assert got.progress_interval_seconds == 60
     assert got.index_ttl_seconds == 3600
     assert got.movie_prompts is True
+    assert got.skip_pkc is True
     assert got.debug_logging is False
     assert got.webhook_url() is None
 
@@ -40,8 +41,21 @@ def test_movie_prompts_can_be_switched_off():
     assert read_settings(kodi).movie_prompts is False
 
 
-def test_progress_step_falls_back_when_unset_or_zero():
-    assert read_settings(FakeKodi(settings={"progress_step": "0"})).progress_step == 25
+def test_progress_interval_falls_back_when_unset_or_zero():
+    assert read_settings(FakeKodi(settings={"progress_interval_seconds": "0"})).progress_interval_seconds == 60
+
+
+def test_progress_interval_is_read_from_settings():
+    kodi = FakeKodi(settings={"progress_interval_seconds": "30"})
+    assert read_settings(kodi).progress_interval_seconds == 30
+
+
+def test_pkc_playback_is_skipped_by_default():
+    assert read_settings(FakeKodi()).skip_pkc is True
+
+
+def test_pkc_skipping_can_be_switched_off():
+    assert read_settings(FakeKodi(settings={"skip_pkc": "false"})).skip_pkc is False
 
 
 def test_device_name_falls_back_to_the_friendly_name():
@@ -52,7 +66,7 @@ def test_device_name_falls_back_to_the_friendly_name():
 def test_settings_is_frozen():
     got = read_settings(FakeKodi())
     try:
-        got.progress_step = 5  # type: ignore[misc]
+        got.progress_interval_seconds = 5  # type: ignore[misc]
     except Exception:
         return
     raise AssertionError("Settings must be immutable")

@@ -10,14 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
-from resources.lib.constants import DEFAULT_INDEX_TTL_SECONDS, DEFAULT_PROGRESS_STEP
+from resources.lib.constants import DEFAULT_INDEX_TTL_SECONDS, DEFAULT_PROGRESS_INTERVAL_SECONDS
 from resources.lib.kodi import KodiApi
 
 KEY_BASE_URL = "webhook_base_url"
 KEY_TOKEN = "webhook_token"
 KEY_DEVICE_ID = "device_id"
-KEY_PROGRESS_STEP = "progress_step"
+KEY_PROGRESS_INTERVAL = "progress_interval_seconds"
 KEY_MOVIE_PROMPTS = "movie_prompts"
+KEY_SKIP_PKC = "skip_pkc"
 KEY_INDEX_TTL = "index_ttl_minutes"
 KEY_DEBUG = "debug_logging"
 
@@ -28,8 +29,9 @@ class Settings:
     webhook_token: str = ""
     device_id: str = ""
     device_name: str = ""
-    progress_step: int = DEFAULT_PROGRESS_STEP
+    progress_interval_seconds: int = DEFAULT_PROGRESS_INTERVAL_SECONDS
     movie_prompts: bool = True
+    skip_pkc: bool = True
     index_ttl_seconds: int = DEFAULT_INDEX_TTL_SECONDS
     debug_logging: bool = False
 
@@ -64,8 +66,9 @@ def read_settings(kodi: KodiApi) -> Settings:
         webhook_token=kodi.setting(KEY_TOKEN).strip(),
         device_id=kodi.setting(KEY_DEVICE_ID).strip(),
         device_name=kodi.info_label("System.FriendlyName"),
-        progress_step=_int(kodi, KEY_PROGRESS_STEP, DEFAULT_PROGRESS_STEP),
+        progress_interval_seconds=_int(kodi, KEY_PROGRESS_INTERVAL, DEFAULT_PROGRESS_INTERVAL_SECONDS),
         movie_prompts=_bool(kodi, KEY_MOVIE_PROMPTS, True),
+        skip_pkc=_bool(kodi, KEY_SKIP_PKC, True),
         index_ttl_seconds=ttl_minutes * 60,
         debug_logging=_bool(kodi, KEY_DEBUG, False),
     )

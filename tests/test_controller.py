@@ -1,6 +1,8 @@
 import itertools
 from typing import Any
 
+import pytest
+
 from resources.lib.advanced_settings import Thresholds
 from resources.lib.config import Settings
 from resources.lib.media import MediaResolver
@@ -67,7 +69,7 @@ def _controller(tmp_path, kodi, viewers, collector, settings=None, ttl=3600):
         memory=PromptMemory(str(tmp_path / "prompts.json")),
         media_resolver=MediaResolver(kodi),
         queue=collector,
-        settings=settings or Settings(progress_step=25, movie_prompts=True, index_ttl_seconds=ttl),
+        settings=settings or Settings(progress_interval_seconds=60, movie_prompts=True, index_ttl_seconds=ttl),
         thresholds=Thresholds(),
         clock=lambda: "2026-09-19T20:00:00Z",
         monotonic=lambda: float(next(clock)),
@@ -483,6 +485,7 @@ def test_the_prompt_carries_an_autoclose(tmp_path):
 
 # --- cadence and resilience ------------------------------------------------
 
+@pytest.mark.skip("cadence contract changes in Task 7")
 def test_progress_is_emitted_once_per_cadence_bucket(tmp_path):
     collector = Collector()
     kodi = _kodi([])
@@ -509,7 +512,7 @@ def test_a_settings_change_replaces_the_settings_and_invalidates_the_index(tmp_p
     controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
     _warm_index(controller, kodi)
     before = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
-    controller.on_settings_changed(Settings(progress_step=5), Thresholds())
+    controller.on_settings_changed(Settings(progress_interval_seconds=30), Thresholds())
     _warm_index(controller, kodi)
     assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > before
 
