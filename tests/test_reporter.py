@@ -8,13 +8,14 @@ import pytest
 
 from resources.lib import log as logmod
 from resources.lib.constants import RETRY_BUDGET_SECONDS
-from resources.lib.models import Device, EventKind, MediaItem, PlaybackEvent
+from resources.lib.models import Device, EventKind, MediaItem, PingEvent, PlaybackEvent
 from resources.lib.reporter import (
     EventSink,
     HttpReporter,
     InvalidWebhookUrl,
     LogReporter,
     ReporterQueue,
+    event_kind,
     validate_webhook_url,
 )
 
@@ -450,3 +451,28 @@ def test_no_token_means_no_token_header(reporter_factory):
     connection.request = request  # type: ignore[method-assign]
     reporter_factory("http://host/hook", token="", connection_factory=lambda *a, **k: connection).report(_event(), DEVICE)
     assert "X-CrossWatch-Token" not in captured["headers"]
+
+
+def test_the_log_reporter_accepts_a_ping(lines):
+    ping = PingEvent(event_id="p-1", sent_at="2026-09-19T20:00:00Z", viewers=("anna", "bob"), pkc_skipped=2)
+    assert LogReporter().report(ping, DEVICE) is True
+    assert any("reporter.ping" in line and "viewers_count=2" in line for line in lines)
+
+
+def test_the_log_reporter_keeps_names_out_of_a_ping_line(lines):
+    ping = PingEvent(event_id="p-1", sent_at="2026-09-19T20:00:00Z", viewers=("anna",))
+    LogReporter().report(ping, DEVICE)
+    assert not any("anna" in line for line in lines)
+
+
+def test_a_dropped_ping_logs_its_kind_rather_than_crashing(lines):
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event())
+    queue.stop()
+    ping = PingEvent(event_id="p-1", sent_at="2026-09-19T20:00:00Z", viewers=())
+    assert queue.submit(ping) is False
+    assert any("reporter.dropped" in line and "event=ping" in line for line in lines)
+
+
+def test_event_kind_names_both_shapes():
+    assert event_kind(_event("stop")) == "stop"
+    assert event_kind(PingEvent(event_id="p", sent_at="t", viewers=())) == "ping"

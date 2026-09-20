@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Where a finished event goes.
 
-The port is domain-typed: a reporter takes a PlaybackEvent and builds the payload itself, so
+The port is domain-typed: a reporter takes a domain event and builds the payload itself, so
 wire keys never leave payload.py and the two reporters. It returns a delivery verdict,
 because HTTP 200 is not delivery: CrossWatch answers 200 for a rejected token, for a
 disabled webhook source and for a route with no sink configured.
 
-There is deliberately no retry and no durable queue. Whether events should survive a
-CrossWatch outage is question D2 in crosswatch-app/kodi-addon#1, and building a queue
-before that is answered would mean building it twice.
+Delivery is retried within a bounded budget but is never persisted. Events do not survive a
+restart, and a CrossWatch outage longer than the budget loses them; that is the contract's
+position, and a durable queue is a separate piece of work with its own spec.
 """
 
 from __future__ import annotations
@@ -30,12 +30,23 @@ from resources.lib.constants import (
     SHUTDOWN_DRAIN_SECONDS,
 )
 from resources.lib.log import get_logger, is_debug, redact
-from resources.lib.models import Device, PlaybackEvent
+from resources.lib.models import Device, PingEvent, PlaybackEvent
 from resources.lib.payload import build_payload
 
 _log = get_logger("reporter")
 
 ALLOWED_SCHEMES = ("http", "https")
+
+Event = PlaybackEvent | PingEvent
+
+
+def event_kind(event: Event) -> str:
+    """The wire name of an event, for logging and for policy.
+
+    PingEvent has no kind field of its own so that nothing handling playback can be handed
+    one by accident; this is the single place that maps either shape to a name.
+    """
+    return "ping" if isinstance(event, PingEvent) else event.kind
 
 
 class InvalidWebhookUrl(ValueError):
@@ -63,17 +74,24 @@ def validate_webhook_url(url: str) -> str:
 
 
 class EventSink(Protocol):
-    def report(self, event: PlaybackEvent, device: Device) -> bool: ...
+    def report(self, event: Event, device: Device) -> bool: ...
 
 
 class EventQueue(Protocol):
-    def submit(self, event: PlaybackEvent) -> bool: ...
+    def submit(self, event: Event) -> bool: ...
 
 
 class LogReporter:
     """The default when no webhook is configured. Mechanism at INFO, identity at DEBUG."""
 
-    def report(self, event: PlaybackEvent, device: Device) -> bool:
+    def report(self, event: Event, device: Device) -> bool:
+        if isinstance(event, PingEvent):
+            _log.info(
+                "reporter.ping",
+                viewers_count=len(event.viewers),
+                pkc_skipped=event.pkc_skipped,
+            )
+            return True
         _log.info(
             "reporter.event",
             event=event.kind,
@@ -151,7 +169,7 @@ class HttpReporter:
                 pass
             self._connection = None
 
-    def report(self, event: PlaybackEvent, device: Device) -> bool:
+    def report(self, event: Event, device: Device) -> bool:
         """Deliver one event, retrying within the contract's budget.
 
         Retry lives here rather than in the queue because ordering matters: the receiver has
@@ -160,7 +178,7 @@ class HttpReporter:
         nothing waits on it and the service thread is a different thread.
         """
         body = json.dumps(build_payload(event, device)).encode("utf-8")
-        kind = event.kind
+        kind = event_kind(event)
         deadline = self._clock() + RETRY_BUDGET_SECONDS
         attempts = 0
         while True:
@@ -253,22 +271,22 @@ class ReporterQueue:
     ) -> None:
         self._sink = sink
         self._device = device
-        self._queue: queue.Queue[PlaybackEvent] = queue.Queue(maxsize=maxsize)
+        self._queue: queue.Queue[Event] = queue.Queue(maxsize=maxsize)
         self._abort = abort
         self._stopping = threading.Event()
         self._stopped = False
         self._thread = threading.Thread(target=self._run, name="crosswatch-reporter", daemon=True)
         self._thread.start()
 
-    def submit(self, event: PlaybackEvent) -> bool:
+    def submit(self, event: Event) -> bool:
         if self._stopping.is_set():
-            _log.warning("reporter.dropped", event=event.kind, reason="stopping")
+            _log.warning("reporter.dropped", event=event_kind(event), reason="stopping")
             return False
         try:
             self._queue.put_nowait(event)
             return True
         except queue.Full:
-            _log.warning("reporter.dropped", event=event.kind, reason="queue_full")
+            _log.warning("reporter.dropped", event=event_kind(event), reason="queue_full")
             return False
 
     def _run(self) -> None:
