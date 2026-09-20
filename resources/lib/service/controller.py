@@ -20,12 +20,13 @@ from resources.lib.config import Settings
 from resources.lib.constants import (
     FAILURE_BACKOFF_SECONDS,
     MAX_FAILURE_BACKOFF_SECONDS,
+    PING_INTERVAL_SECONDS,
     PROMPT_AUTOCLOSE_SECONDS,
 )
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger
 from resources.lib.media import MediaResolver
-from resources.lib.models import EventKind, MediaItem, PlaybackEvent, Viewer
+from resources.lib.models import EventKind, MediaItem, PingEvent, PlaybackEvent, Viewer
 from resources.lib.playlist_index import IndexBuilder, PlaylistIndex
 from resources.lib.reporter import EventQueue
 from resources.lib.service.session import PlaybackSession
@@ -70,6 +71,7 @@ class Controller:
         # Read by the ping, which is the only place the user can see it: the addon has no
         # status UI of its own.
         self.pkc_skipped = 0
+        self._last_ping_at: float | None = None
         self._shutting_down = False
 
     # -- lifecycle ---------------------------------------------------------
@@ -164,6 +166,9 @@ class Controller:
         # set there could never reach the gate.
         self._shutting_down = shutting_down
         self._flush_pending(allow_prompt=True)
+        # After the flush, never before: the queue is FIFO and the worker blocks, so a ping
+        # submitted first sits in front of the parked stop and can cost it at shutdown.
+        self._maybe_ping()
         session = self._session
         if session is not None:
             self._tick_playing(session)
@@ -298,6 +303,35 @@ class Controller:
 
     def _viewers(self) -> list[Viewer]:
         return self._store.viewers()
+
+    def _maybe_ping(self) -> None:
+        """Tell CrossWatch this Kodi is reporting, so it stops polling.
+
+        Sent whether or not something is playing: the server falls back to polling after 15
+        minutes of silence, and going quiet during a long film would have it start polling
+        mid-playback.
+        """
+        if self._shutting_down:
+            return
+        now = self._monotonic()
+        if self._last_ping_at is not None and (now - self._last_ping_at) < PING_INTERVAL_SECONDS:
+            return
+        names = tuple(v.name for v in self._viewers())
+        queued = self._queue.submit(
+            PingEvent(
+                event_id=self._ids(),
+                sent_at=self._clock(),
+                viewers=names,
+                pkc_skipped=self.pkc_skipped,
+            )
+        )
+        if not queued:
+            # Do not advance the interval. A ping refused by a full queue would otherwise be
+            # suppressed for another five minutes, during exactly the conditions it reports.
+            _log.warning("service.ping_not_queued")
+            return
+        self._last_ping_at = now
+        _log.info("service.ping", viewers_count=len(names), pkc_skipped=self.pkc_skipped)
 
     @staticmethod
     def _has_usable_id(media: MediaItem) -> bool:
