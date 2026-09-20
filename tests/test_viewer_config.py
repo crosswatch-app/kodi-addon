@@ -1,5 +1,6 @@
 import pytest
 
+from resources.lib import viewer_config
 from resources.lib.models import Viewer
 from resources.lib.storage import JsonViewerStore
 from resources.lib.viewer_config import (
@@ -153,3 +154,66 @@ def test_backing_out_of_the_menu_saves_nothing_new(tmp_path):
     store.save([Viewer(name="anna")])
     run_dialog(ScriptedKodi([], selects=[-1]), store)
     assert [v.name for v in store.viewers()] == ["anna"]
+
+
+def test_a_viewer_whose_playlist_has_vanished_is_flagged_in_the_list():
+    """The whole failure starts here: a playlist is renamed and nothing says so.
+
+    The service cannot name it in the shared log, and the toast only fires once the build
+    runs. The configuration screen is where someone goes to fix it, so it has to say which
+    viewer is affected.
+    """
+    labels = viewer_config.viewer_labels(
+        [Viewer(name="anna", playlists=("Gone", "Anna TV")), Viewer(name="bob", playlists=("Anna TV",))],
+        ["Anna TV"],
+    )
+    assert labels[0].startswith("anna")
+    assert "!" in labels[0]
+    assert "!" not in labels[1]
+
+
+def test_nothing_is_flagged_when_every_playlist_exists():
+    labels = viewer_config.viewer_labels([Viewer(name="anna", playlists=("Anna TV",))], ["Anna TV"])
+    assert "!" not in labels[0]
+
+
+def test_no_viewer_is_flagged_when_the_playlist_listing_failed():
+    """available_playlists returns [] on an RPC failure, which is not the same as none
+    existing. Flagging every viewer there would be a false alarm during a Kodi hiccup."""
+    labels = viewer_config.viewer_labels([Viewer(name="anna", playlists=("Anna TV",))], [])
+    assert "!" not in labels[0]
+
+
+def test_a_viewer_with_no_playlists_is_not_flagged():
+    labels = viewer_config.viewer_labels([Viewer(name="anna")], ["Anna TV"])
+    assert "!" not in labels[0]
+
+
+def test_editing_a_viewer_shows_the_playlist_that_no_longer_exists():
+    """Preselect intersects with what exists, so a vanished name is invisible and silently
+    dropped on confirm. Listing it, ticked, makes the removal something the user chose."""
+    kodi = FakeKodi()
+    kodi.multiselect_answer = []
+    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
+    viewer_config._edit_playlists(kodi, viewer, ["Anna TV"])
+    heading, options, preselect, _autoclose = kodi.multiselect_calls[0]
+    assert any("Gone" in option for option in options)
+    assert preselect is not None and len(preselect) == 2
+
+
+def test_keeping_a_missing_playlist_stores_its_real_name_not_the_decorated_label():
+    """It may come back: a share can be offline, or a profile not yet loaded. Forcing the
+    removal would be worse than keeping it. But storing "Gone (! missing)" would mean the
+    configuration never matches the file again even once it returns."""
+    kodi = FakeKodi()
+    kodi.multiselect_answer = [0, 1]
+    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
+    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"])
+    assert kept == ("Anna TV", "Gone")
+
+
+def test_unticking_a_missing_playlist_removes_it():
+    kodi = FakeKodi()
+    kodi.multiselect_answer = [0]
+    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
+    assert viewer_config._edit_playlists(kodi, viewer, ["Anna TV"]) == ("Anna TV",)
