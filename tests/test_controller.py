@@ -1,9 +1,12 @@
 import itertools
 from typing import Any
 
+import pytest
+
+from resources.lib import log as logmod
 from resources.lib.advanced_settings import Thresholds
 from resources.lib.config import Settings
-from resources.lib.constants import FAILURE_BACKOFF_SECONDS
+from resources.lib.constants import FAILURE_BACKOFF_SECONDS, INDEX_MAX_AGE_MULTIPLIER
 from resources.lib.media import MediaResolver
 from resources.lib.models import Device, PingEvent, PlaybackEvent, Viewer
 from resources.lib.service.controller import Controller
@@ -60,6 +63,15 @@ class Collector:
 
     def kinds(self) -> list[str]:
         return [e.kind for e in self.playback()]
+
+
+@pytest.fixture
+def capture_log():
+    logmod.reset()
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda msg, level: captured.append(msg))
+    yield captured
+    logmod.reset()
 
 
 def _kodi(members, profile: str = "Master user", overrides: dict[str, Any] | None = None):
@@ -766,3 +778,60 @@ def test_a_refused_ping_is_retried_on_the_next_tick(tmp_path):
     controller.on_tick()
     controller.on_tick()
     assert len([e for e in collector.events if isinstance(e, PingEvent)]) == 1
+
+
+def _aged_controller(tmp_path, collector, viewers, now):
+    """An index built at t=0, with the clock under the test's control."""
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, viewers, collector, ttl=3600, monotonic=lambda: now[0])
+    _warm_index(controller, kodi)
+    return controller
+
+
+def test_an_index_too_old_to_rebuild_stops_being_served(tmp_path):
+    """A smart playlist is dynamic, so age maps onto wrongness, not just staleness.
+
+    Continue Watching turns over after every play, so an index kept past its life attributes
+    a show to whoever held it before it moved. Falling through to the prompt is a worse
+    answer that is honest.
+    """
+    collector = Collector()
+    now = [0.0]
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _aged_controller(tmp_path, collector, viewers, now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER + 1
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ()
+
+
+def test_an_index_within_its_extended_life_is_still_served(tmp_path):
+    collector = Collector()
+    now = [0.0]
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _aged_controller(tmp_path, collector, viewers, now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER - 1
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
+
+
+def test_a_single_viewer_household_keeps_its_index_however_old(tmp_path):
+    """Retirement exists to prevent misattribution between people. With one viewer there is
+    nobody to misattribute to, and the prompt is refused for a single viewer, so retiring
+    would pay the whole cost and buy nothing."""
+    collector = Collector()
+    now = [0.0]
+    controller = _aged_controller(tmp_path, collector, [Viewer(name="anna", playlists=("Anna TV",))], now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER * 10
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
+
+
+def test_retirement_is_reported_once_not_on_every_playback(tmp_path, capture_log):
+    collector = Collector()
+    now = [0.0]
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _aged_controller(tmp_path, collector, viewers, now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER + 1
+    controller.on_av_started()
+    controller.on_av_started()
+    assert len([line for line in capture_log if "service.index_retired" in line]) == 1

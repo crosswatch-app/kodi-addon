@@ -21,6 +21,13 @@ PING_INTERVAL_SECONDS = 300
 MIN_CROSSWATCH_VERSION = "0.13.0"
 
 DEFAULT_INDEX_TTL_SECONDS = 3600
+
+# How far past its TTL an index may still be served when it cannot be rebuilt, expressed as
+# a multiple of the TTL so there is one number to reason about rather than two. Smart
+# playlists are dynamic, so an index does not merely go stale, it goes wrong: a show leaves
+# Continue Watching the moment it is watched, and a kept snapshot then attributes it to
+# whoever held it before. Past this, the addon stops claiming to know.
+INDEX_MAX_AGE_MULTIPLIER = 2
 # The contract's request timeout, and the budget a failed delivery may consume. The budget
 # is far larger than Kodi's 5000ms shutdown window, which is why the backoff waits on an
 # abort event rather than sleeping blind.

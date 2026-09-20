@@ -19,6 +19,7 @@ from resources.lib.advanced_settings import Thresholds
 from resources.lib.config import Settings
 from resources.lib.constants import (
     FAILURE_BACKOFF_SECONDS,
+    INDEX_MAX_AGE_MULTIPLIER,
     MAX_FAILURE_BACKOFF_SECONDS,
     PING_INTERVAL_SECONDS,
     PROMPT_AUTOCLOSE_SECONDS,
@@ -66,6 +67,7 @@ class Controller:
         self._index: PlaylistIndex | None = None
         self._builder: IndexBuilder | None = None
         self._index_dirty = True
+        self._index_retired = False
         self._failures = 0
         self._failed_at: float | None = None
         # Read by the ping, which is the only place the user can see it: the addon has no
@@ -119,7 +121,7 @@ class Controller:
 
         viewers = self._viewers()
         who = identity_mod.resolve(
-            self._index, viewers, media, self._profile_label(), self._recall(media, viewers)
+            self._servable_index(viewers), viewers, media, self._profile_label(), self._recall(media, viewers)
         )
         session = PlaybackSession(session_id=self._ids(), media=media, identity=who)
         session.sample(*self._kodi.player_times())
@@ -223,6 +225,7 @@ class Controller:
                 _log.warning("service.index_degraded", viewers=len(built.degraded), consecutive=self._failures)
                 return
             self._index_dirty = False
+            self._index_retired = False
             self._failures = 0
             self._failed_at = None
             return
@@ -231,6 +234,30 @@ class Controller:
         self._failures += 1
         self._failed_at = self._monotonic()
         _log.warning("service.index_build_failed", consecutive=self._failures)
+
+    def _servable_index(self, viewers: list[Viewer]) -> PlaylistIndex | None:
+        """The index, unless it is too old to be trusted and there is someone to get wrong.
+
+        Nothing else retires an index: _needs_index governs whether to rebuild, so a build
+        that keeps failing would otherwise serve the same snapshot for ever.
+        """
+        index = self._index
+        if index is None:
+            return None
+        if len(viewers) < 2:
+            # Retirement prevents misattribution between household members. With one viewer
+            # there is nobody to misattribute to, and prompt.py refuses to ask a single
+            # viewer, so retiring would cost attribution entirely and buy nothing.
+            return index
+        age = self._monotonic() - index.built_at
+        if age < self._settings.index_ttl_seconds * INDEX_MAX_AGE_MULTIPLIER:
+            return index
+        if not self._index_retired:
+            # Once per retirement, not once per playback: a binge would otherwise repeat it
+            # per episode. Cleared when a clean index is published.
+            self._index_retired = True
+            _log.warning("service.index_retired", age_seconds=int(age), viewers=len(viewers))
+        return None
 
     def _needs_index(self) -> bool:
         if self._failed_at is not None:
