@@ -7,6 +7,7 @@ tick throws: a returned main() means no further callback is ever delivered.
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 
@@ -14,7 +15,7 @@ from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.advanced_settings import read_thresholds
 from resources.lib.config import read_settings
-from resources.lib.constants import ADDON_ID, DEFAULT_HTTP_TIMEOUT_SECONDS, SHUTDOWN_DRAIN_SECONDS
+from resources.lib.constants import ADDON_ID, SHUTDOWN_DRAIN_SECONDS
 from resources.lib.device import device_identity
 from resources.lib.kodi import KodiRuntime
 from resources.lib.media import MediaResolver
@@ -31,12 +32,12 @@ def _timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _build_sink(url: str | None, log):
+def _build_sink(url: str | None, log, *, token: str, abort: threading.Event):
     """Fall back to logging rather than posting somewhere unexpected."""
     if not url:
         return LogReporter()
     try:
-        return HttpReporter(url, timeout=DEFAULT_HTTP_TIMEOUT_SECONDS)
+        return HttpReporter(url, token=token, abort=abort)
     except InvalidWebhookUrl as exc:
         log.error("service.webhook_url_rejected", error=str(exc))
         return LogReporter()
@@ -50,7 +51,11 @@ def main() -> None:
     log = logmod.get_logger("service")
     log.info("service.starting", addon=ADDON_ID, version=kodi.addon_version())
 
-    queue = ReporterQueue(_build_sink(settings.webhook_url(), log), device_identity(kodi, settings, paths.device_path(kodi)))
+    # Created here because both sides need it and neither may default it: the queue sets it
+    # on stop, the reporter waits on it during a retry backoff.
+    abort = threading.Event()
+    sink = _build_sink(settings.webhook_url(), log, token=settings.webhook_token, abort=abort)
+    queue = ReporterQueue(sink, device_identity(kodi, settings, paths.device_path(kodi)), abort)
     controller = Controller(
         kodi=kodi,
         viewer_store=JsonViewerStore(paths.viewers_path(kodi)),
