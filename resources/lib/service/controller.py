@@ -290,6 +290,11 @@ class Controller:
     def _viewers(self) -> list[Viewer]:
         return self._store.viewers()
 
+    @staticmethod
+    def _has_usable_id(media: MediaItem) -> bool:
+        """The receiver routes on ids. Without one there is nothing for it to match."""
+        return bool(media.show_ids or media.episode_ids or media.plex_rating_key)
+
     def _recall(self, media: MediaItem, viewers: list[Viewer]) -> tuple[str, ...]:
         """Remembered names for this show, reconciled against the configured viewers.
 
@@ -319,6 +324,15 @@ class Controller:
         self._emit(kind, session)
 
     def _emit(self, kind: EventKind, session: PlaybackSession) -> bool:
+        if not self._has_usable_id(session.media):
+            _log.info(
+                "service.event_dropped",
+                kind=kind,
+                reason="no_usable_id",
+                media_type=session.media.media_type,
+                library_id=session.media.library_id,
+            )
+            return False
         event = PlaybackEvent(
             kind=kind,
             event_id=self._ids(),

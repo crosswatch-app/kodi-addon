@@ -555,3 +555,34 @@ def test_a_seek_with_no_session_is_harmless(tmp_path):
     controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
     controller.on_seek()  # must not raise
     assert collector.kinds() == []
+
+
+def _unidentifiable(tmp_path, collector):
+    """A playing episode whose show and episode both resolve to no usable id."""
+    kodi = _kodi([], overrides={"VideoLibrary.GetTVShowDetails": lambda params: {"tvshowdetails": {"uniqueid": {}}}})
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: {"item": {**EPISODE["item"], "uniqueid": {}, "tvshowid": 0}}
+    return _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+
+
+def test_an_item_with_no_usable_ids_is_not_sent(tmp_path):
+    collector = Collector()
+    controller = _unidentifiable(tmp_path, collector)
+    controller.on_av_started()
+    assert collector.events == []
+
+
+def test_an_item_with_only_a_show_id_is_still_sent(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    assert collector.kinds() == ["start"]
+    assert collector.events[0].media.show_ids == {"tvdb": "83462"}
+
+
+def test_a_dropped_start_still_leaves_a_session_that_reconciles(tmp_path):
+    collector = Collector()
+    controller = _unidentifiable(tmp_path, collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=True)
+    controller.on_tick()
+    assert collector.events == []
