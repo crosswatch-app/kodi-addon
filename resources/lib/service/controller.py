@@ -213,13 +213,21 @@ class Controller:
         self._builder = None
         if built is not None:
             self._index = built
+            if built.degraded:
+                # Published, but not current. A degraded viewer has no membership at all
+                # until a build succeeds, so the index stays dirty and the failure backoff
+                # governs the retry. Treating this as success would make them wait a full
+                # TTL, which is a worse recovery than the all-or-nothing build had.
+                self._failures += 1
+                self._failed_at = self._monotonic()
+                _log.warning("service.index_degraded", viewers=len(built.degraded), consecutive=self._failures)
+                return
             self._index_dirty = False
             self._failures = 0
             self._failed_at = None
             return
-        # A failed build is discarded, so the previous index survives. The invalidation is
-        # deliberately NOT cleared here: clearing it on builder creation would lose the
-        # retry entirely and serve a stale index until the TTL.
+        # Only reachable if a builder reports finished without a result, which it does not
+        # do today. Kept so a future builder change cannot silently drop the retry.
         self._failures += 1
         self._failed_at = self._monotonic()
         _log.warning("service.index_build_failed", consecutive=self._failures)

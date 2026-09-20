@@ -10,8 +10,14 @@ query rather than a list read: tvshow_view INNER JOINs an aggregate over the epi
 The controller steps it from the tick while nothing is playing, so the cost never lands on
 the start of playback.
 
-A build with any failure is discarded rather than published, so the previous index survives
-and the next cycle retries. An empty index and a failed index are different states.
+A failure is isolated to the viewers holding the playlist that failed, not to the build. The
+index is published without them and names them in `degraded`, so one renamed playlist costs
+its owner their playlist identity and costs nobody else anything.
+
+Within a viewer it stays all or nothing. A viewer holding two lists, one of which failed,
+is dropped entirely rather than indexed from the half that worked: a partial set attributes
+the shows it happens to contain and silently misses the rest, which reads as an answer
+rather than as a failure.
 """
 
 from __future__ import annotations
@@ -36,6 +42,10 @@ _TYPE = re.compile(r"<smartplaylist[^>]*\btype\s*=\s*[\"']([a-z]+)[\"']", re.IGN
 class PlaylistIndex:
     by_key: dict[tuple[str, int], tuple[str, ...]] = field(default_factory=dict)
     built_at: float = 0.0
+    # Viewers whose membership could not be established this build. They are absent from
+    # by_key, so identity falls through to profile and the prompt for them. Named so the
+    # controller can report it and keep retrying sooner than the TTL.
+    degraded: frozenset[str] = frozenset()
 
     def viewers_for(self, media_type: str, library_id: int | None) -> tuple[str, ...]:
         if library_id is None:
@@ -72,13 +82,11 @@ class IndexBuilder:
         self._pending = list(self._owners)
         self._by_key: dict[tuple[str, int], tuple[str, ...]] = {}
         self._result: PlaylistIndex | None = None
-        self.failed = False
+        self._degraded: set[str] = set()
 
     def step(self) -> bool:
         """Process one playlist. Returns True when the build has finished."""
-        if self._result is not None or self.failed:
-            # Terminal: the build will be discarded, so expanding the rest would pay N-1
-            # whole-library queries for a result that is thrown away.
+        if self._result is not None:
             return True
         if not self._pending:
             self._finish()
@@ -87,7 +95,8 @@ class IndexBuilder:
         try:
             self._expand(playlist, self._owners[playlist])
         except Exception:
-            # Already recorded by _expand; the build is failed and will be discarded.
+            # Already recorded by _expand, which degraded the owners. The remaining
+            # playlists are still worth expanding: they belong to other viewers.
             pass
         if not self._pending:
             self._finish()
@@ -99,11 +108,22 @@ class IndexBuilder:
         return self._result
 
     def _finish(self) -> None:
-        if self.failed:
-            _log.warning("playlists.index_discarded", reason="expansion_failed")
-            return
-        self._result = PlaylistIndex(by_key=dict(self._by_key), built_at=self._clock())
-        _log.info("playlists.index_built", playlists=len(self._owners), entries=len(self._by_key))
+        by_key = self._without_degraded() if self._degraded else dict(self._by_key)
+        self._result = PlaylistIndex(
+            by_key=by_key, built_at=self._clock(), degraded=frozenset(self._degraded)
+        )
+        if self._degraded:
+            _log.warning("playlists.index_degraded", viewers=len(self._degraded), entries=len(by_key))
+        _log.info("playlists.index_built", playlists=len(self._owners), entries=len(by_key))
+
+    def _without_degraded(self) -> dict[tuple[str, int], tuple[str, ...]]:
+        """Strip degraded viewers from every entry, dropping entries left with nobody."""
+        out: dict[tuple[str, int], tuple[str, ...]] = {}
+        for key, names in self._by_key.items():
+            kept = tuple(name for name in names if name not in self._degraded)
+            if kept:
+                out[key] = kept
+        return out
 
     def _declared_type(self, playlist: str) -> str | None:
         """None means the file could not be read, which is a failure, not a default.
@@ -120,7 +140,7 @@ class IndexBuilder:
     def _expand(self, playlist: str, names: list[str]) -> None:
         declared = self._declared_type(playlist)
         if declared is None:
-            self.failed = True
+            self._degraded.update(names)
             _log.warning("playlists.unreadable", index=self._index_of(playlist))
             # The position alone is not enough to act on: the viewer sees playlist names,
             # not their order in a config file. Named here at DEBUG, where the success path
@@ -138,7 +158,7 @@ class IndexBuilder:
             try:
                 result = self._kodi.jsonrpc("Files.GetDirectory", {"directory": _path(playlist), "media": "video"})
             except Exception as exc:
-                self.failed = True
+                self._degraded.update(names)
                 _log.warning("playlists.expand_failed", index=self._index_of(playlist), error=str(exc))
                 _log.debug("playlists.failed_playlist", playlist=playlist)
                 raise

@@ -3,6 +3,7 @@ from typing import Any
 
 from resources.lib.advanced_settings import Thresholds
 from resources.lib.config import Settings
+from resources.lib.constants import FAILURE_BACKOFF_SECONDS
 from resources.lib.media import MediaResolver
 from resources.lib.models import Device, PingEvent, PlaybackEvent, Viewer
 from resources.lib.service.controller import Controller
@@ -159,18 +160,53 @@ def test_a_stale_index_is_rebuilt_on_the_ttl(tmp_path):
     assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > before
 
 
-def test_a_failed_build_keeps_the_previous_index(tmp_path):
+def _boom(params):
+    raise RuntimeError("database is locked")
+
+
+def test_a_degraded_viewer_falls_through_rather_than_resolving_from_a_stale_index(tmp_path):
+    """The accepted cost of isolation: anna loses attribution while her list is unreadable.
+
+    She is not lost, she falls through to profile and then the prompt. Serving her the
+    previous index instead would assert membership of a smart playlist that has since moved.
+    """
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
     controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
     _warm_index(controller, kodi)
-
-    def boom(params):
-        raise RuntimeError("database is locked")
-
-    kodi.rpc_handlers["Files.GetDirectory"] = boom
+    kodi.rpc_handlers["Files.GetDirectory"] = _boom
     controller.invalidate_index()
     _warm_index(controller, kodi)
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ()
+
+
+def test_a_degraded_build_retries_on_the_failure_backoff_not_at_the_ttl(tmp_path):
+    """Otherwise isolation would cost an hour of recovery that the old behaviour did not.
+
+    A degraded build publishes, and publishing used to mean the index was current. It has
+    to stay dirty, or a viewer waits the whole TTL to get their identity back. The clock is
+    driven explicitly so this pins the backoff rather than a number of ticks.
+    """
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    now = [0.0]
+    controller = _controller(
+        tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector,
+        ttl=3600, monotonic=lambda: now[0],
+    )
+    kodi.rpc_handlers["Files.GetDirectory"] = _boom
+    _warm_index(controller, kodi)
+    degraded_at = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+
+    kodi.rpc_handlers["Files.GetDirectory"] = lambda params: {"files": [{"id": 42, "type": "tvshow"}]}
+    now[0] = FAILURE_BACKOFF_SECONDS - 1
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) == degraded_at, "still backing off"
+
+    now[0] = FAILURE_BACKOFF_SECONDS + 1
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > degraded_at
     controller.on_av_started()
     assert collector.playback()[0].viewers == ("anna",)
 

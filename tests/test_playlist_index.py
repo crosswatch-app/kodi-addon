@@ -136,17 +136,91 @@ def test_the_playlist_name_never_reaches_the_shared_log(logs):
     assert not any("Anna TV" in line for line in sink)
 
 
-def test_a_failed_expansion_discards_the_whole_build():
+def _mixed_kodi(bad: set[str], members: dict[str, list[dict]]):
+    """Expands normally, except the named playlists cannot be read."""
+    kodi = _kodi(members)
+    plain = kodi.read_text
+
+    def read_text(path, max_bytes=None):
+        name = path.rsplit("/", 1)[-1][: -len(".xsp")]
+        # max_bytes is not forwarded: the fake ignores it and KodiApi types it as int, so
+        # passing the None default through fails the type check for no behavioural gain.
+        return None if name in bad else plain(path)
+
+    kodi.read_text = read_text  # type: ignore[method-assign]
+    return kodi
+
+
+def test_one_unreadable_playlist_does_not_cost_the_other_viewer_their_index():
+    """The whole point. Before this, anna's rename took bob's identity down with it."""
+    kodi = _mixed_kodi({"Anna TV"}, {"Anna TV": [{"id": 42, "type": "tvshow"}], "Bob TV": [{"id": 7, "type": "tvshow"}]})
+    index = _build(kodi, [ANNA, BOB]).result()
+    assert index is not None
+    assert index.viewers_for("tvshow", 7) == ("bob",)
+    assert index.degraded == frozenset({"anna"})
+
+
+def test_a_degraded_viewer_gets_no_entries_at_all_rather_than_a_partial_set():
+    """A half-indexed viewer is the harm the all-or-nothing build existed to prevent.
+
+    anna holds two lists and one is unreadable. Publishing the readable half would attribute
+    the shows it happens to contain and silently miss the rest, which reads as a deliberate
+    answer rather than a failure.
+    """
+    anna = Viewer(name="anna", playlists=("Anna TV", "Anna Films"))
+    kodi = _mixed_kodi({"Anna Films"}, {"Anna TV": [{"id": 42, "type": "tvshow"}]})
+    index = _build(kodi, [anna]).result()
+    assert index is not None
+    assert index.viewers_for("tvshow", 42) == ()
+    assert index.is_empty()
+    assert index.degraded == frozenset({"anna"})
+
+
+def test_a_shared_playlist_that_fails_degrades_every_viewer_holding_it():
+    shared = "Household TV"
+    anna = Viewer(name="anna", playlists=(shared,))
+    bob = Viewer(name="bob", playlists=(shared, "Bob TV"))
+    kodi = _mixed_kodi({shared}, {"Bob TV": [{"id": 7, "type": "tvshow"}]})
+    index = _build(kodi, [anna, bob]).result()
+    assert index is not None
+    assert index.degraded == frozenset({"anna", "bob"})
+    assert index.viewers_for("tvshow", 7) == ()
+
+
+def test_the_healthy_playlists_are_still_expanded_after_one_fails():
+    """The build no longer stops at the first failure, because the rest is no longer wasted."""
+    seen: list[str] = []
+    kodi = _mixed_kodi({"Anna TV"}, {"Bob TV": [{"id": 7, "type": "tvshow"}]})
+    plain = kodi.rpc_handlers["Files.GetDirectory"]
+    kodi.rpc_handlers["Files.GetDirectory"] = lambda params: (
+        seen.append(params["directory"].rsplit("/", 1)[-1]), plain(params)
+    )[1]
+    _build(kodi, [ANNA, BOB])
+    assert "Bob TV.xsp" in seen
+
+
+def test_an_index_with_nothing_wrong_reports_no_degraded_viewers():
+    kodi = _kodi({"Anna TV": [{"id": 42, "type": "tvshow"}]})
+    index = _build(kodi, [ANNA]).result()
+    assert index is not None
+    assert index.degraded == frozenset()
+
+
+def test_an_expansion_that_raises_degrades_the_owner_rather_than_the_build():
+    """A raising Files.GetDirectory is the transport failure, not a missing file.
+
+    It is handled the same way: the viewers holding that playlist lose their membership for
+    this build, and the index is still published for everyone else.
+    """
     def directory(params):
         raise RuntimeError("database is locked")
 
     kodi = FakeKodi(rpc_handlers={"Files.GetDirectory": directory})
     kodi.read_text = lambda path, max_bytes=None: '<smartplaylist type="tvshows"/>'  # type: ignore[method-assign]
-    builder = IndexBuilder(kodi, [ANNA], lambda: 0.0)
-    while not builder.step():
-        pass
-    assert builder.failed is True
-    assert builder.result() is None
+    index = _build(kodi, [ANNA]).result()
+    assert index is not None
+    assert index.degraded == frozenset({"anna"})
+    assert index.is_empty()
 
 
 def test_unknown_item_and_none_id_return_no_viewers():
