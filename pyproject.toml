@@ -20,7 +20,7 @@ omit = ["*/__pycache__/*", "tests/*"]
 # are only testable after they are written. Taking it earlier would have locked in a false
 # baseline. It ratchets up and is never lowered to make a change pass: raise it in the same
 # change that earns it.
-fail_under = 91
+fail_under = 92
 
 [tool.vulture]
 # The whitelist declares names that an external caller owns, so vulture can keep its
