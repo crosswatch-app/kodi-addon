@@ -54,3 +54,11 @@ msgstr ""
 msgctxt "#30023"
 msgid "Enable debug logging (records viewing history to disk)"
 msgstr ""
+
+msgctxt "#30030"
+msgid "CrossWatch"
+msgstr ""
+
+msgctxt "#30031"
+msgid "Playlist could not be read, so viewer identification is reduced: %s"
+msgstr ""

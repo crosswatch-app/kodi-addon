@@ -835,3 +835,59 @@ def test_retirement_is_reported_once_not_on_every_playback(tmp_path, capture_log
     controller.on_av_started()
     controller.on_av_started()
     assert len([line for line in capture_log if "service.index_retired" in line]) == 1
+
+
+def _degraded_controller(tmp_path, collector, kodi=None):
+    """A build in which anna's playlist cannot be read."""
+    kodi = kodi or _kodi([{"id": 42, "type": "tvshow"}])
+    kodi.read_text = lambda path, max_bytes=None: None  # type: ignore[method-assign]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    _warm_index(controller, kodi)
+    return controller, kodi
+
+
+def test_an_unreadable_playlist_notifies_the_household_and_names_it(tmp_path):
+    """The only channel allowed to carry the name: it goes to their own screen.
+
+    Without this the failure is silent. The warning in Kodi's log names a position in a
+    list the viewer never sees, and that is by design, so the toast is what makes it
+    actionable.
+    """
+    controller, kodi = _degraded_controller(tmp_path, Collector())
+    assert len(kodi.notifications) == 1
+    assert "Anna TV" in kodi.notifications[0][1]
+
+
+def test_the_household_is_not_notified_once_per_retry(tmp_path):
+    """The build retries on a backoff for as long as the playlist stays missing."""
+    controller, kodi = _degraded_controller(tmp_path, Collector())
+    controller.invalidate_index()
+    _warm_index(controller, kodi)
+    assert len(kodi.notifications) == 1
+
+
+def test_the_playlist_name_survives_a_translation_with_no_placeholder(tmp_path):
+    """A translator dropping %s must not turn this into "something is wrong" with no what."""
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    kodi.localised = lambda string_id: "Kan playlist niet lezen"  # type: ignore[method-assign]
+    controller, kodi = _degraded_controller(tmp_path, Collector(), kodi=kodi)
+    assert "Anna TV" in kodi.notifications[0][1]
+
+
+def test_a_clean_build_notifies_nothing(tmp_path):
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], Collector())
+    _warm_index(controller, kodi)
+    assert kodi.notifications == []
+
+
+def test_a_playlist_that_breaks_again_after_recovering_notifies_again(tmp_path):
+    """Latching for ever would hide a second, different breakage."""
+    controller, kodi = _degraded_controller(tmp_path, Collector())
+    kodi.read_text = lambda path, max_bytes=None: '<smartplaylist type="tvshows"/>'  # type: ignore[method-assign]
+    controller.invalidate_index()
+    _warm_index(controller, kodi)
+    kodi.read_text = lambda path, max_bytes=None: None  # type: ignore[method-assign]
+    controller.invalidate_index()
+    _warm_index(controller, kodi)
+    assert len(kodi.notifications) == 2

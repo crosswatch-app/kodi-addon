@@ -38,6 +38,8 @@ class KodiApi(Protocol):
     def select(self, heading: str, options: list[str]) -> int: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str) -> bool: ...
+    def notify(self, heading: str, message: str) -> None: ...
+    def localised(self, string_id: int) -> str: ...
     def log(self, message: str, level: int) -> None: ...
 
 
@@ -158,6 +160,24 @@ class KodiRuntime:
 
     def confirm(self, heading: str, message: str) -> bool:
         return bool(self._xbmcgui.Dialog().yesno(heading, message))
+
+    def notify(self, heading: str, message: str) -> None:
+        """A toast on the household's own screen.
+
+        This is the one channel that may carry a playlist name. Kodi's shared log gets
+        attached to bug reports; the screen in the living room does not.
+        """
+        try:
+            self._xbmcgui.Dialog().notification(heading, message)
+        except Exception:
+            # Cosmetic. A skin that refuses to draw a toast must not take the service down.
+            pass
+
+    def localised(self, string_id: int) -> str:
+        try:
+            return str(self._addon.getLocalizedString(string_id) or "")
+        except Exception:
+            return ""
 
     def log(self, message: str, level: int) -> None:
         self._xbmc.log(message, self._levels.get(level, self._xbmc.LOGINFO))

@@ -46,6 +46,9 @@ class PlaylistIndex:
     # by_key, so identity falls through to profile and the prompt for them. Named so the
     # controller can report it and keep retrying sooner than the TTL.
     degraded: frozenset[str] = frozenset()
+    # The playlists that could not be read. Held so the notification can name them, which
+    # is the only channel allowed to: it goes to the household's own screen.
+    unreadable: frozenset[str] = frozenset()
 
     def viewers_for(self, media_type: str, library_id: int | None) -> tuple[str, ...]:
         if library_id is None:
@@ -83,6 +86,7 @@ class IndexBuilder:
         self._by_key: dict[tuple[str, int], tuple[str, ...]] = {}
         self._result: PlaylistIndex | None = None
         self._degraded: set[str] = set()
+        self._unreadable: set[str] = set()
 
     def step(self) -> bool:
         """Process one playlist. Returns True when the build has finished."""
@@ -110,7 +114,10 @@ class IndexBuilder:
     def _finish(self) -> None:
         by_key = self._without_degraded() if self._degraded else dict(self._by_key)
         self._result = PlaylistIndex(
-            by_key=by_key, built_at=self._clock(), degraded=frozenset(self._degraded)
+            by_key=by_key,
+            built_at=self._clock(),
+            degraded=frozenset(self._degraded),
+            unreadable=frozenset(self._unreadable),
         )
         if self._degraded:
             _log.warning("playlists.index_degraded", viewers=len(self._degraded), entries=len(by_key))
@@ -141,6 +148,7 @@ class IndexBuilder:
         declared = self._declared_type(playlist)
         if declared is None:
             self._degraded.update(names)
+            self._unreadable.add(playlist)
             _log.warning("playlists.unreadable", index=self._index_of(playlist))
             # The position alone is not enough to act on: the viewer sees playlist names,
             # not their order in a config file. Named here at DEBUG, where the success path
@@ -159,6 +167,7 @@ class IndexBuilder:
                 result = self._kodi.jsonrpc("Files.GetDirectory", {"directory": _path(playlist), "media": "video"})
             except Exception as exc:
                 self._degraded.update(names)
+                self._unreadable.add(playlist)
                 _log.warning("playlists.expand_failed", index=self._index_of(playlist), error=str(exc))
                 _log.debug("playlists.failed_playlist", playlist=playlist)
                 raise

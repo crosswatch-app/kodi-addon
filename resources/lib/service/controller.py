@@ -21,6 +21,8 @@ from resources.lib.constants import (
     FAILURE_BACKOFF_SECONDS,
     INDEX_MAX_AGE_MULTIPLIER,
     MAX_FAILURE_BACKOFF_SECONDS,
+    NOTIFY_HEADING,
+    NOTIFY_UNREADABLE,
     PING_INTERVAL_SECONDS,
     PROMPT_AUTOCLOSE_SECONDS,
 )
@@ -68,6 +70,7 @@ class Controller:
         self._builder: IndexBuilder | None = None
         self._index_dirty = True
         self._index_retired = False
+        self._notified_unreadable: frozenset[str] = frozenset()
         self._failures = 0
         self._failed_at: float | None = None
         # Read by the ping, which is the only place the user can see it: the addon has no
@@ -223,9 +226,13 @@ class Controller:
                 self._failures += 1
                 self._failed_at = self._monotonic()
                 _log.warning("service.index_degraded", viewers=len(built.degraded), consecutive=self._failures)
+                self._notify_unreadable(built.unreadable)
                 return
             self._index_dirty = False
             self._index_retired = False
+            # Cleared on recovery, so a playlist that breaks again is reported again rather
+            # than latching for ever and hiding a second, different breakage.
+            self._notified_unreadable = frozenset()
             self._failures = 0
             self._failed_at = None
             return
@@ -234,6 +241,23 @@ class Controller:
         self._failures += 1
         self._failed_at = self._monotonic()
         _log.warning("service.index_build_failed", consecutive=self._failures)
+
+    def _notify_unreadable(self, unreadable: frozenset[str]) -> None:
+        """Tell the household, once per distinct set of broken playlists.
+
+        The build retries on a backoff for as long as the playlist stays missing, so this
+        must not fire per attempt. It is the only place a playlist name is allowed out:
+        a toast goes to their own screen, while Kodi's log gets attached to bug reports.
+        """
+        if not unreadable or unreadable == self._notified_unreadable:
+            return
+        self._notified_unreadable = unreadable
+        names = ", ".join(sorted(unreadable))
+        text = self._kodi.localised(NOTIFY_UNREADABLE)
+        # Appended when the placeholder is absent. A translation that drops %s would
+        # otherwise produce a notification that says something is wrong and not what.
+        message = text.replace("%s", names) if "%s" in text else f"{text} {names}".strip()
+        self._kodi.notify(self._kodi.localised(NOTIFY_HEADING), message)
 
     def _servable_index(self, viewers: list[Viewer]) -> PlaylistIndex | None:
         """The index, unless it is too old to be trusted and there is someone to get wrong.

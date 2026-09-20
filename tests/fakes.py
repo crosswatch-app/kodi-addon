@@ -45,6 +45,7 @@ class FakeKodi:
         self.root = root
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.multiselect_calls: list[tuple[str, list[str], list[int] | None, int]] = []
+        self.notifications: list[tuple[str, str]] = []
         self.logged: list[tuple[str, int]] = []
 
     def jsonrpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -103,6 +104,12 @@ class FakeKodi:
 
     def confirm(self, heading: str, message: str) -> bool:
         return self.confirm_answer
+
+    def notify(self, heading: str, message: str) -> None:
+        self.notifications.append((heading, message))
+
+    def localised(self, string_id: int) -> str:
+        return f"#{string_id}"
 
     def log(self, message: str, level: int) -> None:
         self.logged.append((message, level))
