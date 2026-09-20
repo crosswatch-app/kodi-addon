@@ -2,14 +2,16 @@
 
 Captured on Kodi 21.3 Omega playing a library episode whose show was a member of a smart
 playlist held by one viewer, so identity resolved through the playlist. Names, paths and
-the two uuids are replaced; the ids, the timings and the shape are exactly as observed.
+the two uuids are replaced; the ids and the timings are exactly as observed.
 
 A unit test can only assert that the builder agrees with itself. This one asserts it still
-agrees with something Kodi produced.
+agrees with values Kodi produced.
 
-The captured input is fixed; the expected output tracks deliberate contract changes. Where
-slice 2 renames a field or a value, the pin moves with it in the same commit, and Task 16
-recaptures the whole payload from a live Kodi against the finished format.
+The field layout, however, was migrated by hand to the published contract and is not a shape
+Kodi ever emitted: slice 1 sent show_ids, episode_ids and a top-level progress object. What
+still comes from the capture is every value inside it. Task 16 recaptures the whole payload
+from a live Kodi once the wire format is finished, which is what restores this file to a
+verbatim record.
 """
 
 import json
@@ -40,6 +42,7 @@ def test_build_payload_still_matches_a_payload_captured_from_a_real_kodi():
             show_ids={"imdb": "tt18335752", "tmdb": "157744", "tvdb": "416491"},
             episode_ids={"imdb": "tt18469978", "tmdb": "4014249", "tvdb": "9032340"},
             file="smb://nas/tv/Example show (2022)/Season 01/S01E01.mkv",
+            source="library",
         ),
         viewers=("anna",),
         viewers_source="playlist",
@@ -47,9 +50,10 @@ def test_build_payload_still_matches_a_payload_captured_from_a_real_kodi():
         duration_ms=3633536,
         percent=62.3,
     )
-    assert build_payload(event, Device(id="device-1", name="Living room")) == expected
+    device = Device(id="device-1", name="Living room", addon_version="0.1.0")
+    assert build_payload(event, device) == expected
 
 
 def test_the_captured_payload_omits_completed_because_the_episode_was_not_finished():
     """Absence is the signal. A false completed flag would have to be sent every event."""
-    assert "completed" not in json.loads(FIXTURE.read_text(encoding="utf-8"))["progress"]
+    assert "completed" not in json.loads(FIXTURE.read_text(encoding="utf-8"))["media"]

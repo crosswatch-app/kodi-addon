@@ -1,4 +1,5 @@
 {
+  "addon_version": "0.1.0",
   "device": {
     "id": "device-1",
     "name": "Living room"
@@ -6,29 +7,25 @@
   "event": "stop",
   "event_id": "event-1",
   "media": {
+    "duration_ms": 3633536,
     "episode": 1,
-    "episode_ids": {
-      "imdb": "tt18469978",
-      "tmdb": "4014249",
-      "tvdb": "9032340"
-    },
     "episode_title": "Example episode",
     "file": "smb://nas/tv/Example show (2022)/Season 01/S01E01.mkv",
-    "season": 1,
-    "show_ids": {
-      "imdb": "tt18335752",
-      "tmdb": "157744",
-      "tvdb": "416491"
+    "ids": {
+      "imdb": "tt18469978",
+      "imdb_show": "tt18335752",
+      "tmdb": "4014249",
+      "tmdb_show": "157744",
+      "tvdb": "9032340",
+      "tvdb_show": "416491"
     },
+    "percent": 62.3,
+    "position_ms": 2262631,
+    "season": 1,
     "source": "library",
     "title": "Example show",
     "type": "episode",
     "year": 2022
-  },
-  "progress": {
-    "duration_ms": 3633536,
-    "percent": 62.3,
-    "position_ms": 2262631
   },
   "sent_at": "2026-09-19T18:02:25Z",
   "session_id": "session-1",

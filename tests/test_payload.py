@@ -72,63 +72,101 @@ def test_episode_payload_carries_version_event_and_viewers():
     assert body["device"] == {"id": "htpc-1", "name": "Living room"}
 
 
-def test_episode_payload_uses_show_ids_and_episode_ids():
+def test_episode_ids_are_flat_with_show_suffixes():
     media = build_payload(_event(), DEVICE)["media"]
-    assert media["type"] == "episode"
-    assert media["show_ids"] == {"tmdb": "1419", "tvdb": "83462", "imdb": "tt1219024"}
-    assert media["episode_ids"] == {"tvdb": "3110601"}
-    assert (media["season"], media["episode"]) == (1, 1)
-    assert "ids" not in media
+    assert media["ids"] == {
+        "tmdb_show": "1419",
+        "tvdb_show": "83462",
+        "imdb_show": "tt1219024",
+        "tvdb": "3110601",
+    }
+    assert "show_ids" not in media
+    assert "episode_ids" not in media
 
 
-def test_episode_without_episode_ids_omits_the_key():
-    media = MediaItem(**{**EPISODE.__dict__, "episode_ids": {}})
-    assert "episode_ids" not in build_payload(_event(media=media), DEVICE)["media"]
-
-
-def test_movie_payload_uses_ids_and_omits_season_and_episode():
+def test_movie_ids_are_flat_without_suffixes():
     media = build_payload(_event(media=MOVIE), DEVICE)["media"]
-    assert media["type"] == "movie"
     assert media["ids"] == {"tmdb": "999"}
     assert "season" not in media
     assert "episode" not in media
-    assert "show_ids" not in media
+
+
+def test_progress_lives_inside_media():
+    body = build_payload(_event(), DEVICE)
+    media = body["media"]
+    assert media["percent"] == 90.9
+    assert media["position_ms"] == 1_200_000
+    assert media["duration_ms"] == 1_320_000
+    assert "progress" not in body
+
+
+def test_an_unknown_duration_omits_percent_and_duration_but_keeps_position():
+    media = build_payload(_event(percent=None, duration_ms=None), DEVICE)["media"]
+    assert "percent" not in media
+    assert "duration_ms" not in media
+    assert media["position_ms"] == 1_200_000
+
+
+def test_completed_is_carried_so_it_survives_an_unknown_duration():
+    media = build_payload(_event(percent=None, duration_ms=None, completed=True), DEVICE)["media"]
+    assert media["completed"] is True
+
+
+def test_completed_is_omitted_when_false():
+    assert "completed" not in build_payload(_event(), DEVICE)["media"]
+
+
+def test_an_episode_with_no_episode_ids_still_sends_the_show_ids():
+    media = MediaItem(**{**EPISODE.__dict__, "episode_ids": {}})
+    ids = build_payload(_event(media=media), DEVICE)["media"]["ids"]
+    assert ids == {"tmdb_show": "1419", "tvdb_show": "83462", "imdb_show": "tt1219024"}
 
 
 def test_pkc_playback_sets_source_and_rating_key():
     media = MediaItem(
-        **{**EPISODE.__dict__, "source": "plexkodiconnect", "plex_rating_key": "3595", "library_id": None}
+        **{**EPISODE.__dict__, "source": "plexkodiconnect", "is_pkc": True, "plex_rating_key": "3595"}
     )
     body = build_payload(_event(media=media), DEVICE)["media"]
     assert body["source"] == "plexkodiconnect"
     assert body["plex_rating_key"] == "3595"
 
 
-def test_known_progress_carries_percent_position_and_duration():
-    progress = build_payload(_event(), DEVICE)["progress"]
-    assert progress == {"percent": 90.9, "position_ms": 1_200_000, "duration_ms": 1_320_000}
-
-
-def test_unknown_duration_omits_percent_rather_than_sending_zero():
-    progress = build_payload(_event(percent=None, duration_ms=None), DEVICE)["progress"]
-    assert "percent" not in progress
-    assert "duration_ms" not in progress
-    assert progress["position_ms"] == 1_200_000
-
-
-def test_completed_is_carried_so_it_survives_an_unknown_duration():
-    body = build_payload(_event(percent=None, duration_ms=None, completed=True), DEVICE)
-    assert body["progress"]["completed"] is True
-
-
-def test_completed_is_omitted_when_false():
-    assert "completed" not in build_payload(_event(), DEVICE)["progress"]
-
-
 def test_empty_viewers_is_an_empty_list_and_source_is_omitted():
     body = build_payload(_event(viewers=(), viewers_source=None), DEVICE)
     assert body["viewers"] == []
     assert "viewers_source" not in body
+
+
+def test_addon_version_is_sent_at_the_top_level_not_inside_device():
+    device = Device(id="htpc-1", name="Living room", addon_version="1.0.0")
+    body = build_payload(_event(), device)
+    assert body["addon_version"] == "1.0.0"
+    assert body["device"] == {"id": "htpc-1", "name": "Living room"}
+
+
+def test_an_unknown_addon_version_is_omitted_rather_than_sent_empty():
+    assert "addon_version" not in build_payload(_event(), DEVICE)
+
+
+def test_a_ping_carries_viewers_and_no_media_or_session():
+    ping = PingEvent(event_id="e-1", sent_at="2026-09-19T20:00:00Z", viewers=("anna", "bob"))
+    body = build_payload(ping, DEVICE)
+    assert body["event"] == "ping"
+    assert body["version"] == 1
+    assert body["viewers"] == ["anna", "bob"]
+    assert body["device"] == {"id": "htpc-1", "name": "Living room"}
+    assert "media" not in body
+    assert "session_id" not in body
+
+
+def test_a_ping_reports_how_many_pkc_playbacks_were_skipped():
+    ping = PingEvent(event_id="e-1", sent_at="2026-09-19T20:00:00Z", viewers=(), pkc_skipped=3)
+    assert build_payload(ping, DEVICE)["pkc_skipped"] == 3
+
+
+def test_a_ping_omits_the_skip_count_when_nothing_was_skipped():
+    ping = PingEvent(event_id="e-1", sent_at="2026-09-19T20:00:00Z", viewers=())
+    assert "pkc_skipped" not in build_payload(ping, DEVICE)
 
 
 def test_a_device_can_carry_the_addon_version():
