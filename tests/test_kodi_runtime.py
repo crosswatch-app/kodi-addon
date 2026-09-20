@@ -31,6 +31,15 @@ def test_player_times_converts_seconds_to_milliseconds(runtime):
     assert runtime.player_times() == (30_000, 120_000)
 
 
+def test_a_negative_position_is_clamped_to_zero():
+    """Observed on a real Kodi: getTime() returned -0.028 at the instant onAVStarted fired.
+
+    A negative position is not a state the player can be in, and it reached the wire as
+    position_ms: -28, which the receiver would carry into a resume point.
+    """
+    assert KodiRuntime(player=RecordingPlayer(-0.028, 120.0)).player_times() == (0, 120_000)
+
+
 def test_a_zero_duration_is_reported_as_unknown():
     got = KodiRuntime(player=RecordingPlayer(30.0, 0.0)).player_times()
     assert got == (30_000, None)

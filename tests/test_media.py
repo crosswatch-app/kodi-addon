@@ -67,6 +67,29 @@ def test_resolves_an_episode_with_show_ids_from_the_parent():
     assert media.show_ids == {"tmdb": "1419", "tvdb": "83462", "imdb": "tt1219024"}
 
 
+def test_placeholder_id_values_are_dropped_rather_than_sent_as_ids():
+    """Captured from a real library: a scraper had written the string "None" into uniqueid.
+
+    Kodi returned {"imdb": "None", "tvdb": "None", "tvmaze": "43665", "tvrage": "None"} for
+    a show, and the addon sent imdb_show="None" on the wire. It looks like an id, so the
+    no-usable-id gate passes it and the receiver tries to route on it.
+    """
+    show = {"tvshowdetails": {"uniqueid": {"imdb": "None", "tvdb": "none", "tvmaze": "43665", "tvrage": "NULL"}}}
+    media = MediaResolver(_kodi(show=show)).resolve()
+    assert media is not None
+    assert media.show_ids == {"tvmaze": "43665"}
+
+
+def test_an_item_whose_every_id_is_a_placeholder_has_no_ids_at_all():
+    """So the no-usable-id gate can see it for what it is, rather than sending junk."""
+    show = {"tvshowdetails": {"uniqueid": {"imdb": "None", "tvdb": "", "tvrage": "0"}}}
+    item = {"item": {**EPISODE_ITEM["item"], "uniqueid": {"tvdb": "-1"}}}
+    media = MediaResolver(_kodi(item=item, show=show)).resolve()
+    assert media is not None
+    assert media.show_ids == {}
+    assert media.episode_ids == {}
+
+
 def test_unknown_uniqueid_keys_are_skipped_not_guessed():
     media = MediaResolver(_kodi()).resolve()
     assert media is not None

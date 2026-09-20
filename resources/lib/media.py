@@ -6,6 +6,11 @@ episodes carried only an "unknown" key, which CrossWatch discards. So the usable
 show-level ids plus season and episode number, with episode ids sent when they are real.
 
 Keys under "unknown" are skipped deliberately: there is no safe way to tell what they are.
+
+So are placeholder values. Scrapers write the string "None" into uniqueid, and a real
+library here returned {"imdb": "None", "tvdb": "None", "tvrage": "None"} for a show. Those
+reach the wire looking like ids, so the receiver routes on them and the no-usable-id gate
+sees an item that is in fact unidentifiable.
 """
 
 from __future__ import annotations
@@ -24,6 +29,10 @@ PKC_PREFIX = "plugin://plugin.video.plexkodiconnect"
 _RATING_KEY = re.compile(r"/(\d+)/?$")
 
 _ITEM_PROPERTIES = ["title", "showtitle", "season", "episode", "year", "tvshowid", "file", "uniqueid"]
+
+# Values a scraper leaves behind when it had no id. Compared lowercase. "0" and "-1" are
+# here because no provider issues them and both are common "absent" sentinels.
+_PLACEHOLDER_IDS = frozenset({"none", "null", "nan", "unknown", "0", "-1", "false"})
 
 
 def strip_credentials(path: str) -> str:
@@ -58,7 +67,7 @@ def _clean_ids(uniqueid: Any) -> dict[str, str]:
     for key, value in uniqueid.items():
         name = str(key or "").strip().lower()
         text = str(value or "").strip()
-        if not text or name == "unknown":
+        if not text or name == "unknown" or text.lower() in _PLACEHOLDER_IDS:
             continue
         out[name] = text
     return out

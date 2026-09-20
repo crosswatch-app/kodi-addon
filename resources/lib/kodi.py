@@ -122,7 +122,10 @@ class KodiRuntime:
         position: int | None = None
         duration: int | None = None
         try:
-            position = int(self._player.getTime() * 1000)
+            # Clamped: at the instant onAVStarted fires getTime() can return a small
+            # negative, and a negative position is not a state the player can be in. It
+            # would otherwise reach the wire and become a negative resume point.
+            position = max(0, int(self._player.getTime() * 1000))
         except Exception:
             position = None
         try:
