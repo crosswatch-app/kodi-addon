@@ -122,6 +122,11 @@ class IndexBuilder:
         if declared is None:
             self.failed = True
             _log.warning("playlists.unreadable", index=self._index_of(playlist))
+            # The position alone is not enough to act on: the viewer sees playlist names,
+            # not their order in a config file. Named here at DEBUG, where the success path
+            # already names it, so a rename is diagnosable without the name reaching a
+            # WARNING and from there Kodi's shared log.
+            _log.debug("playlists.unreadable_playlist", playlist=playlist)
             return
         media_type = INDEXABLE_TYPES.get(declared)
         if media_type is None:
@@ -135,6 +140,7 @@ class IndexBuilder:
             except Exception as exc:
                 self.failed = True
                 _log.warning("playlists.expand_failed", index=self._index_of(playlist), error=str(exc))
+                _log.debug("playlists.failed_playlist", playlist=playlist)
                 raise
         files = result.get("files")
         members = [f for f in files if isinstance(f, dict)] if isinstance(files, list) else []

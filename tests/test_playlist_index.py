@@ -1,3 +1,6 @@
+import pytest
+
+from resources.lib import log as logmod
 from resources.lib.models import Viewer
 from resources.lib.playlist_index import IndexBuilder, PlaylistIndex
 from tests.fakes import FakeKodi
@@ -73,6 +76,64 @@ def test_an_episodes_playlist_is_skipped_without_being_expanded():
     assert [c for c in kodi.calls if c[0] == "Files.GetDirectory"] == []
     index = builder.result()
     assert index is not None and index.is_empty()
+
+
+@pytest.fixture
+def logs(tmp_path):
+    """Both channels. A DEBUG line reaches the addon's own file and never the sink.
+
+    That split is the privacy rule made structural in log._emit, so a test that watched only
+    the sink could never see a debug line and would fail against correct code.
+    """
+    logmod.reset()
+    sink: list[str] = []
+    logmod.configure(log_dir=str(tmp_path), debug=True, sink=lambda msg, level: sink.append(msg))
+
+    def read() -> tuple[str, list[str]]:
+        path = tmp_path / "crosswatch.log"
+        return (path.read_text(encoding="utf-8") if path.exists() else ""), sink
+
+    yield read
+    logmod.reset()
+
+
+def _unreadable_kodi():
+    kodi = _kodi({"Anna TV": []})
+    kodi.read_text = lambda path, max_bytes=None: None  # type: ignore[method-assign]
+    return kodi
+
+
+def test_an_unreadable_playlist_is_named_in_the_addons_own_log(logs):
+    """The file says names belong at DEBUG, but only the success path was honouring it.
+
+    Without this, a viewer whose playlist was renamed gets playlists.unreadable naming a
+    position in a list they cannot see, and turning debug logging on tells them no more.
+    """
+    _build(_unreadable_kodi(), [ANNA])
+    contents, _ = logs()
+    assert "playlists.unreadable_playlist" in contents
+    assert "Anna TV" in contents
+
+
+def test_a_failed_expansion_is_named_in_the_addons_own_log(logs):
+    def directory(params):
+        raise RuntimeError("database is locked")
+
+    kodi = FakeKodi(rpc_handlers={"Files.GetDirectory": directory})
+    kodi.read_text = lambda path, max_bytes=None: '<smartplaylist type="tvshows"/>'  # type: ignore[method-assign]
+    _build(kodi, [ANNA])
+    contents, _ = logs()
+    assert "playlists.failed_playlist" in contents
+    assert "Anna TV" in contents
+
+
+def test_the_playlist_name_never_reaches_the_shared_log(logs):
+    """The sink is Kodi's log, which gets attached to bug reports. Names must not be in it."""
+    _build(_unreadable_kodi(), [ANNA])
+    _, sink = logs()
+    assert sink, "the failure must still be reported at WARNING"
+    assert any("playlists.unreadable" in line for line in sink)
+    assert not any("Anna TV" in line for line in sink)
 
 
 def test_a_failed_expansion_discards_the_whole_build():
