@@ -9,6 +9,9 @@ from typing import Literal
 MediaType = Literal["episode", "movie"]
 EventKind = Literal["start", "pause", "resume", "progress", "stop"]
 ViewersSource = Literal["playlist", "profile", "prompt"]
+# The contract's vocabulary. Typed rather than a bare str so a value outside it cannot
+# reach the wire, and defaulted to the value the overwhelming majority of items carry.
+Source = Literal["library", "plexkodiconnect"]
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,10 @@ class MediaItem:
     show_ids: dict[str, str] = field(default_factory=dict)
     episode_ids: dict[str, str] = field(default_factory=dict)
     file: str | None = None
-    source: str = "kodi"
+    source: Source = "library"
+    # The domain fact behind source. Kept so the skip policy branches on what the addon
+    # observed rather than on a wire string whose vocabulary the receiver owns.
+    is_pkc: bool = False
     plex_rating_key: str | None = None
 
 

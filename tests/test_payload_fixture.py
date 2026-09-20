@@ -6,6 +6,10 @@ the two uuids are replaced; the ids, the timings and the shape are exactly as ob
 
 A unit test can only assert that the builder agrees with itself. This one asserts it still
 agrees with something Kodi produced.
+
+The captured input is fixed; the expected output tracks deliberate contract changes. Where
+slice 2 renames a field or a value, the pin moves with it in the same commit, and Task 16
+recaptures the whole payload from a live Kodi against the finished format.
 """
 
 import json

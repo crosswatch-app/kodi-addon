@@ -147,13 +147,15 @@ def test_plexkodiconnect_playback_is_labelled_and_carries_the_rating_key():
     media = MediaResolver(_kodi(item=item, show={"tvshowdetails": {}})).resolve()
     assert media is not None
     assert media.source == "plexkodiconnect"
+    assert media.is_pkc is True
     assert media.plex_rating_key == "3595"
 
 
-def test_local_playback_is_labelled_kodi():
+def test_local_playback_is_labelled_library():
     media = MediaResolver(_kodi()).resolve()
     assert media is not None
-    assert media.source == "kodi"
+    assert media.source == "library"
+    assert media.is_pkc is False
 
 
 def test_returns_none_when_nothing_is_playing():

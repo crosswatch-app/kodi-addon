@@ -16,7 +16,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger, log_timing, redact
-from resources.lib.models import MediaItem
+from resources.lib.models import MediaItem, Source
 
 _log = get_logger("media")
 
@@ -100,7 +100,7 @@ class MediaResolver:
             own_ids = _clean_ids(item.get("uniqueid"))
             raw_id = _int_or_none(item.get("id"))
             library_id = raw_id if raw_id is not None and raw_id >= 0 else None
-            source = "plexkodiconnect" if is_pkc else "kodi"
+            source: Source = "plexkodiconnect" if is_pkc else "library"
             rating_key = self._rating_key(file_path) if is_pkc else None
 
             if media_type == "episode":
@@ -121,6 +121,7 @@ class MediaResolver:
                     episode_ids=own_ids,
                     file=file_path or None,
                     source=source,
+                    is_pkc=is_pkc,
                     plex_rating_key=rating_key,
                 )
             else:
@@ -137,6 +138,7 @@ class MediaResolver:
                     episode_ids={},
                     file=file_path or None,
                     source=source,
+                    is_pkc=is_pkc,
                     plex_rating_key=rating_key,
                 )
 

@@ -18,7 +18,7 @@ EPISODE = MediaItem(
     show_ids={"tmdb": "1419", "tvdb": "83462", "imdb": "tt1219024"},
     episode_ids={"tvdb": "3110601"},
     file="nfs://nas/media/tv/Just an example (2026)/Season 01/S01E01.mkv",
-    source="kodi",
+    source="library",
     plex_rating_key=None,
 )
 
@@ -34,7 +34,7 @@ MOVIE = MediaItem(
     show_ids={"tmdb": "999"},
     episode_ids={},
     file="nfs://nas/media/movies/Example film (2024)/film.mkv",
-    source="kodi",
+    source="library",
     plex_rating_key=None,
 )
 
