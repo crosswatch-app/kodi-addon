@@ -441,6 +441,40 @@ def test_the_token_is_sent_as_a_header(reporter_factory):
     assert captured["headers"]["X-CrossWatch-Token"] == "tok"
 
 
+def test_the_header_comes_from_the_token_argument_not_the_query_string(reporter_factory):
+    """The credential is passed in, never recovered by parsing the URL.
+
+    The two values differ on purpose. Production always builds the query from the same token,
+    so a test that used one value either way would pass whether the header was taken from the
+    argument or scraped back out of the query string, and would prove nothing. A URL carrying
+    an unrelated parameter first is the case a positional parser gets wrong.
+    """
+    connection = FakeConnection()
+    captured: dict[str, Any] = {}
+
+    def request(method, path, body=None, headers=None):
+        captured["headers"] = headers or {}
+
+    connection.request = request  # type: ignore[method-assign]
+    reporter = reporter_factory(
+        "http://host/hook?instance=living-room&token=from-the-url",
+        token="from-the-argument",
+        connection_factory=lambda *a, **k: connection,
+    )
+    reporter.report(_event(), DEVICE)
+    assert captured["headers"]["X-CrossWatch-Token"] == "from-the-argument"
+
+
+def test_a_reporter_cannot_be_built_without_an_abort_event():
+    """The shutdown guarantee must not be optional.
+
+    The type checker already enforces it; the runtime assertion is here so the property is
+    visible to a reader of the tests rather than only to pyright.
+    """
+    with pytest.raises(TypeError):
+        HttpReporter("http://host/hook")  # type: ignore[call-arg]
+
+
 def test_no_token_means_no_token_header(reporter_factory):
     connection = FakeConnection()
     captured: dict[str, Any] = {}
