@@ -579,3 +579,74 @@ def test_a_keep_alive_socket_is_dropped_once_abort_is_observed():
     abort.set()
     reporter.report(_event(), DEVICE)
     assert seen == [HTTP_TIMEOUT_SECONDS, SHUTDOWN_HTTP_TIMEOUT_SECONDS]
+
+
+class ClosingConnection:
+    """A server that closes an idle keep-alive connection, like uvicorn after ~5 seconds.
+
+    The first request on a connection works. Any later one raises on getresponse, which is
+    what http.client does when the peer closed the socket before the write.
+    """
+
+    def __init__(self) -> None:
+        self.requests = 0
+        self.used = False
+        self.closed = 0
+
+    def request(self, method, path, body=None, headers=None):
+        self.requests += 1
+
+    def getresponse(self):
+        if self.used:
+            raise Exception("Remote end closed connection without response")
+        self.used = True
+        return FakeResponse()
+
+    def close(self):
+        self.closed += 1
+
+
+def test_a_server_closing_an_idle_keepalive_is_retried_on_a_fresh_connection(lines, reporter_factory):
+    """Found against a real CrossWatch: every event after the first was being dropped.
+
+    uvicorn closes an idle keep-alive after about five seconds. Progress is sixty seconds
+    apart and the ping five minutes, so the connection is always past that. The write lands
+    on a closed socket, getresponse raises, and treating that as post-write indeterminate
+    loses an event the server never saw.
+    """
+    made: list[ClosingConnection] = []
+
+    def factory(*a, **k):
+        made.append(ClosingConnection())
+        return made[-1]
+
+    reporter = reporter_factory("http://host/hook?token=t", connection_factory=factory)
+    assert reporter.report(_event(), DEVICE) is True
+    assert reporter.report(_event(), DEVICE) is True, "the second event must not be dropped"
+    assert len(made) == 2, "the retry must use a fresh connection, not the closed one"
+    assert not any("reporter.indeterminate" in line for line in lines)
+
+
+def test_a_fresh_connection_failing_after_the_write_is_still_not_retried(lines, reporter_factory):
+    """The pessimism is right when the connection was ours: the server may have acted on it."""
+
+    class DeadOnFirstUse:
+        def request(self, method, path, body=None, headers=None):
+            pass
+
+        def getresponse(self):
+            raise Exception("Remote end closed connection without response")
+
+        def close(self):
+            pass
+
+    made = []
+
+    def factory(*a, **k):
+        made.append(DeadOnFirstUse())
+        return made[-1]
+
+    reporter = reporter_factory("http://host/hook?token=t", connection_factory=factory)
+    assert reporter.report(_event(), DEVICE) is False
+    assert len(made) == 1, "a fresh connection failing post-write must not be retried"
+    assert any("reporter.indeterminate" in line for line in lines)

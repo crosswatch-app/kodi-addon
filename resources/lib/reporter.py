@@ -170,14 +170,20 @@ class HttpReporter:
             # requiring it. While both are sent the query-string exposure is unchanged.
             self._headers["X-CrossWatch-Token"] = token
 
-    def _connect(self) -> Any:
+    def _connect(self) -> tuple[Any, bool]:
+        """The connection, and whether this call created it.
+
+        Whether the socket is fresh decides how a post-write failure is read, so the caller
+        has to know rather than guess.
+        """
+        fresh = self._connection is None
         if self._connection is None:
             # A connection opened after abort gets the short timeout. Kodi kills the
             # interpreter 5000ms after abort and a ten second socket cannot finish inside
             # that; the contract's timeout applies to normal operation.
             timeout = SHUTDOWN_HTTP_TIMEOUT_SECONDS if self._abort.is_set() else self._timeout
             self._connection = self._factory(self._scheme, self._host, self._port, timeout)
-        return self._connection
+        return self._connection, fresh
 
     def close(self) -> None:
         if self._connection is not None:
@@ -224,7 +230,7 @@ class HttpReporter:
     def _attempt(self, body: bytes, kind: str) -> bool | None:
         """True delivered, False refused for good, None worth retrying."""
         try:
-            connection = self._connect()
+            connection, fresh = self._connect()
             connection.request("POST", self._path, body=body, headers=dict(self._headers))
         except Exception as exc:
             # Nothing was necessarily written, so this is safe to retry. Drop the connection
@@ -238,10 +244,18 @@ class HttpReporter:
             status = int(getattr(response, "status", 0) or 0)
             raw = response.read()
         except Exception as exc:
-            # The request WAS written. The server may have processed it, and the receiver has
-            # no dedupe, so a retry risks a second scrobble. Losing the response is the lesser
-            # harm, and it is the trade the contract already makes for a late stop.
             self.close()
+            if not fresh:
+                # The socket was one we had been holding, and the server closed it while it
+                # sat idle. uvicorn does this after about five seconds, and every cadence
+                # this addon uses is longer than that, so the peer had gone before the write
+                # and cannot have processed anything. Retrying on a fresh connection is safe
+                # and is the difference between delivering an event and dropping it.
+                _log.warning("reporter.stale_connection", url=self._safe_url, event=kind, error=str(exc))
+                return None
+            # A connection we opened for this attempt. The request WAS written, the server
+            # may have processed it, and the receiver has no dedupe, so a retry risks a
+            # second scrobble. Losing the response is the lesser harm.
             _log.warning("reporter.indeterminate", url=self._safe_url, event=kind, error=str(exc))
             return False
 
