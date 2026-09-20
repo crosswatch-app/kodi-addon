@@ -1,8 +1,6 @@
 import itertools
 from typing import Any
 
-import pytest
-
 from resources.lib.advanced_settings import Thresholds
 from resources.lib.config import Settings
 from resources.lib.media import MediaResolver
@@ -485,16 +483,28 @@ def test_the_prompt_carries_an_autoclose(tmp_path):
 
 # --- cadence and resilience ------------------------------------------------
 
-@pytest.mark.skip("cadence contract changes in Task 7")
-def test_progress_is_emitted_once_per_cadence_bucket(tmp_path):
+def test_progress_is_emitted_once_per_interval(tmp_path):
     collector = Collector()
     kodi = _kodi([])
     kodi.position_ms, kodi.duration_ms = 300_000, 1_000_000
     controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
     controller.on_av_started()
-    controller.on_tick()
-    controller.on_tick()
-    assert collector.kinds() == ["start", "progress"]
+    for _ in range(200):
+        controller.on_tick()
+    emitted = collector.kinds().count("progress")
+    assert 1 <= emitted <= 4, f"roughly one per interval across 200 ticks, got {emitted}"
+
+
+def test_a_paused_session_emits_no_progress_however_long_it_is_paused(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    kodi.position_ms, kodi.duration_ms = 300_000, 1_000_000
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_paused()
+    for _ in range(200):
+        controller.on_tick()
+    assert collector.kinds() == ["start", "pause"]
 
 
 def test_nothing_is_emitted_when_no_media_is_playing(tmp_path):

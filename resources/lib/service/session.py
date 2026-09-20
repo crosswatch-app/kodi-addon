@@ -12,6 +12,7 @@ streams and at the instant onAVStarted fires. percent() therefore returns None r
 
 from __future__ import annotations
 
+from resources.lib.constants import SEEK_MIN_GAP_SECONDS
 from resources.lib.identity import Identity
 from resources.lib.models import MediaItem
 
@@ -24,7 +25,8 @@ class PlaybackSession:
         self.position_ms: int | None = None
         self.duration_ms: int | None = None
         self.completed = False
-        self._emitted_bucket = 0
+        self._last_emitted_at: float | None = None
+        self._seeked = False
 
     def sample(self, position_ms: int | None, duration_ms: int | None) -> None:
         if position_ms is not None:
@@ -44,18 +46,45 @@ class PlaybackSession:
         if self.duration_ms:
             self.position_ms = self.duration_ms
 
-    def reset_cadence(self) -> None:
-        """Forget the emitted bucket. The bucket is in units of the configured step, so a
-        step change mid-session would otherwise silence progress or skip a block of it."""
-        self._emitted_bucket = 0
+    def note_seek(self) -> None:
+        """Record that the viewer jumped. The next eligible tick emits; the callback does not.
 
-    def should_emit_progress(self, step: int) -> bool:
-        """True once per step-sized bucket, so cadence does not depend on the tick rate."""
-        percent = self.percent()
-        if step <= 0 or percent is None:
+        Emitting from the callback would put a network submit on the one thread that
+        delivers callbacks and observes abort.
+        """
+        self._seeked = True
+
+    def should_emit_progress(self, now: float, interval: float, paused: bool) -> bool:
+        """True once per interval, and after a seek once the floor has passed.
+
+        The caller supplies the clock and the paused flag, so this stays a pure decision.
+        """
+        if interval <= 0:
             return False
-        bucket = int(percent // step)
-        if bucket > self._emitted_bucket:
-            self._emitted_bucket = bucket
-            return True
-        return False
+        if paused:
+            # Nothing is advancing, so there is nothing to report. Crucially the timestamp
+            # is dragged forward too: a session paused for an hour must not look an hour
+            # overdue on the first tick after resume and fire immediately. A seek recorded
+            # while paused is kept, and lands when playback resumes.
+            self._last_emitted_at = now
+            return False
+        if self._last_emitted_at is None:
+            # The start event has just carried this position, so do not duplicate it. The
+            # seek flag is deliberately NOT cleared here: a seek between on_av_started and
+            # the first tick is real and must survive.
+            self._last_emitted_at = now
+            return False
+
+        elapsed = now - self._last_emitted_at
+        if self._seeked:
+            # Floored, not immediate. Kodi's seek debounce is user-configurable to zero and
+            # analog seek repeats twice a second, so an unfloored seek branch emits once per
+            # tick for as long as the button is held.
+            if elapsed < SEEK_MIN_GAP_SECONDS:
+                return False
+        elif elapsed < interval:
+            return False
+
+        self._last_emitted_at = now
+        self._seeked = False
+        return True

@@ -8,6 +8,10 @@ LOG_NAME = "crosswatch"
 # 60 seconds and after a seek, and CrossWatch does its own throttling on top.
 DEFAULT_PROGRESS_INTERVAL_SECONDS = 60
 
+# A held skip button delivers seeks faster than the tick, and Kodi's own debounce is
+# user-configurable down to zero, so seek-driven progress needs its own floor.
+SEEK_MIN_GAP_SECONDS = 5.0
+
 # The heartbeat that tells CrossWatch to stop polling this Kodi. It falls back to polling
 # after 15 minutes of silence, so 5 minutes leaves room for two lost pings.
 PING_INTERVAL_SECONDS = 300
