@@ -48,6 +48,9 @@ def main() -> None:
     kodi = KodiRuntime(player=player)
     settings = read_settings(kodi)
     logmod.configure(log_dir=paths.log_dir(kodi), debug=settings.debug_logging, sink=kodi.log)
+    # Registered before anything can log: an illegal token makes http.client raise with the
+    # value in the message, and that message is logged as a field on a retryable path.
+    logmod.set_secret(settings.webhook_token)
     log = logmod.get_logger("service")
     log.info("service.starting", addon=ADDON_ID, version=kodi.addon_version())
 

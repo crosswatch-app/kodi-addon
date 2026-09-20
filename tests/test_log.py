@@ -174,3 +174,52 @@ def test_log_timing_accepts_fields_named_after_its_own_parameters(tmp_path):
     assert "event=stop" in contents
     assert "log=n" in contents
     logmod.reset()
+
+
+def test_a_registered_secret_never_reaches_a_line(lines):
+    logmod.set_secret("s3cret-token")
+    logmod.get_logger("reporter").warning("reporter.failed", error="Invalid header value b's3cret-token'")
+    assert lines
+    assert not any("s3cret-token" in line for line in lines)
+    assert "<redacted>" in lines[0]
+
+
+def test_a_secret_is_scrubbed_even_where_redact_cannot_match(lines):
+    """redact() matches URL shapes; a bare token is not one, which is how the leak happened."""
+    logmod.set_secret("bare-token-value")
+    assert logmod.redact("bare-token-value") == "bare-token-value"
+    logmod.get_logger("x").info("e", field="bare-token-value")
+    assert not any("bare-token-value" in line for line in lines)
+
+
+def test_reset_forgets_registered_secrets():
+    logmod.reset()
+    logmod.set_secret("gone-after-reset")
+    logmod.reset()
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=True, sink=lambda msg, level: captured.append(msg))
+    logmod.get_logger("x").info("e", field="gone-after-reset")
+    assert any("gone-after-reset" in line for line in captured)
+    logmod.reset()
+
+
+def test_an_empty_secret_is_ignored(lines):
+    logmod.set_secret("")
+    logmod.set_secret("   ")
+    logmod.get_logger("x").info("e", field="anything")
+    assert lines == ["[x] e | field=anything"]
+
+
+def test_a_secret_is_scrubbed_in_its_escaped_form_too(lines):
+    """The leak that motivated this arrives as a repr inside an exception message.
+
+    http.client rejects an illegal header value with the value's repr in the message, so a
+    token containing a newline appears as a backslash and an n, not the byte. Matching only
+    the literal misses exactly the malformed tokens that cause the leak.
+    """
+    logmod.set_secret("s3cret\nvalue")
+    logmod.get_logger("reporter").warning(
+        "reporter.failed", error="Invalid header value b's3cret\\nvalue'"
+    )
+    assert lines
+    assert not any("s3cret" in line for line in lines)
