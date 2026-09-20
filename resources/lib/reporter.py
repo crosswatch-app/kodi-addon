@@ -22,7 +22,13 @@ from collections.abc import Callable
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from resources.lib.constants import DEFAULT_HTTP_TIMEOUT_SECONDS, DEFAULT_QUEUE_SIZE, SHUTDOWN_DRAIN_SECONDS
+from resources.lib.constants import (
+    DEFAULT_QUEUE_SIZE,
+    HTTP_TIMEOUT_SECONDS,
+    RETRY_BACKOFF_SECONDS,
+    RETRY_BUDGET_SECONDS,
+    SHUTDOWN_DRAIN_SECONDS,
+)
 from resources.lib.log import get_logger, is_debug, redact
 from resources.lib.models import Device, PlaybackEvent
 from resources.lib.payload import build_payload
@@ -98,8 +104,13 @@ class HttpReporter:
     def __init__(
         self,
         url: str,
-        timeout: float = DEFAULT_HTTP_TIMEOUT_SECONDS,
+        *,
+        token: str,
+        abort: threading.Event,
+        timeout: float = HTTP_TIMEOUT_SECONDS,
         connection_factory: Callable[..., Any] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleeper: Callable[[float], bool] | None = None,
     ) -> None:
         self._url = validate_webhook_url(url)
         parts = urlsplit(self._url)
@@ -116,6 +127,16 @@ class HttpReporter:
         self._factory = connection_factory or _default_connection
         self._connection: Any = None
         self._safe_url = redact(self._url)
+        self._abort = abort
+        self._clock = clock
+        # Returns True when the wait was cut short by abort, matching Event.wait.
+        self._sleep = sleeper if sleeper is not None else abort.wait
+        self._headers = {"Content-Type": "application/json"}
+        if token:
+            # The contract accepts the token in the query string, in this header, or both.
+            # Sent here as well so the query parameter can be dropped once the server stops
+            # requiring it. While both are sent the query-string exposure is unchanged.
+            self._headers["X-CrossWatch-Token"] = token
 
     def _connect(self) -> Any:
         if self._connection is None:
@@ -131,25 +152,73 @@ class HttpReporter:
             self._connection = None
 
     def report(self, event: PlaybackEvent, device: Device) -> bool:
+        """Deliver one event, retrying within the contract's budget.
+
+        Retry lives here rather than in the queue because ordering matters: the receiver has
+        no deduplication and drives a now-playing card from event order, so a retried stop
+        must never land after the next playback's start. Blocking the worker is harmless;
+        nothing waits on it and the service thread is a different thread.
+        """
         body = json.dumps(build_payload(event, device)).encode("utf-8")
+        kind = event.kind
+        deadline = self._clock() + RETRY_BUDGET_SECONDS
+        attempts = 0
+        while True:
+            verdict = self._attempt(body, kind)
+            attempts += 1
+            if verdict is not None:
+                return verdict
+
+            remaining = deadline - self._clock()
+            # Refuse to start an attempt the budget cannot pay for. A socket timeout applies
+            # per operation, so one attempt against a black-holing peer costs up to three of
+            # them; without this check "two minutes" silently becomes two and a half.
+            if remaining <= self._timeout:
+                _log.warning("reporter.gave_up", event=kind, reason="budget_spent", attempts=attempts)
+                return False
+            backoff = RETRY_BACKOFF_SECONDS[min(attempts - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
+            if self._sleep(min(backoff, remaining)):
+                _log.warning("reporter.gave_up", event=kind, reason="aborted", attempts=attempts)
+                return False
+
+    def _attempt(self, body: bytes, kind: str) -> bool | None:
+        """True delivered, False refused for good, None worth retrying."""
         try:
             connection = self._connect()
-            connection.request("POST", self._path, body=body, headers={"Content-Type": "application/json"})
+            connection.request("POST", self._path, body=body, headers=dict(self._headers))
+        except Exception as exc:
+            # Nothing was necessarily written, so this is safe to retry. Drop the connection
+            # so the next attempt reconnects rather than reusing a broken socket.
+            self.close()
+            _log.warning("reporter.failed", url=self._safe_url, event=kind, error=str(exc))
+            return None
+
+        try:
             response = connection.getresponse()
             status = int(getattr(response, "status", 0) or 0)
             raw = response.read()
         except Exception as exc:
-            # Drop the connection so the next event reconnects rather than reusing a broken socket.
+            # The request WAS written. The server may have processed it, and the receiver has
+            # no dedupe, so a retry risks a second scrobble. Losing the response is the lesser
+            # harm, and it is the trade the contract already makes for a late stop.
             self.close()
-            _log.warning("reporter.failed", url=self._safe_url, event=event.kind, error=str(exc))
+            _log.warning("reporter.indeterminate", url=self._safe_url, event=kind, error=str(exc))
             return False
 
+        if 500 <= status < 600:
+            # Close rather than reuse: a 5xx often carries Connection: close, and reusing the
+            # socket spends a whole backoff interval discovering that.
+            self.close()
+            _log.warning("reporter.failed", url=self._safe_url, event=kind, status=status)
+            return None
         if status < 200 or status >= 300:
-            _log.warning("reporter.failed", url=self._safe_url, event=event.kind, status=status)
+            # A 4xx is a decision, not a hiccup. 401 is a bad token; retrying for two minutes
+            # helps nobody and delays every event behind it.
+            _log.warning("reporter.rejected", url=self._safe_url, event=kind, status=status)
             return False
-        return self._accepted(event, raw)
+        return self._accepted(kind, raw)
 
-    def _accepted(self, event: PlaybackEvent, raw: bytes) -> bool:
+    def _accepted(self, kind: str, raw: bytes) -> bool:
         try:
             parsed = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
@@ -160,11 +229,11 @@ class HttpReporter:
             _log.warning(
                 "reporter.rejected",
                 url=self._safe_url,
-                event=event.kind,
+                event=kind,
                 reason=str(parsed.get("error") or "activity_not_recorded"),
             )
             return False
-        _log.info("reporter.posted", url=self._safe_url, event=event.kind)
+        _log.info("reporter.posted", url=self._safe_url, event=kind)
         return True
 
 
@@ -175,10 +244,17 @@ class ReporterQueue:
     callbacks and observes abort, which is worse than losing a progress event.
     """
 
-    def __init__(self, sink: EventSink, device: Device, maxsize: int = DEFAULT_QUEUE_SIZE) -> None:
+    def __init__(
+        self,
+        sink: EventSink,
+        device: Device,
+        abort: threading.Event,
+        maxsize: int = DEFAULT_QUEUE_SIZE,
+    ) -> None:
         self._sink = sink
         self._device = device
         self._queue: queue.Queue[PlaybackEvent] = queue.Queue(maxsize=maxsize)
+        self._abort = abort
         self._stopping = threading.Event()
         self._stopped = False
         self._thread = threading.Thread(target=self._run, name="crosswatch-reporter", daemon=True)
@@ -219,6 +295,9 @@ class ReporterQueue:
         if self._stopped:
             return 0
         self._stopped = True
+        # Set first: a reporter mid-backoff gives up rather than spending the budget on
+        # work the contract says to abandon.
+        self._abort.set()
         self._stopping.set()
         limit = time.monotonic() + deadline
         while not self._queue.empty() and time.monotonic() < limit:

@@ -55,6 +55,7 @@ def _null_sink(_message: str, _level: int) -> None:
 _lock = threading.Lock()
 _log_dir: str | None = None
 _debug = False
+_secrets: tuple[str, ...] = ()
 _sink: Callable[[str, int], None] = _null_sink
 _handle: Any = None
 _written = 0
@@ -62,7 +63,7 @@ _written = 0
 
 def reset() -> None:
     """Return the module to its unconfigured state. Used by tests and by re-configuration."""
-    global _log_dir, _debug, _sink, _handle, _written
+    global _log_dir, _debug, _sink, _handle, _written, _secrets
     with _lock:
         if _handle is not None:
             try:
@@ -71,6 +72,7 @@ def reset() -> None:
                 pass
         _log_dir, _debug, _handle, _written = None, False, None, 0
         _sink = _null_sink
+        _secrets = ()
 
 
 def configure(log_dir: str | None, debug: bool, sink: Callable[[str, int], None]) -> None:
@@ -87,6 +89,28 @@ def configure(log_dir: str | None, debug: bool, sink: Callable[[str, int], None]
                 # Logging is best effort. A read-only profile must not stop the addon
                 # starting, and the Kodi sink above still works.
                 _log_dir = None
+
+
+def set_secret(value: str) -> None:
+    """Register a literal that must never appear in a log line.
+
+    redact() matches things that look like URLs, which is the right shape for a share path or
+    a webhook address but cannot recognise a bare credential. A token reaches a log line by
+    routes redact() will never see: http.client puts an illegal header value verbatim into
+    its exception message, and that message is logged as a field. Matching the literal closes
+    the class rather than the instance.
+    """
+    global _secrets
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return
+    # Both the literal and its escaped form. A token containing a newline reaches the log
+    # through an exception message that embeds its repr, where that newline is a backslash
+    # and an n rather than the byte itself, so matching only the literal misses exactly the
+    # malformed tokens that cause the leak in the first place.
+    forms = {cleaned, repr(cleaned)[1:-1]}
+    with _lock:
+        _secrets = (*_secrets, *(f for f in sorted(forms, key=len, reverse=True) if f not in _secrets))
 
 
 def set_debug(debug: bool) -> None:
@@ -112,7 +136,10 @@ _ESCAPES = {"\\": r"\\", "\n": r"\n", "\r": r"\r", "\t": r"\t"}
 
 
 def _clean(value: Any) -> str:
-    text = redact(str(value))
+    text = str(value)
+    for secret in _secrets:
+        text = text.replace(secret, "<redacted>")
+    text = redact(text)
     out = "".join(_ESCAPES.get(ch, ch) for ch in text)
     return "".join(ch for ch in out if ch >= " " or ch == " ")
 

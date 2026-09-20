@@ -1,10 +1,13 @@
+import itertools
 import json
 import threading
+import time
 from typing import Any
 
 import pytest
 
 from resources.lib import log as logmod
+from resources.lib.constants import RETRY_BUDGET_SECONDS
 from resources.lib.models import Device, EventKind, MediaItem, PlaybackEvent
 from resources.lib.reporter import (
     EventSink,
@@ -51,6 +54,32 @@ def lines():
     logmod.configure(log_dir=None, debug=True, sink=lambda msg, level: captured.append(msg))
     yield captured
     logmod.reset()
+
+
+@pytest.fixture
+def reporter_factory():
+    """Build reporters on a virtual clock that the fake sleeper advances.
+
+    Both halves matter. A real sleeper makes a retrying test block for the whole budget. But
+    a no-op sleeper on a REAL clock is worse than it looks: the budget is then consumed only
+    by wall time, so a permanently failing peer spins at full speed for two minutes instead
+    of failing fast. Sleeping has to move the clock, exactly as it does in production.
+    """
+    abort = threading.Event()
+    now = [0.0]
+
+    def build(url: str, **kwargs) -> HttpReporter:
+        def sleeper(seconds: float) -> bool:
+            now[0] += seconds
+            return False
+
+        kwargs.setdefault("token", "tok")
+        kwargs.setdefault("abort", abort)
+        kwargs.setdefault("clock", lambda: now[0])
+        kwargs.setdefault("sleeper", sleeper)
+        return HttpReporter(url, **kwargs)
+
+    return build
 
 
 class FakeResponse:
@@ -105,15 +134,15 @@ def test_validate_error_never_contains_the_token():
         raise AssertionError("expected InvalidWebhookUrl")
 
 
-def test_log_reporter_reports_success_and_keeps_names_out_of_info(lines):
+def test_log_reporter_reports_success_and_keeps_names_out_of_info(lines, reporter_factory):
     assert LogReporter().report(_event(), DEVICE) is True
     info = [line for line in lines if "reporter.event" in line]
     assert info and "anna" not in info[0]
 
 
-def test_http_reporter_posts_the_built_payload():
+def test_http_reporter_posts_the_built_payload(reporter_factory):
     connection = FakeConnection()
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
     assert reporter.report(_event(), DEVICE) is True
     method, path, body = connection.requests[0]
     assert method == "POST"
@@ -121,7 +150,7 @@ def test_http_reporter_posts_the_built_payload():
     assert json.loads(body)["event"] == "stop"
 
 
-def test_http_reporter_reuses_one_connection():
+def test_http_reporter_reuses_one_connection(reporter_factory):
     connection = FakeConnection()
     made: list[int] = []
 
@@ -129,45 +158,52 @@ def test_http_reporter_reuses_one_connection():
         made.append(1)
         return connection
 
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=factory)
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=factory)
     reporter.report(_event(), DEVICE)
     reporter.report(_event(), DEVICE)
     assert len(made) == 1
 
 
-def test_an_ignored_response_is_not_delivery(lines):
+def test_an_ignored_response_is_not_delivery(lines, reporter_factory):
     connection = FakeConnection(FakeResponse(200, b'{"ok": true, "ignored": true, "error": "invalid_profile"}'))
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
     assert reporter.report(_event(), DEVICE) is False
     assert any("reporter.rejected" in line and "invalid_profile" in line for line in lines)
 
 
-def test_activity_not_recorded_is_not_delivery(lines):
+def test_activity_not_recorded_is_not_delivery(lines, reporter_factory):
     connection = FakeConnection(FakeResponse(200, b'{"activity_recorded": false, "targets": []}'))
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
     assert reporter.report(_event(), DEVICE) is False
     assert any("reporter.rejected" in line for line in lines)
 
 
-def test_a_5xx_is_not_delivery(lines):
+def test_a_persistent_5xx_is_retried_then_given_up_on(lines, reporter_factory):
     connection = FakeConnection(FakeResponse(502, b"bad gateway"))
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
     assert reporter.report(_event(), DEVICE) is False
 
 
-def test_a_transport_failure_is_reported_and_never_logs_the_token(lines):
+def test_a_persistent_transport_failure_never_logs_the_token(lines, reporter_factory):
     connection = FakeConnection(raises=OSError("connection refused to http://host/webhook/kodi?profile=tok"))
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
     assert reporter.report(_event(), DEVICE) is False
     assert any("reporter.failed" in line for line in lines)
     assert not any("tok" in line.split("<redacted>")[-1] and "profile=tok" in line for line in lines)
 
 
-def test_a_failed_connection_is_dropped_so_the_next_call_reconnects():
+def test_a_failed_connection_is_dropped_so_the_retry_reconnects(reporter_factory):
+    """Retry makes this one call, not two: the broken socket is dropped and the retry wins."""
+    made: list[int] = []
     connections = [FakeConnection(raises=OSError("broken")), FakeConnection()]
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connections.pop(0))
-    assert reporter.report(_event(), DEVICE) is False
+
+    def factory(*args, **kwargs):
+        made.append(1)
+        return connections.pop(0)
+
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=factory)
     assert reporter.report(_event(), DEVICE) is True
+    assert len(made) == 2, "the failed connection must be dropped, not reused"
 
 
 def test_queue_delivers_submitted_events():
@@ -181,14 +217,14 @@ def test_queue_delivers_submitted_events():
             return True
 
     sink: EventSink = Recorder()
-    queue = ReporterQueue(sink, DEVICE)
+    queue = ReporterQueue(sink, DEVICE, abort=threading.Event())
     assert queue.submit(_event()) is True
     assert done.wait(2.0)
     queue.stop()
     assert [e.event_id for e in delivered] == ["e-1"]
 
 
-def test_queue_drops_rather_than_blocking_when_full(lines):
+def test_queue_drops_rather_than_blocking_when_full(lines, reporter_factory):
     release = threading.Event()
 
     class Slow:
@@ -196,7 +232,7 @@ def test_queue_drops_rather_than_blocking_when_full(lines):
             release.wait(1.0)
             return True
 
-    queue = ReporterQueue(Slow(), DEVICE, maxsize=1)
+    queue = ReporterQueue(Slow(), DEVICE, abort=threading.Event(), maxsize=1)
     results = [queue.submit(_event()) for _ in range(6)]
     release.set()
     queue.stop()
@@ -220,7 +256,7 @@ def test_a_sink_that_raises_does_not_kill_the_worker():
             done.set()
             return True
 
-    queue = ReporterQueue(Flaky(), DEVICE)
+    queue = ReporterQueue(Flaky(), DEVICE, abort=threading.Event())
     queue.submit(_event())
     queue.submit(_event())
     assert done.wait(2.0)
@@ -228,8 +264,8 @@ def test_a_sink_that_raises_does_not_kill_the_worker():
     assert delivered == ["e-1"]
 
 
-def test_submit_after_stop_reports_failure_rather_than_pretending(lines):
-    queue = ReporterQueue(LogReporter(), DEVICE)
+def test_submit_after_stop_reports_failure_rather_than_pretending(lines, reporter_factory):
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event())
     queue.stop()
     assert queue.submit(_event()) is False
     assert any("reporter.dropped" in line and "stopping" in line for line in lines)
@@ -243,7 +279,7 @@ def test_stop_drains_what_is_queued_before_returning():
             delivered.append(event.event_id)
             return True
 
-    queue = ReporterQueue(Recorder(), DEVICE, maxsize=10)
+    queue = ReporterQueue(Recorder(), DEVICE, abort=threading.Event(), maxsize=10)
     for _ in range(5):
         queue.submit(_event())
     assert queue.stop(deadline=2.0) == 0
@@ -251,12 +287,12 @@ def test_stop_drains_what_is_queued_before_returning():
 
 
 def test_stop_is_idempotent():
-    queue = ReporterQueue(LogReporter(), DEVICE)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event())
     assert queue.stop() == 0
     assert queue.stop() == 0
 
 
-def test_stop_reports_what_it_could_not_deliver(lines):
+def test_stop_reports_what_it_could_not_deliver(lines, reporter_factory):
     release = threading.Event()
 
     class Slow:
@@ -264,7 +300,7 @@ def test_stop_reports_what_it_could_not_deliver(lines):
             release.wait(5.0)
             return True
 
-    queue = ReporterQueue(Slow(), DEVICE, maxsize=10)
+    queue = ReporterQueue(Slow(), DEVICE, abort=threading.Event(), maxsize=10)
     for _ in range(5):
         queue.submit(_event())
     undelivered = queue.stop(deadline=0.2)
@@ -273,9 +309,144 @@ def test_stop_reports_what_it_could_not_deliver(lines):
     assert any("reporter.undelivered" in line for line in lines)
 
 
-def test_stop_closes_a_sink_that_holds_a_connection():
+def test_stop_closes_a_sink_that_holds_a_connection(reporter_factory):
     connection = FakeConnection()
-    reporter = HttpReporter("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
+    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
     reporter.report(_event(), DEVICE)
-    ReporterQueue(reporter, DEVICE).stop()
+    ReporterQueue(reporter, DEVICE, abort=threading.Event()).stop()
     assert connection.closed is True
+
+
+def test_a_4xx_is_never_retried(lines, reporter_factory):
+    made: list[int] = []
+
+    def factory(*args, **kwargs):
+        made.append(1)
+        return FakeConnection(FakeResponse(401, b"nope"))
+
+    assert reporter_factory("http://host/hook?token=tok", connection_factory=factory).report(_event(), DEVICE) is False
+    assert len(made) == 1
+    assert any("reporter.rejected" in line and "401" in line for line in lines)
+
+
+def test_a_5xx_is_retried_until_it_succeeds(reporter_factory):
+    attempts = [FakeConnection(FakeResponse(503, b"busy")), FakeConnection()]
+    reporter = reporter_factory("http://host/hook?token=tok", connection_factory=lambda *a, **k: attempts.pop(0))
+    assert reporter.report(_event(), DEVICE) is True
+    assert attempts == []
+
+
+def test_a_failure_after_the_request_was_written_is_not_retried(lines, reporter_factory):
+    """The server may have processed it, and the receiver has no dedupe."""
+    made: list[int] = []
+
+    class LostResponse(FakeConnection):
+        def getresponse(self):
+            raise TimeoutError("read timed out")
+
+    def factory(*args, **kwargs):
+        made.append(1)
+        return LostResponse()
+
+    assert reporter_factory("http://host/hook?token=tok", connection_factory=factory).report(_event(), DEVICE) is False
+    assert len(made) == 1
+    assert any("reporter.indeterminate" in line for line in lines)
+
+
+def test_retry_gives_up_when_the_budget_cannot_pay_for_another_attempt(lines, reporter_factory):
+    """The clock advances by the timeout per attempt, so the budget genuinely runs out."""
+    attempts: list[int] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(1)
+        return FakeConnection(raises=OSError("refused"))
+
+    reporter = reporter_factory(
+        "http://host/hook?token=tok",
+        connection_factory=factory,
+        clock=itertools.count(0.0, 10.0).__next__,
+    )
+    assert reporter.report(_event(), DEVICE) is False
+    assert 1 < len(attempts) < 20, f"bounded by the budget, got {len(attempts)} attempts"
+    assert any("reporter.gave_up" in line and "budget_spent" in line for line in lines)
+
+
+def test_the_backoff_never_sleeps_past_the_remaining_budget(reporter_factory):
+    slept: list[float] = []
+
+    def factory(*args, **kwargs):
+        return FakeConnection(raises=OSError("refused"))
+
+    reporter = reporter_factory(
+        "http://host/hook?token=tok",
+        connection_factory=factory,
+        clock=itertools.count(0.0, 10.0).__next__,
+        sleeper=lambda seconds: slept.append(seconds) or False,
+    )
+    reporter.report(_event(), DEVICE)
+    assert slept, "at least one backoff"
+    assert all(delay <= RETRY_BUDGET_SECONDS for delay in slept)
+
+
+def test_an_abort_during_the_backoff_stops_the_retry_immediately(lines, reporter_factory):
+    def factory(*args, **kwargs):
+        return FakeConnection(raises=OSError("refused"))
+
+    reporter = reporter_factory(
+        "http://host/hook?token=tok", connection_factory=factory, sleeper=lambda seconds: True
+    )
+    assert reporter.report(_event(), DEVICE) is False
+    assert any("reporter.gave_up" in line and "aborted" in line for line in lines)
+
+
+def test_the_real_abort_event_cuts_a_retry_short():
+    """No injected sleeper: this is the only test that exercises the production wiring.
+
+    self._sleep defaults to abort.wait, so a pre-set event makes every backoff return
+    immediately. Deleting that wiring, or ReporterQueue.stop()'s set(), must fail here.
+    """
+    abort = threading.Event()
+    abort.set()
+    attempts: list[int] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(1)
+        return FakeConnection(raises=OSError("refused"))
+
+    reporter = HttpReporter("http://host/hook?token=tok", token="tok", abort=abort, connection_factory=factory)
+    started = time.monotonic()
+    assert reporter.report(_event(), DEVICE) is False
+    assert time.monotonic() - started < 1.0, "a set abort must not sleep"
+    assert len(attempts) == 1
+
+
+def test_stop_sets_the_abort_event_the_reporter_waits_on():
+    abort = threading.Event()
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=abort)
+    assert abort.is_set() is False
+    queue.stop()
+    assert abort.is_set() is True
+
+
+def test_the_token_is_sent_as_a_header(reporter_factory):
+    connection = FakeConnection()
+    captured: dict[str, Any] = {}
+
+    def request(method, path, body=None, headers=None):
+        captured["headers"] = headers or {}
+
+    connection.request = request  # type: ignore[method-assign]
+    reporter_factory("http://host/hook?token=tok", connection_factory=lambda *a, **k: connection).report(_event(), DEVICE)
+    assert captured["headers"]["X-CrossWatch-Token"] == "tok"
+
+
+def test_no_token_means_no_token_header(reporter_factory):
+    connection = FakeConnection()
+    captured: dict[str, Any] = {}
+
+    def request(method, path, body=None, headers=None):
+        captured["headers"] = headers or {}
+
+    connection.request = request  # type: ignore[method-assign]
+    reporter_factory("http://host/hook", token="", connection_factory=lambda *a, **k: connection).report(_event(), DEVICE)
+    assert "X-CrossWatch-Token" not in captured["headers"]
