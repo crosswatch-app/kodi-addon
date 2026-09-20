@@ -510,3 +510,36 @@ def test_a_dropped_ping_logs_its_kind_rather_than_crashing(lines):
 def test_event_kind_names_both_shapes():
     assert event_kind(_event("stop")) == "stop"
     assert event_kind(PingEvent(event_id="p", sent_at="t", viewers=())) == "ping"
+
+
+def test_an_old_server_is_warned_about_once_not_every_event(lines, reporter_factory):
+    body = b'{"ok": true, "crosswatch_version": "0.12.0"}'
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory(
+        "http://host/webhook/kodiwatcher?token=tok", connection_factory=lambda *a, **k: connection
+    )
+    reporter.report(_event(), DEVICE)
+    reporter.report(_event(), DEVICE)
+    warnings = [line for line in lines if "reporter.server_too_old" in line]
+    assert len(warnings) == 1
+    assert "0.12.0" in warnings[0]
+
+
+def test_a_current_server_produces_no_warning(lines, reporter_factory):
+    body = b'{"ok": true, "crosswatch_version": "0.13.0"}'
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory(
+        "http://host/webhook/kodiwatcher?token=tok", connection_factory=lambda *a, **k: connection
+    )
+    reporter.report(_event(), DEVICE)
+    assert not any("reporter.server_too_old" in line for line in lines)
+
+
+def test_an_unparseable_server_version_is_not_warned_about(lines, reporter_factory):
+    body = b'{"ok": true, "crosswatch_version": "nightly"}'
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory(
+        "http://host/webhook/kodiwatcher?token=tok", connection_factory=lambda *a, **k: connection
+    )
+    reporter.report(_event(), DEVICE)
+    assert not any("reporter.server_too_old" in line for line in lines)

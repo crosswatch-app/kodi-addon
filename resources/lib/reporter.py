@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 from resources.lib.constants import (
     DEFAULT_QUEUE_SIZE,
     HTTP_TIMEOUT_SECONDS,
+    MIN_CROSSWATCH_VERSION,
     RETRY_BACKOFF_SECONDS,
     RETRY_BUDGET_SECONDS,
     SHUTDOWN_DRAIN_SECONDS,
@@ -47,6 +48,17 @@ def event_kind(event: Event) -> str:
     one by accident; this is the single place that maps either shape to a name.
     """
     return "ping" if isinstance(event, PingEvent) else event.kind
+
+
+def _version_tuple(text: str) -> tuple[int, ...] | None:
+    """None when it is not a plain dotted number. A nightly or a git describe is not old."""
+    parts = text.strip().split(".")
+    if not parts or not all(part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+_MIN_VERSION = _version_tuple(MIN_CROSSWATCH_VERSION)
 
 
 class InvalidWebhookUrl(ValueError):
@@ -149,6 +161,7 @@ class HttpReporter:
         self._clock = clock
         # Returns True when the wait was cut short by abort, matching Event.wait.
         self._sleep = sleeper if sleeper is not None else abort.wait
+        self._warned_old_server = False
         self._headers = {"Content-Type": "application/json"}
         if token:
             # The contract accepts the token in the query string, in this header, or both.
@@ -251,8 +264,19 @@ class HttpReporter:
                 reason=str(parsed.get("error") or "activity_not_recorded"),
             )
             return False
+        self._check_server_version(parsed.get("crosswatch_version"))
         _log.info("reporter.posted", url=self._safe_url, event=kind)
         return True
+
+    def _check_server_version(self, reported: Any) -> None:
+        """Warn once. A server older than this coerces a missing percent to zero, which
+        overwrites the viewer's real resume point in the downstream sink."""
+        if self._warned_old_server or _MIN_VERSION is None or not isinstance(reported, str):
+            return
+        found = _version_tuple(reported)
+        if found is not None and found < _MIN_VERSION:
+            self._warned_old_server = True
+            _log.warning("reporter.server_too_old", found=reported, expected=MIN_CROSSWATCH_VERSION)
 
 
 class ReporterQueue:
