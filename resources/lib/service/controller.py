@@ -67,6 +67,9 @@ class Controller:
         self._index_dirty = True
         self._failures = 0
         self._failed_at: float | None = None
+        # Read by the ping, which is the only place the user can see it: the addon has no
+        # status UI of its own.
+        self.pkc_skipped = 0
         self._shutting_down = False
 
     # -- lifecycle ---------------------------------------------------------
@@ -104,6 +107,12 @@ class Controller:
             _log.warning("service.resolve_failed", error=str(exc))
             return
         if media is None:
+            return
+        if media.is_pkc and self._settings.skip_pkc:
+            # Skipped before a session exists. A session that never emits would still hold
+            # the index build off the idle tick for the whole playback.
+            self.pkc_skipped += 1
+            _log.info("service.playback_skipped", reason="plexkodiconnect", count=self.pkc_skipped)
             return
 
         viewers = self._viewers()

@@ -28,6 +28,22 @@ EPISODE = {
 }
 
 
+PKC_ITEM = {
+    "item": {
+        "id": -1,
+        "type": "episode",
+        "title": "Example episode",
+        "showtitle": "Just an example",
+        "season": 1,
+        "episode": 2,
+        "year": 2026,
+        "tvshowid": 42,
+        "file": "plugin://plugin.video.plexkodiconnect/tvshows/3595/",
+        "uniqueid": {"tvdb": "3110601"},
+    }
+}
+
+
 class Collector:
     def __init__(self) -> None:
         self.events: list[PlaybackEvent] = []
@@ -586,3 +602,43 @@ def test_a_dropped_start_still_leaves_a_session_that_reconciles(tmp_path):
     controller.on_stopped(completed=True)
     controller.on_tick()
     assert collector.events == []
+
+
+def _pkc(tmp_path, collector, settings=None):
+    kodi = _kodi([])
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: PKC_ITEM
+    return _controller(tmp_path, kodi, [Viewer(name="anna")], collector, settings=settings)
+
+
+def test_pkc_playback_is_skipped_by_default(tmp_path):
+    collector = Collector()
+    controller = _pkc(tmp_path, collector)
+    controller.on_av_started()
+    assert collector.events == []
+    assert controller.pkc_skipped == 1
+
+
+def test_a_skipped_pkc_playback_creates_no_session(tmp_path):
+    collector = Collector()
+    controller = _pkc(tmp_path, collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=True)
+    controller.on_tick()
+    assert collector.events == []
+
+
+def test_pkc_playback_is_reported_when_skipping_is_switched_off(tmp_path):
+    collector = Collector()
+    settings = Settings(progress_interval_seconds=60, movie_prompts=True, skip_pkc=False, index_ttl_seconds=3600)
+    controller = _pkc(tmp_path, collector, settings=settings)
+    controller.on_av_started()
+    assert collector.kinds() == ["start"]
+    assert controller.pkc_skipped == 0
+
+
+def test_the_skip_count_accumulates_across_playbacks(tmp_path):
+    collector = Collector()
+    controller = _pkc(tmp_path, collector)
+    controller.on_av_started()
+    controller.on_av_started()
+    assert controller.pkc_skipped == 2
