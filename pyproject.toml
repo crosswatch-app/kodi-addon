@@ -1,0 +1,29 @@
+# Dev tooling configuration only. Excluded from the packaged Kodi addon zip.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=resources/lib --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["resources/lib"]
+omit = ["*/__pycache__/*", "tests/*"]
+
+[tool.coverage.report]
+# The floor is the level measured once every module existed, including the adapters, which
+# are only testable after they are written. Taking it earlier would have locked in a false
+# baseline. It ratchets up and is never lowered to make a change pass: raise it in the same
+# change that earns it.
+fail_under = 92
+
+[tool.vulture]
+# The whitelist declares names that an external caller owns, so vulture can keep its
+# confidence threshold rather than having it lowered to accommodate them.
+paths = ["resources/lib", "tests/vulture_whitelist.py"]
+min_confidence = 80

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings version="1">
+    <section id="service.crosswatch">
+        <category id="connection" label="30000">
+            <group id="1">
+                <setting id="webhook_base_url" type="string" label="30001">
+                    <level>0</level>
+                    <default></default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="webhook_token" type="string" label="30002">
+                    <level>0</level>
+                    <default></default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string">
+                        <hidden>true</hidden>
+                    </control>
+                </setting>
+                <setting id="device_id" type="string" label="30003">
+                    <level>2</level>
+                    <default></default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string"/>
+                </setting>
+            </group>
+        </category>
+        <category id="viewers" label="30010">
+            <group id="1">
+                <setting id="configure_viewers" type="action" label="30011">
+                    <level>0</level>
+                    <data>RunScript(service.crosswatch)</data>
+                    <control type="button" format="action">
+                        <close>false</close>
+                    </control>
+                </setting>
+                <setting id="movie_prompts" type="boolean" label="30012">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="skip_pkc" type="boolean" label="30013">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+            </group>
+        </category>
+        <category id="advanced" label="30020">
+            <group id="1">
+                <setting id="progress_interval_seconds" type="integer" label="30021">
+                    <level>1</level>
+                    <default>60</default>
+                    <constraints>
+                        <minimum>30</minimum>
+                        <step>30</step>
+                        <maximum>600</maximum>
+                    </constraints>
+                    <control type="slider" format="integer"/>
+                </setting>
+                <setting id="index_ttl_minutes" type="integer" label="30022">
+                    <level>2</level>
+                    <default>60</default>
+                    <constraints>
+                        <minimum>5</minimum>
+                        <step>5</step>
+                        <maximum>720</maximum>
+                    </constraints>
+                    <control type="slider" format="integer"/>
+                </setting>
+                <setting id="debug_logging" type="boolean" label="30023">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+            </group>
+        </category>
+    </section>
+</settings>

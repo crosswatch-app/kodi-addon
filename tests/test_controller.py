@@ -1,0 +1,893 @@
+import itertools
+from typing import Any
+
+import pytest
+
+from resources.lib import log as logmod
+from resources.lib.advanced_settings import Thresholds
+from resources.lib.config import Settings
+from resources.lib.constants import FAILURE_BACKOFF_SECONDS, INDEX_MAX_AGE_MULTIPLIER
+from resources.lib.media import MediaResolver
+from resources.lib.models import Device, PingEvent, PlaybackEvent, Viewer
+from resources.lib.service.controller import Controller
+from resources.lib.storage import JsonViewerStore, PromptMemory
+from tests.fakes import FakeKodi
+
+DEVICE = Device(id="htpc-1", name="Living room")
+PAST_START = 200_000
+
+EPISODE = {
+    "item": {
+        "id": 5,
+        "type": "episode",
+        "title": "Example episode",
+        "showtitle": "Just an example",
+        "season": 1,
+        "episode": 1,
+        "year": 2026,
+        "tvshowid": 42,
+        "file": "nfs://nas/tv/S01E01.mkv",
+        "uniqueid": {},
+    }
+}
+
+
+PKC_ITEM = {
+    "item": {
+        "id": -1,
+        "type": "episode",
+        "title": "Example episode",
+        "showtitle": "Just an example",
+        "season": 1,
+        "episode": 2,
+        "year": 2026,
+        "tvshowid": 42,
+        "file": "plugin://plugin.video.plexkodiconnect/tvshows/3595/",
+        "uniqueid": {"tvdb": "3110601"},
+    }
+}
+
+
+class Collector:
+    def __init__(self) -> None:
+        self.events: list[PlaybackEvent | PingEvent] = []
+
+    def submit(self, event: PlaybackEvent | PingEvent) -> bool:
+        self.events.append(event)
+        return True
+
+    def playback(self) -> list[PlaybackEvent]:
+        """Only the playback events. Indexing `events` directly mixes the two families, and
+        a ping has none of the fields a playback assertion reads."""
+        return [e for e in self.events if isinstance(e, PlaybackEvent)]
+
+    def kinds(self) -> list[str]:
+        return [e.kind for e in self.playback()]
+
+
+@pytest.fixture
+def capture_log():
+    logmod.reset()
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda msg, level: captured.append(msg))
+    yield captured
+    logmod.reset()
+
+
+def _kodi(members, profile: str = "Master user", overrides: dict[str, Any] | None = None):
+    # A named dict rather than **kwargs: with **kwargs a caller's RPC method name is
+    # indistinguishable from the profile keyword, to a reader and to the type checker.
+    handlers = {
+        "Player.GetActivePlayers": lambda params: {"result": [{"playerid": 1, "type": "video"}]},
+        "Player.GetItem": lambda params: EPISODE,
+        "VideoLibrary.GetTVShowDetails": lambda params: {"tvshowdetails": {"uniqueid": {"tvdb": "83462"}}},
+        "Files.GetDirectory": lambda params: {"files": members},
+        "Profiles.GetCurrentProfile": lambda params: {"label": profile},
+    }
+    handlers.update(overrides or {})
+    kodi = FakeKodi(rpc_handlers=handlers, position_ms=PAST_START, duration_ms=1_320_000)
+    kodi.read_text = lambda path, max_bytes=None: '<smartplaylist type="tvshows"/>'  # type: ignore[method-assign]
+    return kodi
+
+
+def _controller(tmp_path, kodi, viewers, collector, settings=None, ttl=3600, monotonic=None):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save(viewers)
+    counter = itertools.count(1)
+    clock = itertools.count(0)
+    return Controller(
+        kodi=kodi,
+        viewer_store=store,
+        memory=PromptMemory(str(tmp_path / "prompts.json")),
+        media_resolver=MediaResolver(kodi),
+        queue=collector,
+        settings=settings or Settings(progress_interval_seconds=60, movie_prompts=True, index_ttl_seconds=ttl),
+        thresholds=Thresholds(),
+        clock=lambda: "2026-09-19T20:00:00Z",
+        # The default advances one unit per call, which is fine for tests that only need
+        # time to move. A test asserting a rate must pass its own clock: the number of reads
+        # per tick is an implementation detail and changes when a caller is added.
+        monotonic=monotonic or (lambda: float(next(clock))),
+        ids=lambda: f"id-{next(counter)}",
+    )
+
+
+def _warm_index(controller, kodi):
+    """Drive the idle tick until the index has been built.
+
+    The player has to be idle for this to do anything. The controller deliberately refuses
+    the whole-library expansion whenever Kodi is decoding something, session or not, so a
+    helper that leaves the fake reporting playback warms nothing and every assertion built
+    on it passes or fails for the wrong reason.
+    """
+    was_playing = kodi.playing
+    kodi.playing = False
+    try:
+        for _ in range(10):
+            controller.on_tick()
+    finally:
+        kodi.playing = was_playing
+
+
+# --- index lifecycle -------------------------------------------------------
+
+def test_the_index_is_built_from_the_idle_tick_not_from_playback_start(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    controller.on_av_started()
+    assert [c for c in kodi.calls if c[0] == "Files.GetDirectory"] == []
+    assert collector.playback()[0].viewers == ()
+
+
+def test_playback_after_a_warm_index_resolves_from_the_playlist(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
+    assert collector.playback()[0].viewers_source == "playlist"
+
+
+def test_the_index_is_not_rebuilt_while_something_is_playing(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    controller.invalidate_index()
+    before = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    controller.on_tick()
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) == before
+
+
+def test_a_stale_index_is_rebuilt_on_the_ttl(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector, ttl=3)
+    _warm_index(controller, kodi)
+    before = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > before
+
+
+def _boom(params):
+    raise RuntimeError("database is locked")
+
+
+def test_a_degraded_viewer_falls_through_rather_than_resolving_from_a_stale_index(tmp_path):
+    """The accepted cost of isolation: anna loses attribution while her list is unreadable.
+
+    She is not lost, she falls through to profile and then the prompt. Serving her the
+    previous index instead would assert membership of a smart playlist that has since moved.
+    """
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    _warm_index(controller, kodi)
+    kodi.rpc_handlers["Files.GetDirectory"] = _boom
+    controller.invalidate_index()
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ()
+
+
+def test_a_degraded_build_retries_on_the_failure_backoff_not_at_the_ttl(tmp_path):
+    """Otherwise isolation would cost an hour of recovery that the old behaviour did not.
+
+    A degraded build publishes, and publishing used to mean the index was current. It has
+    to stay dirty, or a viewer waits the whole TTL to get their identity back. The clock is
+    driven explicitly so this pins the backoff rather than a number of ticks.
+    """
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    now = [0.0]
+    controller = _controller(
+        tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector,
+        ttl=3600, monotonic=lambda: now[0],
+    )
+    kodi.rpc_handlers["Files.GetDirectory"] = _boom
+    _warm_index(controller, kodi)
+    degraded_at = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+
+    kodi.rpc_handlers["Files.GetDirectory"] = lambda params: {"files": [{"id": 42, "type": "tvshow"}]}
+    now[0] = FAILURE_BACKOFF_SECONDS - 1
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) == degraded_at, "still backing off"
+
+    now[0] = FAILURE_BACKOFF_SECONDS + 1
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > degraded_at
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
+
+
+# --- session lifecycle -----------------------------------------------------
+
+def test_session_id_is_stable_and_event_ids_are_not(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    assert collector.playback()[0].session_id == collector.playback()[-1].session_id
+    assert collector.playback()[0].event_id != collector.playback()[-1].event_id
+
+
+def test_pause_and_resume_emit_their_own_events(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_paused()
+    controller.on_resumed()
+    assert collector.kinds() == ["start", "pause", "resume"]
+
+
+def test_a_pause_with_no_session_is_logged_rather_than_silently_dropped(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_paused()
+    assert collector.playback() == []
+
+
+def test_the_stop_is_not_emitted_inside_the_callback(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=False)
+    assert collector.kinds() == ["start"]
+    controller.on_tick()
+    assert collector.kinds() == ["start", "stop"]
+
+
+def test_stop_uses_the_last_sample(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    assert collector.playback()[-1].position_ms == PAST_START
+
+
+def test_completed_playback_is_reported_as_completed(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=True)
+    controller.on_tick()
+    assert collector.playback()[-1].completed is True
+
+
+def test_an_unknown_duration_reports_percent_as_none(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    kodi.duration_ms = None
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=True)
+    controller.on_tick()
+    assert collector.playback()[-1].percent is None
+    assert collector.playback()[-1].completed is True
+
+
+def test_a_missing_stop_callback_is_reconciled_by_the_liveness_check(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    kodi.playing = False
+    controller.on_tick()
+    controller.on_tick()
+    assert collector.kinds() == ["start", "stop"]
+
+
+def test_a_new_playback_closes_a_surviving_session_rather_than_replacing_it(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_av_started()
+    assert collector.kinds() == ["start", "stop", "start"]
+    assert collector.playback()[0].session_id == collector.playback()[1].session_id
+    assert collector.playback()[2].session_id != collector.playback()[0].session_id
+
+
+def test_an_unresolvable_next_item_does_not_leave_the_old_session_installed(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: {
+        "item": {"id": 1, "type": "musicvideo", "title": "x", "file": "x"}
+    }
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_tick()
+    assert collector.kinds() == ["start", "stop"]
+
+
+def test_a_raising_resolve_does_not_leave_the_old_session_installed(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+
+    def boom(params):
+        raise RuntimeError("rpc down")
+
+    kodi.rpc_handlers["Player.GetItem"] = boom
+    controller.on_av_started()
+    controller.on_tick()
+    assert collector.kinds() == ["start", "stop"]
+
+
+def test_identity_resolves_through_the_active_profile(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Anna")
+    viewers = [Viewer(name="anna", profiles=("Anna",)), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
+    assert collector.playback()[0].viewers_source == "profile"
+
+
+def test_a_remembered_show_resolves_at_start_not_only_at_stop(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    PromptMemory(str(tmp_path / "prompts.json")).remember("show:tvdb:83462", ("bob",))
+    viewers = [Viewer(name="anna"), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("bob",)
+    assert collector.playback()[0].viewers_source == "prompt"
+
+
+def test_the_index_is_not_built_while_an_unresolvable_item_is_playing(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: {
+        "item": {"id": 1, "type": "musicvideo", "title": "x", "file": "x"}
+    }
+    kodi.playing = True
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    controller.on_av_started()
+    for _ in range(5):
+        controller.on_tick()
+    assert [c for c in kodi.calls if c[0] == "Files.GetDirectory"] == []
+
+
+def test_a_failed_build_is_retried_after_the_backoff_not_after_the_ttl(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+
+    def boom(params):
+        raise RuntimeError("database is locked")
+
+    kodi.rpc_handlers["Files.GetDirectory"] = boom
+    _warm_index(controller, kodi)
+    first = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    _warm_index(controller, kodi)
+    # Inside the backoff window, so no new attempt.
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) == first
+
+
+def test_a_paused_session_does_not_block_the_index_rebuild(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    controller.on_av_started()
+    controller.on_paused()
+    for _ in range(5):
+        controller.on_tick()
+    assert [c for c in kodi.calls if c[0] == "Files.GetDirectory"] != []
+
+
+def test_pause_state_does_not_survive_into_the_next_playback(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    controller.on_av_started()
+    controller.on_paused()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: {
+        "item": {"id": 1, "type": "musicvideo", "title": "x", "file": "x"}
+    }
+    controller.on_av_started()
+    before = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    for _ in range(3):
+        controller.on_tick()
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) == before
+
+
+def test_a_new_playback_flushes_a_parked_stop_without_prompting(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    kodi.multiselect_answer = [0]
+    viewers = [Viewer(name="anna"), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_av_started()
+    assert collector.kinds() == ["start", "stop", "start"]
+    assert kodi.multiselect_calls == []
+    assert collector.playback()[1].viewers == ()
+
+
+def test_abort_emits_a_stop_for_an_open_session(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_abort()
+    assert collector.kinds() == ["start", "stop"]
+    assert collector.playback()[-1].position_ms == PAST_START
+
+
+def test_abort_flushes_a_parked_stop_without_prompting(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    kodi.multiselect_answer = [0]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_abort()
+    assert collector.kinds() == ["start", "stop"]
+    assert kodi.multiselect_calls == []
+
+
+def test_abort_with_nothing_playing_emits_nothing(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_abort()
+    assert collector.playback() == []
+
+
+# --- prompt ----------------------------------------------------------------
+
+def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    kodi.multiselect_answer = [1]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    stop = collector.playback()[-1]
+    assert stop.kind == "stop"
+    assert stop.viewers == ("bob",)
+    assert stop.viewers_source == "prompt"
+
+
+def test_the_answer_is_remembered_under_a_stable_key(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    kodi.multiselect_answer = [1]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    assert PromptMemory(str(tmp_path / "prompts.json")).recall("show:tvdb:83462") == ("bob",)
+
+
+def test_a_dismissed_prompt_still_emits_the_stop_with_no_viewers(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    kodi.multiselect_answer = None
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    assert collector.playback()[-1].viewers == ()
+    assert collector.playback()[-1].viewers_source is None
+    assert PromptMemory(str(tmp_path / "prompts.json")).recall("show:tvdb:83462") is None
+
+
+def test_a_raising_prompt_still_emits_the_stop(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("window is gone")
+
+    kodi.multiselect = boom  # type: ignore[method-assign]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    assert collector.kinds() == ["start", "stop"]
+    assert collector.playback()[-1].viewers == ()
+
+
+def test_a_remembered_answer_is_used_without_asking(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    PromptMemory(str(tmp_path / "prompts.json")).remember("show:tvdb:83462", ("anna",))
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    assert collector.playback()[-1].viewers == ("anna",)
+    assert kodi.multiselect_calls == []
+
+
+def test_the_prompt_carries_an_autoclose(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    kodi.multiselect_answer = [0]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    assert kodi.multiselect_calls[0][3] > 0
+
+
+# --- cadence and resilience ------------------------------------------------
+
+def test_progress_is_emitted_once_per_interval(tmp_path):
+    """One second per tick, 200 ticks, a 60 second interval: emissions at 61, 121 and 181.
+
+    The first tick only records the baseline, because the start event has just carried that
+    position.
+    """
+    collector = Collector()
+    kodi = _kodi([])
+    kodi.position_ms, kodi.duration_ms = 300_000, 1_000_000
+    now = [0.0]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector, monotonic=lambda: now[0])
+    controller.on_av_started()
+    for _ in range(200):
+        now[0] += 1.0
+        controller.on_tick()
+    assert collector.kinds().count("progress") == 3
+
+
+def test_a_paused_session_emits_no_progress_however_long_it_is_paused(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    kodi.position_ms, kodi.duration_ms = 300_000, 1_000_000
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_paused()
+    for _ in range(200):
+        controller.on_tick()
+    assert collector.kinds() == ["start", "pause"]
+
+
+def test_nothing_is_emitted_when_no_media_is_playing(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], overrides={"Player.GetActivePlayers": lambda params: {"result": []}})
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    assert collector.playback() == []
+
+
+def test_a_settings_change_replaces_the_settings_and_invalidates_the_index(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    _warm_index(controller, kodi)
+    before = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    controller.on_settings_changed(Settings(progress_interval_seconds=30), Thresholds())
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > before
+
+
+def test_a_library_scan_clears_the_memoised_show_ids(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.invalidate_index()
+    controller.on_av_started()
+    lookups = len([c for c in kodi.calls if c[0] == "VideoLibrary.GetTVShowDetails"])
+    assert lookups == 2
+
+
+def test_a_seek_makes_the_next_eligible_tick_emit_progress(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_seek()
+    for _ in range(10):
+        controller.on_tick()
+    assert collector.kinds().count("progress") >= 1
+
+
+def test_a_seek_with_no_session_is_harmless(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_seek()  # must not raise
+    assert collector.kinds() == []
+
+
+def _unidentifiable(tmp_path, collector):
+    """A playing episode whose show and episode both resolve to no usable id."""
+    kodi = _kodi([], overrides={"VideoLibrary.GetTVShowDetails": lambda params: {"tvshowdetails": {"uniqueid": {}}}})
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: {"item": {**EPISODE["item"], "uniqueid": {}, "tvshowid": 0}}
+    return _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+
+
+def test_an_item_with_no_usable_ids_is_not_sent(tmp_path):
+    collector = Collector()
+    controller = _unidentifiable(tmp_path, collector)
+    controller.on_av_started()
+    assert collector.playback() == []
+
+
+def test_an_item_with_only_a_show_id_is_still_sent(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    assert collector.kinds() == ["start"]
+    assert collector.playback()[0].media.show_ids == {"tvdb": "83462"}
+
+
+def test_a_dropped_start_still_leaves_a_session_that_reconciles(tmp_path):
+    collector = Collector()
+    controller = _unidentifiable(tmp_path, collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=True)
+    controller.on_tick()
+    assert collector.playback() == []
+
+
+def _pkc(tmp_path, collector, settings=None):
+    kodi = _kodi([])
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: PKC_ITEM
+    return _controller(tmp_path, kodi, [Viewer(name="anna")], collector, settings=settings)
+
+
+def test_pkc_playback_is_skipped_by_default(tmp_path):
+    collector = Collector()
+    controller = _pkc(tmp_path, collector)
+    controller.on_av_started()
+    assert collector.playback() == []
+    assert controller.pkc_skipped == 1
+
+
+def test_a_skipped_pkc_playback_creates_no_session(tmp_path):
+    collector = Collector()
+    controller = _pkc(tmp_path, collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=True)
+    controller.on_tick()
+    assert collector.playback() == []
+
+
+def test_pkc_playback_is_reported_when_skipping_is_switched_off(tmp_path):
+    collector = Collector()
+    settings = Settings(progress_interval_seconds=60, movie_prompts=True, skip_pkc=False, index_ttl_seconds=3600)
+    controller = _pkc(tmp_path, collector, settings=settings)
+    controller.on_av_started()
+    assert collector.kinds() == ["start"]
+    assert controller.pkc_skipped == 0
+
+
+def test_the_skip_count_accumulates_across_playbacks(tmp_path):
+    collector = Collector()
+    controller = _pkc(tmp_path, collector)
+    controller.on_av_started()
+    controller.on_av_started()
+    assert controller.pkc_skipped == 2
+
+
+def test_a_ping_goes_out_on_the_first_tick(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_tick()
+    pings = [e for e in collector.events if isinstance(e, PingEvent)]
+    assert len(pings) == 1
+    assert pings[0].viewers == ("anna", "bob")
+
+
+def test_pings_are_not_sent_more_often_than_the_interval(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    for _ in range(10):
+        controller.on_tick()
+    assert len([e for e in collector.events if isinstance(e, PingEvent)]) == 1
+
+
+def test_a_ping_carries_the_pkc_skip_count(tmp_path):
+    collector = Collector()
+    controller = _pkc(tmp_path, collector)
+    controller.on_av_started()
+    controller.on_tick()
+    ping = [e for e in collector.events if isinstance(e, PingEvent)][0]
+    assert ping.pkc_skipped == 1
+
+
+def test_a_ping_is_still_sent_while_something_is_playing(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    assert any(isinstance(e, PingEvent) for e in collector.events)
+
+
+def test_a_parked_stop_is_flushed_before_the_heartbeat(tmp_path):
+    """The queue is FIFO and the worker blocks; a ping ahead of the stop delays it."""
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    kinds = [e.kind if isinstance(e, PlaybackEvent) else "ping" for e in collector.events]
+    assert kinds.index("stop") < kinds.index("ping")
+
+
+def test_no_ping_is_sent_while_shutting_down(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_tick(shutting_down=True)
+    assert not any(isinstance(e, PingEvent) for e in collector.events)
+
+
+def test_a_refused_ping_is_retried_on_the_next_tick(tmp_path):
+    """A ping lost to a full queue must not suppress the heartbeat for another interval."""
+
+    class RefusingOnce:
+        def __init__(self) -> None:
+            self.events: list[object] = []
+            self.refuse = True
+
+        def submit(self, event) -> bool:
+            if self.refuse and isinstance(event, PingEvent):
+                self.refuse = False
+                return False
+            self.events.append(event)
+            return True
+
+    collector = RefusingOnce()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_tick()
+    controller.on_tick()
+    assert len([e for e in collector.events if isinstance(e, PingEvent)]) == 1
+
+
+def _aged_controller(tmp_path, collector, viewers, now):
+    """An index built at t=0, with the clock under the test's control."""
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, viewers, collector, ttl=3600, monotonic=lambda: now[0])
+    _warm_index(controller, kodi)
+    return controller
+
+
+def test_an_index_too_old_to_rebuild_stops_being_served(tmp_path):
+    """A smart playlist is dynamic, so age maps onto wrongness, not just staleness.
+
+    Continue Watching turns over after every play, so an index kept past its life attributes
+    a show to whoever held it before it moved. Falling through to the prompt is a worse
+    answer that is honest.
+    """
+    collector = Collector()
+    now = [0.0]
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _aged_controller(tmp_path, collector, viewers, now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER + 1
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ()
+
+
+def test_an_index_within_its_extended_life_is_still_served(tmp_path):
+    collector = Collector()
+    now = [0.0]
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _aged_controller(tmp_path, collector, viewers, now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER - 1
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
+
+
+def test_a_single_viewer_household_keeps_its_index_however_old(tmp_path):
+    """Retirement exists to prevent misattribution between people. With one viewer there is
+    nobody to misattribute to, and the prompt is refused for a single viewer, so retiring
+    would pay the whole cost and buy nothing."""
+    collector = Collector()
+    now = [0.0]
+    controller = _aged_controller(tmp_path, collector, [Viewer(name="anna", playlists=("Anna TV",))], now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER * 10
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
+
+
+def test_retirement_is_reported_once_not_on_every_playback(tmp_path, capture_log):
+    collector = Collector()
+    now = [0.0]
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _aged_controller(tmp_path, collector, viewers, now)
+    now[0] = 3600 * INDEX_MAX_AGE_MULTIPLIER + 1
+    controller.on_av_started()
+    controller.on_av_started()
+    assert len([line for line in capture_log if "service.index_retired" in line]) == 1
+
+
+def _degraded_controller(tmp_path, collector, kodi=None):
+    """A build in which anna's playlist cannot be read."""
+    kodi = kodi or _kodi([{"id": 42, "type": "tvshow"}])
+    kodi.read_text = lambda path, max_bytes=None: None  # type: ignore[method-assign]
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    _warm_index(controller, kodi)
+    return controller, kodi
+
+
+def test_an_unreadable_playlist_notifies_the_household_and_names_it(tmp_path):
+    """The only channel allowed to carry the name: it goes to their own screen.
+
+    Without this the failure is silent. The warning in Kodi's log names a position in a
+    list the viewer never sees, and that is by design, so the toast is what makes it
+    actionable.
+    """
+    controller, kodi = _degraded_controller(tmp_path, Collector())
+    assert len(kodi.notifications) == 1
+    assert "Anna TV" in kodi.notifications[0][1]
+
+
+def test_the_household_is_not_notified_once_per_retry(tmp_path):
+    """The build retries on a backoff for as long as the playlist stays missing."""
+    controller, kodi = _degraded_controller(tmp_path, Collector())
+    controller.invalidate_index()
+    _warm_index(controller, kodi)
+    assert len(kodi.notifications) == 1
+
+
+def test_the_playlist_name_survives_a_translation_with_no_placeholder(tmp_path):
+    """A translator dropping %s must not turn this into "something is wrong" with no what."""
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    kodi.localised = lambda string_id: "Kan playlist niet lezen"  # type: ignore[method-assign]
+    controller, kodi = _degraded_controller(tmp_path, Collector(), kodi=kodi)
+    assert "Anna TV" in kodi.notifications[0][1]
+
+
+def test_a_clean_build_notifies_nothing(tmp_path):
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], Collector())
+    _warm_index(controller, kodi)
+    assert kodi.notifications == []
+
+
+def test_a_playlist_that_breaks_again_after_recovering_notifies_again(tmp_path):
+    """Latching for ever would hide a second, different breakage."""
+    controller, kodi = _degraded_controller(tmp_path, Collector())
+    kodi.read_text = lambda path, max_bytes=None: '<smartplaylist type="tvshows"/>'  # type: ignore[method-assign]
+    controller.invalidate_index()
+    _warm_index(controller, kodi)
+    kodi.read_text = lambda path, max_bytes=None: None  # type: ignore[method-assign]
+    controller.invalidate_index()
+    _warm_index(controller, kodi)
+    assert len(kodi.notifications) == 2

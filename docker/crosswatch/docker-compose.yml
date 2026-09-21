@@ -1,0 +1,24 @@
+# A throwaway CrossWatch for testing this add-on against.
+#
+# Deliberately NOT connected to Trakt, Simkl, Plex or MDBList. A test scrobble reaching a
+# real account writes into real watch history, and nothing here is worth that risk. Make
+# test accounts if the providers ever need exercising.
+#
+# The image is pinned by digest rather than :latest, so what we verified against cannot
+# change under us on the next pull. Bump it deliberately.
+services:
+  crosswatch-test:
+    image: ghcr.io/cenodude/crosswatch@sha256:887d6efb8dce728b274edbd9f642c594ab2f34ca2f2d8a6bdf26682d26944331
+    container_name: crosswatch-test
+    ports:
+      - "127.0.0.1:${CROSSWATCH_TEST_PORT:-8787}:8787"
+    environment:
+      TZ: "${TZ:-Europe/Amsterdam}"
+    volumes:
+      - crosswatch_test_config:/config
+    # No restart policy: this is a test rig and should not come back on its own after a
+    # reboot, quietly polling a Kodi nobody is watching.
+    restart: "no"
+
+volumes:
+  crosswatch_test_config:
