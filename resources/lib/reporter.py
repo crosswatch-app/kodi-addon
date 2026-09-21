@@ -170,20 +170,14 @@ class HttpReporter:
             # requiring it. While both are sent the query-string exposure is unchanged.
             self._headers["X-CrossWatch-Token"] = token
 
-    def _connect(self) -> tuple[Any, bool]:
-        """The connection, and whether this call created it.
-
-        Whether the socket is fresh decides how a post-write failure is read, so the caller
-        has to know rather than guess.
-        """
-        fresh = self._connection is None
+    def _connect(self) -> Any:
         if self._connection is None:
             # A connection opened after abort gets the short timeout. Kodi kills the
             # interpreter 5000ms after abort and a ten second socket cannot finish inside
             # that; the contract's timeout applies to normal operation.
             timeout = SHUTDOWN_HTTP_TIMEOUT_SECONDS if self._abort.is_set() else self._timeout
             self._connection = self._factory(self._scheme, self._host, self._port, timeout)
-        return self._connection, fresh
+        return self._connection
 
     def close(self) -> None:
         if self._connection is not None:
@@ -196,10 +190,10 @@ class HttpReporter:
     def report(self, event: Event, device: Device) -> bool:
         """Deliver one event, retrying within the contract's budget.
 
-        Retry lives here rather than in the queue because ordering matters: the receiver has
-        no deduplication and drives a now-playing card from event order, so a retried stop
-        must never land after the next playback's start. Blocking the worker is harmless;
-        nothing waits on it and the service thread is a different thread.
+        Retry lives here rather than in the queue because ordering matters: the receiver
+        drives a now-playing card from event order, so a retried stop must never land after
+        the next playback's start. Blocking the worker is harmless; nothing waits on it and
+        the service thread is a different thread.
         """
         if self._abort.is_set():
             # Drop any live keep-alive socket: it was opened with the long timeout, and
@@ -230,7 +224,7 @@ class HttpReporter:
     def _attempt(self, body: bytes, kind: str) -> bool | None:
         """True delivered, False refused for good, None worth retrying."""
         try:
-            connection, fresh = self._connect()
+            connection = self._connect()
             connection.request("POST", self._path, body=body, headers=dict(self._headers))
         except Exception as exc:
             # Nothing was necessarily written, so this is safe to retry. Drop the connection
@@ -244,20 +238,18 @@ class HttpReporter:
             status = int(getattr(response, "status", 0) or 0)
             raw = response.read()
         except Exception as exc:
+            # Retried, on the CrossWatch maintainer's decision (issue #1, 2026-09-20): the
+            # sinks absorb a duplicate. Everything goes through Trakt and Simkl's
+            # /scrobble/* endpoints, which dedupe server side and answer 409, and the media
+            # sinks set a watched flag, which is idempotent. So losing the response is worth
+            # another attempt, where previously it cost the event.
+            #
+            # This also covers the commoner case, which is not a lost response at all: the
+            # server closed an idle keep-alive, uvicorn does so after about five seconds,
+            # and the write landed on a socket whose peer had already gone.
             self.close()
-            if not fresh:
-                # The socket was one we had been holding, and the server closed it while it
-                # sat idle. uvicorn does this after about five seconds, and every cadence
-                # this addon uses is longer than that, so the peer had gone before the write
-                # and cannot have processed anything. Retrying on a fresh connection is safe
-                # and is the difference between delivering an event and dropping it.
-                _log.warning("reporter.stale_connection", url=self._safe_url, event=kind, error=str(exc))
-                return None
-            # A connection we opened for this attempt. The request WAS written, the server
-            # may have processed it, and the receiver has no dedupe, so a retry risks a
-            # second scrobble. Losing the response is the lesser harm.
-            _log.warning("reporter.indeterminate", url=self._safe_url, event=kind, error=str(exc))
-            return False
+            _log.warning("reporter.lost_response", url=self._safe_url, event=kind, error=str(exc))
+            return None
 
         if 500 <= status < 600:
             # Close rather than reuse: a 5xx often carries Connection: close, and reusing the

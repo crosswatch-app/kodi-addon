@@ -341,21 +341,42 @@ def test_a_5xx_is_retried_until_it_succeeds(reporter_factory):
     assert attempts == []
 
 
-def test_a_failure_after_the_request_was_written_is_not_retried(lines, reporter_factory):
-    """The server may have processed it, and the receiver has no dedupe."""
-    made: list[int] = []
+def test_a_lost_response_is_retried_rather_than_costing_the_event(lines, reporter_factory):
+    """Retried on the CrossWatch maintainer's decision: his sinks absorb a duplicate.
 
-    class LostResponse(FakeConnection):
+    Scrobbles go to Trakt and Simkl's /scrobble/* endpoints, which dedupe server side and
+    answer 409, and the media sinks set a watched flag, which is idempotent. So a second
+    delivery is cheap and losing the event is not.
+    """
+    made: list[int] = []
+    first = [True]
+
+    class LostThenFine(FakeConnection):
         def getresponse(self):
-            raise TimeoutError("read timed out")
+            if first[0]:
+                first[0] = False
+                raise TimeoutError("read timed out")
+            return FakeResponse()
 
     def factory(*args, **kwargs):
         made.append(1)
-        return LostResponse()
+        return LostThenFine()
 
-    assert reporter_factory("http://host/hook?token=tok", connection_factory=factory).report(_event(), DEVICE) is False
-    assert len(made) == 1
-    assert any("reporter.indeterminate" in line for line in lines)
+    assert reporter_factory("http://host/hook?token=tok", connection_factory=factory).report(_event(), DEVICE) is True
+    assert len(made) == 2, "the retry must reconnect rather than reuse the broken socket"
+    assert any("reporter.lost_response" in line for line in lines)
+
+
+def test_a_lost_response_still_gives_up_inside_the_budget(lines, reporter_factory):
+    """Retrying a lost response must not become unbounded."""
+
+    class AlwaysLost(FakeConnection):
+        def getresponse(self):
+            raise TimeoutError("read timed out")
+
+    reporter = reporter_factory("http://host/hook?token=tok", connection_factory=lambda *a, **k: AlwaysLost())
+    assert reporter.report(_event(), DEVICE) is False
+    assert any("reporter.gave_up" in line for line in lines)
 
 
 def test_retry_gives_up_when_the_budget_cannot_pay_for_another_attempt(lines, reporter_factory):
@@ -611,8 +632,8 @@ def test_a_server_closing_an_idle_keepalive_is_retried_on_a_fresh_connection(lin
 
     uvicorn closes an idle keep-alive after about five seconds. Progress is sixty seconds
     apart and the ping five minutes, so the connection is always past that. The write lands
-    on a closed socket, getresponse raises, and treating that as post-write indeterminate
-    loses an event the server never saw.
+    on a closed socket, getresponse raises, and treating that as a delivery the server may
+    have processed loses an event it never saw.
     """
     made: list[ClosingConnection] = []
 
@@ -624,29 +645,3 @@ def test_a_server_closing_an_idle_keepalive_is_retried_on_a_fresh_connection(lin
     assert reporter.report(_event(), DEVICE) is True
     assert reporter.report(_event(), DEVICE) is True, "the second event must not be dropped"
     assert len(made) == 2, "the retry must use a fresh connection, not the closed one"
-    assert not any("reporter.indeterminate" in line for line in lines)
-
-
-def test_a_fresh_connection_failing_after_the_write_is_still_not_retried(lines, reporter_factory):
-    """The pessimism is right when the connection was ours: the server may have acted on it."""
-
-    class DeadOnFirstUse:
-        def request(self, method, path, body=None, headers=None):
-            pass
-
-        def getresponse(self):
-            raise Exception("Remote end closed connection without response")
-
-        def close(self):
-            pass
-
-    made = []
-
-    def factory(*a, **k):
-        made.append(DeadOnFirstUse())
-        return made[-1]
-
-    reporter = reporter_factory("http://host/hook?token=t", connection_factory=factory)
-    assert reporter.report(_event(), DEVICE) is False
-    assert len(made) == 1, "a fresh connection failing post-write must not be retried"
-    assert any("reporter.indeterminate" in line for line in lines)
