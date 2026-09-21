@@ -1,6 +1,6 @@
 # Kodi add-on contract
 
-Version 1. Draft.
+Version 1.1. Draft.
 
 Nothing here is set in stone. If something makes the add-on harder to build, just say so and we change it. CrossWatch can adapt.
 
@@ -21,9 +21,12 @@ The add-on finds the ids and the viewers. CrossWatch does the routing, throttlin
 ## Endpoint
 
 ```
-POST /webhook/kodiwatcher?token=<token>
+POST /webhook/kodiwatcher
+X-CrossWatch-Token: <token>
 Content-Type: application/json
 ```
+
+Use the header. `?token=<token>` still works as a fallback, but it ends up in reverse proxy logs.
 
 One URL for everything. The event type is in the body.
 
@@ -49,9 +52,11 @@ When the add-on is active, CrossWatch stops polling that Kodi. No double scrobbl
     "name": "Living room"
   },
   "viewers": ["anna", "tom"],
+  "viewers_source": "playlist",
   "media": {
     "type": "episode",
     "title": "The Expanse",
+    "episode_title": "Home",
     "year": 2015,
     "season": 2,
     "episode": 5,
@@ -63,9 +68,9 @@ When the add-on is active, CrossWatch stops polling that Kodi. No double scrobbl
     "percent": 42.7,
     "position_ms": 1180000,
     "duration_ms": 2760000,
+    "completed": false,
     "file": "smb://nas/tv/The Expanse/Season 02/S02E05.mkv",
-    "source": "library",
-    "cover": "https://image.tmdb.org/t/p/w342/abc.jpg"
+    "source": "library"
   }
 }
 ```
@@ -76,25 +81,37 @@ When the add-on is active, CrossWatch stops polling that Kodi. No double scrobbl
 |---|---|---|
 | `version` | yes | Contract version. Now `1`. |
 | `event` | yes | `ping`, `start`, `resume`, `pause`, `progress` or `stop`. |
-| `event_id` | yes | Unique per event. Only for logs. |
+| `event_id` | yes | Unique per event. For logs, and for dedupe if CrossWatch ever needs it. |
 | `session_id` | playback | Same value for one playback on one device. |
 | `sent_at` | no | ISO-8601 UTC. |
 | `addon_version` | no | Shown in CrossWatch. |
 | `device.id` | yes | Stable device id. Works with the server UUID filters. |
 | `device.name` | no | Shown in CrossWatch. |
 | `viewers` | yes | Who is watching. Can be empty. |
+| `viewers_source` | no | `playlist`, `profile` or `prompt`. How identity was decided. Diagnostic only. |
 | `media.type` | playback | `movie` or `episode`. |
 | `media.title` | playback | Movie title, or the show title for episodes. |
+| `media.episode_title` | no | The episode's own title. |
 | `media.year` | no | Year of the movie or show. |
 | `media.season`, `media.episode` | episodes | As Kodi has them. |
 | `media.ids` | playback | Flat ids, see below. At least one. |
-| `media.percent` | playback | 0 to 100. This is the value that counts. |
+| `media.percent` | when known | 0 to 100. Leave it out when Kodi never knew the duration. Absent means unknown, and CrossWatch does not read it as zero. |
 | `media.position_ms`, `media.duration_ms` | no | Send them if you have them. |
-| `media.file` | no | Path as Kodi reports it. Used by the path and filename filters. |
+| `media.completed` | no | Played to the end. The only completion signal that survives an unknown duration, so CrossWatch uses it on `stop` when `percent` is absent. |
+| `media.file` | no | The path, with credentials stripped. See below. |
 | `media.source` | no | `library` or `plexkodiconnect`. |
-| `media.cover` | no | Artwork URL for the now-playing card. |
+| `media.plex_rating_key` | no | PKC rating key, when `source` is `plexkodiconnect`. Not used yet. |
+| `pkc_skipped` | no | On the `ping` only. How many PKC playbacks were declined. Left out when zero. |
 
 Unknown fields are ignored. A `ping` has no `media` and no `session_id`.
+
+There is no `cover` field. The playing card builds the poster from the tmdb id, and Kodi wraps its own art as `image://...` which CrossWatch would reject anyway.
+
+### Paths
+
+Kodi carries `user:password@` inline in VFS paths, so the add-on strips the userinfo and redacts query strings before sending. `plugin://` paths go out untouched.
+
+So path and filename filters have to be written against `smb://nas/tv/...`, not `smb://user:pass@nas/tv/...`.
 
 ### Ids
 
@@ -103,7 +120,11 @@ Same keys as the current Kodi watcher.
 - Movies: `imdb`, `tmdb`, `tvdb`.
 - Episodes: `imdb_show`, `tmdb_show`, `tvdb_show` for the show. Add `imdb`, `tmdb`, `tvdb` for the episode if Kodi has them.
 
-Only send ids Kodi really knows. Skip `unknown`. Show ids plus season and episode is fine. That is the normal case. IMDb ids keep the `tt`.
+Only send ids Kodi really knows. Show ids plus season and episode is fine. That is the normal case. IMDb ids keep the `tt`.
+
+Drop the `unknown` key, and drop placeholder values: `none`, `null`, `nan`, `unknown`, `0` and `-1`, case insensitive. Scrapers write those as text, and a `"None"` looks like a real id to anything that only checks whether a value is there.
+
+No usable ids at all means don't send the event. There is nothing to route.
 
 ## Events
 
@@ -114,7 +135,9 @@ Only send ids Kodi really knows. Skip `unknown`. Show ids plus season and episod
 | `resume` | Playback resumed. Same as start. |
 | `progress` | Position update. Same as start. |
 | `pause` | Paused. |
-| `stop` | Stopped. Always send the final `percent`. |
+| `stop` | Stopped. Send the final `percent`, or `completed` when the duration was never known. |
+
+Live TV and recordings are out of scope. `Player.GetProperties` has a `live` property, and a channel reports `type: "channel"`. Send nothing for those. Recordings carry EPG metadata instead of library ids, which is a matching problem for CrossWatch to solve later.
 
 ## Viewers
 
@@ -138,7 +161,8 @@ The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them an
 - CrossWatch down? Retry for 2 minutes, then drop it.
 - Don't replay old events after a restart. A late `stop` gets the wrong watch time. Sync picks up anything missed.
 - Timeout of 10 seconds.
-- Only retry on connection errors, timeouts and `5xx`.
+- Retry on connection errors, timeouts, `5xx` and a lost response. A duplicate is safe: Trakt and Simkl dedupe server side, and the media server sinks just set a watched flag. A lost `stop` is worse.
+- Don't retry a `200` with `ignored: true`, and don't retry a `401`.
 
 ## Responses
 
@@ -171,12 +195,12 @@ A bad token gets a `401`.
 CrossWatch takes what it understands and ignores the rest. 
 Also from a newer `version`. Use `crosswatch_version` to warn if CrossWatch is too old.
 
+CrossWatch needs 0.13.0 or newer. Older builds turn an absent `percent` into `0`, which wipes real resume points in Plex and Emby.
+
 ## PlexKodiConnect
 
-PKC playback is just a normal event with the ids the add-on found.
+PKC playback is just a normal event with the ids the add-on found. `media.plex_rating_key` comes along when there is one, but CrossWatch does not use it yet.
 
-Add a setting to skip PKC playback, on by default. 
-People who also run the Plex watcher with PKC support would get double scrobbles otherwise.
-If thats not possible, then its too bad.. Users are also responsible to setup/configure things themself.
+The add-on skips PKC playback by default, so people who also run the Plex watcher with PKC support do not get double scrobbles. Untested so far, since PKC is not installed on the dev machine.
 
 For `plugin://` paths, send them as they are. Path filters just won't match them.
