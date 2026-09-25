@@ -41,6 +41,11 @@ SHUTDOWN_HTTP_TIMEOUT_SECONDS = 1.0
 SHUTDOWN_DRAIN_SECONDS = 2.5
 
 DEFAULT_QUEUE_SIZE = 100
+
+# Completed watches kept through an outage and a restart. Bounded so a box whose CrossWatch
+# is gone for good does not carry a growing file for ever.
+OUTBOX_MAX_ENTRIES = 200
+OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 PROMPT_AUTOCLOSE_SECONDS = 120
 
 # A permanently unexpandable playlist must not pin the addon into a continuous rebuild loop.
