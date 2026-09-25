@@ -29,5 +29,9 @@ def device_path(kodi: KodiApi) -> str:
     return os.path.join(profile_dir(kodi), "device.json")
 
 
+def outbox_path(kodi: KodiApi) -> str:
+    return os.path.join(profile_dir(kodi), "outbox.json")
+
+
 def log_dir(kodi: KodiApi) -> str:
     return os.path.join(profile_dir(kodi), "logs")

@@ -14,13 +14,17 @@ from resources.lib.constants import (
     SHUTDOWN_HTTP_TIMEOUT_SECONDS,
 )
 from resources.lib.models import Device, EventKind, MediaItem, PingEvent, PlaybackEvent
+from resources.lib.outbox import Outbox, config_fingerprint
+from resources.lib.payload import build_payload
 from resources.lib.reporter import (
     Event,
     EventSink,
     HttpReporter,
     InvalidWebhookUrl,
     LogReporter,
+    OutboxLane,
     ReporterQueue,
+    Verdict,
     event_kind,
     validate_webhook_url,
 )
@@ -818,3 +822,126 @@ def test_another_sessions_event_does_not_supersede_a_progress():
     sink.release.set()
     queue.stop(deadline=2.0)
     assert sink.delivered == ["blocker", "p", "q"]
+
+
+def _store(tmp_path, mono=None) -> Outbox:
+    store = Outbox(
+        str(tmp_path / "outbox.json"),
+        config_fingerprint("http://host/hook", "tok"),
+        clock=mono or time.monotonic,
+    )
+    store.load()
+    return store
+
+
+def _watched(event_id: str = "w-1") -> PlaybackEvent:
+    return replace(_event("stop"), event_id=event_id, completes_watch=True)
+
+
+def test_a_completed_watch_is_on_disk_before_the_first_attempt(tmp_path):
+    store = _store(tmp_path)
+    seen: list[int] = []
+
+    class Checking:
+        def report(self, event, device, deadline=None):
+            seen.append(store.pending())
+            return True
+
+    queue = ReporterQueue(Checking(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "accepted"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert seen == [1]
+
+
+def test_a_completed_watch_accepted_live_leaves_the_outbox(tmp_path):
+    store = _store(tmp_path)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "accepted"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert store.pending() == 0
+
+
+def test_a_completed_watch_that_fails_live_stays_in_the_outbox(tmp_path):
+    store = _store(tmp_path)
+
+    class Down:
+        def report(self, event, device, deadline=None):
+            return False
+
+    queue = ReporterQueue(Down(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "unreachable"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert store.pending() == 1
+
+
+def test_any_other_event_is_never_stored(tmp_path):
+    store = _store(tmp_path)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "accepted"))
+    queue.submit(_event("stop"))
+    queue.submit(replace(_event("progress"), completes_watch=True))
+    queue.stop(deadline=2.0)
+    assert (tmp_path / "outbox.json").exists() is False
+
+
+def _idle_queue(tmp_path, verdict: Verdict) -> tuple[Outbox, list[dict]]:
+    """A leftover entry from a previous run, and an idle queue that should pick it up."""
+    _store(tmp_path).add(_body_of(_watched()), "stop")
+    store = _store(tmp_path)
+    sent: list[dict] = []
+    done = threading.Event()
+
+    def send(body, kind):
+        sent.append(body)
+        done.set()
+        return verdict
+
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, send))
+    assert done.wait(2.0)
+    queue.stop(deadline=2.0)
+    return store, sent
+
+
+def _body_of(event: PlaybackEvent) -> dict:
+    return build_payload(event, DEVICE)
+
+
+def test_an_idle_queue_delivers_a_leftover_watch_with_its_original_body(tmp_path):
+    store, sent = _idle_queue(tmp_path, "accepted")
+    assert sent == [_body_of(_watched())]
+    assert store.pending() == 0
+
+
+def test_a_refused_leftover_watch_is_dropped(tmp_path):
+    store, _ = _idle_queue(tmp_path, "refused")
+    assert store.pending() == 0
+
+
+def test_an_unreachable_leftover_watch_is_kept_and_not_retried_at_once(tmp_path):
+    store, sent = _idle_queue(tmp_path, "unreachable")
+    assert store.pending() == 1
+    assert len(sent) == 1, "deferred for an interval, not hammered every idle poll"
+
+
+def test_the_outbox_is_not_attempted_once_stopping(tmp_path):
+    _store(tmp_path).add(_body_of(_watched()), "stop")
+    store = _store(tmp_path)
+    sent: list[dict] = []
+    abort = threading.Event()
+    abort.set()
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=abort, outbox=OutboxLane(store, lambda b, k: sent.append(b) or "accepted"))
+    time.sleep(0.5)
+    queue.stop(deadline=1.0)
+    assert sent == []
+
+
+def test_stop_reports_watches_left_on_disk(tmp_path, lines):
+    store = _store(tmp_path)
+
+    class Down:
+        def report(self, event, device, deadline=None):
+            return False
+
+    queue = ReporterQueue(Down(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "unreachable"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert any("reporter.outbox_pending" in line and "count=1" in line for line in lines)

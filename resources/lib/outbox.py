@@ -109,6 +109,9 @@ class Outbox:
             body=body,
             stored_at=self._wall(),
             fingerprint=self._fingerprint,
+            # The live queue is about to try it for its whole freshness window; the outbox
+            # takes over only once that has failed.
+            due_at=self._clock() + self._retry_interval,
         )
         with self._lock:
             self._entries.append(entry)

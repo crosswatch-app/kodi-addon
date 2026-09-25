@@ -20,7 +20,15 @@ from resources.lib.constants import ADDON_ID, SHUTDOWN_DRAIN_SECONDS
 from resources.lib.device import device_identity
 from resources.lib.kodi import KodiRuntime
 from resources.lib.media import MediaResolver
-from resources.lib.reporter import HttpReporter, InvalidWebhookUrl, LogReporter, ReporterQueue
+from resources.lib.outbox import Outbox, config_fingerprint
+from resources.lib.reporter import (
+    EventSink,
+    HttpReporter,
+    InvalidWebhookUrl,
+    LogReporter,
+    OutboxLane,
+    ReporterQueue,
+)
 from resources.lib.service.controller import Controller
 from resources.lib.service.playback_monitor import PlaybackMonitor
 from resources.lib.service.service_monitor import ServiceMonitor
@@ -44,6 +52,15 @@ def _build_sink(url: str | None, log, *, token: str, abort: threading.Event):
         return LogReporter()
 
 
+def _outbox_lane(sink: EventSink, path: str, url: str | None, *, token: str) -> OutboxLane | None:
+    """Only a real webhook gets one: with nowhere to deliver, the file would only grow."""
+    if not isinstance(sink, HttpReporter) or not url:
+        return None
+    store = Outbox(path, config_fingerprint(url, token))
+    store.load()
+    return OutboxLane(store, sink.send_once)
+
+
 def main() -> None:
     player = PlaybackMonitor(None)  # controller attached below; construction registers the callback target
     kodi = KodiRuntime(player=player)
@@ -62,7 +79,8 @@ def main() -> None:
     # device_identity owns identity, not versioning, and is used by tests that should not
     # need a Kodi handle just to produce a version string.
     device = replace(device_identity(kodi, settings, paths.device_path(kodi)), addon_version=kodi.addon_version())
-    queue = ReporterQueue(sink, device, abort)
+    lane = _outbox_lane(sink, paths.outbox_path(kodi), settings.webhook_url(), token=settings.webhook_token)
+    queue = ReporterQueue(sink, device, abort, outbox=lane)
     controller = Controller(
         kodi=kodi,
         viewer_store=JsonViewerStore(paths.viewers_path(kodi)),

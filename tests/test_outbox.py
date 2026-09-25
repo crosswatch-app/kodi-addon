@@ -78,6 +78,7 @@ def test_a_refused_entry_is_dropped_with_a_warning(tmp_path, clocks, lines):
 def test_a_deferred_entry_is_due_again_after_the_interval(tmp_path, clocks):
     outbox = _outbox(tmp_path, clocks)
     outbox.add(_body("e-1"), "stop")
+    clocks.mono += PING_INTERVAL_SECONDS
     outbox.defer("e-1")
     assert outbox.next_due() is None
     clocks.mono += PING_INTERVAL_SECONDS
@@ -85,10 +86,25 @@ def test_a_deferred_entry_is_due_again_after_the_interval(tmp_path, clocks):
     assert entry is not None and entry.event_id == "e-1"
 
 
+def test_a_new_entry_waits_an_interval_while_the_live_queue_tries_it(tmp_path, clocks):
+    """The live queue makes the first attempts; the outbox takes over only if those fail."""
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add(_body("e-1"), "stop")
+    assert outbox.next_due() is None
+    clocks.mono += PING_INTERVAL_SECONDS
+    assert outbox.next_due() is not None
+
+
+def test_entries_from_a_previous_run_are_due_at_once(tmp_path, clocks):
+    _outbox(tmp_path, clocks).add(_body("e-1"), "stop")
+    assert _outbox(tmp_path, clocks).next_due() is not None
+
+
 def test_the_oldest_due_entry_comes_first(tmp_path, clocks):
     outbox = _outbox(tmp_path, clocks)
     outbox.add(_body("e-1"), "stop")
     outbox.add(_body("e-2"), "stop")
+    clocks.mono += PING_INTERVAL_SECONDS
     entry = outbox.next_due()
     assert entry is not None and entry.event_id == "e-1"
 
@@ -125,6 +141,7 @@ def test_the_cap_drops_the_oldest_entry(tmp_path, clocks, lines):
     for event_id in ("e-1", "e-2", "e-3"):
         outbox.add(_body(event_id), "stop")
     assert outbox.pending() == 2
+    clocks.mono += PING_INTERVAL_SECONDS
     entry = outbox.next_due()
     assert entry is not None and entry.event_id == "e-2"
     assert any("reporter.outbox_dropped" in line and "reason=cap" in line for line in lines)
