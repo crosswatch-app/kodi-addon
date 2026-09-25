@@ -56,7 +56,7 @@ def read_thresholds(kodi: KodiApi) -> Thresholds:
         _log.debug("settings.thresholds", source="defaults")
         return DEFAULTS
 
-    def number(tag: str, fallback: float) -> float:
+    def number(tag: str, fallback: float, low: float, high: float) -> float:
         found = video.find(tag)
         if found is None:
             return fallback
@@ -66,14 +66,21 @@ def read_thresholds(kodi: KodiApi) -> Thresholds:
         if not text:
             return fallback
         try:
-            return float(text)
+            value = float(text)
         except ValueError:
+            # Kodi's atof would read this as 0, which for the watched threshold means every
+            # stop counts. That is a parsing accident, not a setting, so keep the default.
             return fallback
+        # Clamped rather than rejected, because that is what Kodi does: the addon must agree
+        # with Kodi on what counts as watched, not merely read the same element.
+        return min(max(value, low), high)
 
     thresholds = Thresholds(
-        ignore_seconds_at_start=int(number("ignoresecondsatstart", DEFAULTS.ignore_seconds_at_start)),
-        ignore_percent_at_end=number("ignorepercentatend", DEFAULTS.ignore_percent_at_end),
-        playcount_minimum_percent=number("playcountminimumpercent", DEFAULTS.playcount_minimum_percent),
+        # Ranges from Kodi's AdvancedSettings.cpp. 101 is deliberate there: it turns off
+        # automatic marking as watched.
+        ignore_seconds_at_start=int(number("ignoresecondsatstart", DEFAULTS.ignore_seconds_at_start, 0, 900)),
+        ignore_percent_at_end=number("ignorepercentatend", DEFAULTS.ignore_percent_at_end, 0, 100),
+        playcount_minimum_percent=number("playcountminimumpercent", DEFAULTS.playcount_minimum_percent, 0, 101),
     )
     _log.info(
         "settings.thresholds",
