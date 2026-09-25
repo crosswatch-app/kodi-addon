@@ -473,7 +473,7 @@ def test_abort_with_nothing_playing_emits_nothing(tmp_path):
 def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [1]
+    kodi.multiselect_answer = [2]  # row 0 is Everyone
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -488,7 +488,7 @@ def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(t
 def test_the_answer_is_remembered_under_a_stable_key(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [1]
+    kodi.multiselect_answer = [2]  # row 0 is Everyone
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()

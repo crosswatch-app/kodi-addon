@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from resources.lib.advanced_settings import Thresholds
+from resources.lib.constants import PROMPT_EVERYONE, PROMPT_HEADING, PROMPT_HEADING_UNTITLED
 from resources.lib.identity import Identity
 from resources.lib.kodi import WINDOW_INVALID, KodiApi
 from resources.lib.log import get_logger
@@ -23,6 +24,8 @@ _log = get_logger("prompt")
 
 # Ordered by preference: the first present wins, so the key is stable across id ordering.
 _ID_PREFERENCE = ("tvdb", "tmdb", "imdb")
+
+_EVERYONE_ROW = 0
 
 
 def show_key(media: MediaItem) -> str | None:
@@ -101,16 +104,27 @@ def gate(
 
 
 def ask(kodi: KodiApi, viewers: list[Viewer], media: MediaItem, autoclose: int) -> tuple[str, ...]:
-    options = [v.name for v in viewers]
-    heading = f"Who watched {media.title or 'this'}?"
+    names = [v.name for v in viewers]
+    if media.title:
+        # replace rather than %: a translation that drops the placeholder must not raise.
+        heading = kodi.localised(PROMPT_HEADING).replace("%s", media.title)
+    else:
+        heading = kodi.localised(PROMPT_HEADING_UNTITLED)
+    options = [kodi.localised(PROMPT_EVERYONE), *names]
     chosen = kodi.multiselect(heading, options, autoclose=autoclose)
     if not chosen:
         _log.info("prompt.dismissed", media_type=media.media_type, library_id=media.library_id)
         return ()
-    names = tuple(options[i] for i in chosen if 0 <= i < len(options))
-    _log.info("prompt.answered", media_type=media.media_type, viewers_count=len(names))
-    _log.debug("prompt.answer", viewers=",".join(names))
-    return names
+    everyone = _EVERYONE_ROW in chosen
+    if everyone:
+        # Expanded to names now rather than remembered as "everyone", so a viewer added
+        # later is not credited with shows the household watched before they existed.
+        answer = tuple(names)
+    else:
+        answer = tuple(names[i - 1] for i in chosen if 1 <= i <= len(names))
+    _log.info("prompt.answered", media_type=media.media_type, viewers_count=len(answer), everyone=everyone)
+    _log.debug("prompt.answer", viewers=",".join(answer))
+    return answer
 
 
 def remember(memory: PromptMemory, media: MediaItem, names: tuple[str, ...]) -> None:
