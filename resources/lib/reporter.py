@@ -19,7 +19,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
 
 from resources.lib.constants import (
@@ -40,6 +40,10 @@ _log = get_logger("reporter")
 ALLOWED_SCHEMES = ("http", "https")
 
 Event = PlaybackEvent | PingEvent
+
+# accepted: delivered. refused: a decision, not a hiccup, so never worth sending again.
+# unreachable: nothing decided, so a later attempt may still succeed.
+Verdict = Literal["accepted", "refused", "unreachable"]
 
 
 def event_kind(event: Event) -> str:
@@ -87,7 +91,7 @@ def validate_webhook_url(url: str) -> str:
 
 
 class EventSink(Protocol):
-    def report(self, event: Event, device: Device) -> bool: ...
+    def report(self, event: Event, device: Device, deadline: float | None = None) -> bool: ...
 
 
 class EventQueue(Protocol):
@@ -97,7 +101,8 @@ class EventQueue(Protocol):
 class LogReporter:
     """The default when no webhook is configured. Mechanism at INFO, identity at DEBUG."""
 
-    def report(self, event: Event, device: Device) -> bool:
+    def report(self, event: Event, device: Device, deadline: float | None = None) -> bool:
+        del deadline  # nothing to retry: writing a log line cannot fail in a way worth waiting for
         if isinstance(event, PingEvent):
             _log.info(
                 "reporter.ping",
@@ -187,8 +192,11 @@ class HttpReporter:
                 pass
             self._connection = None
 
-    def report(self, event: Event, device: Device) -> bool:
-        """Deliver one event, retrying within the contract's budget.
+    def report(self, event: Event, device: Device, deadline: float | None = None) -> bool:
+        """Deliver one event, retrying until the deadline, on this reporter's clock.
+
+        The queue passes the end of the event's freshness window, so time the event spent
+        waiting behind others counts against it. Without a deadline the full budget applies.
 
         Retry lives here rather than in the queue because ordering matters: the receiver
         drives a now-playing card from event order, so a retried stop must never land after
@@ -201,7 +209,8 @@ class HttpReporter:
             self.close()
         body = json.dumps(build_payload(event, device)).encode("utf-8")
         kind = event_kind(event)
-        deadline = self._clock() + RETRY_BUDGET_SECONDS
+        if deadline is None:
+            deadline = self._clock() + RETRY_BUDGET_SECONDS
         attempts = 0
         while True:
             verdict = self._attempt(body, kind)
@@ -220,6 +229,17 @@ class HttpReporter:
             if self._sleep(min(backoff, remaining)):
                 _log.warning("reporter.gave_up", event=kind, reason="aborted", attempts=attempts)
                 return False
+
+    def send_once(self, body: dict[str, Any], kind: str) -> Verdict:
+        """One attempt with a stored payload, for the outbox.
+
+        One attempt rather than a retry loop: the outbox runs only while the live queue is
+        idle, and a live event arriving meanwhile must wait at most one request timeout.
+        """
+        verdict = self._attempt(json.dumps(body).encode("utf-8"), kind)
+        if verdict is None:
+            return "unreachable"
+        return "accepted" if verdict else "refused"
 
     def _attempt(self, body: bytes, kind: str) -> bool | None:
         """True delivered, False refused for good, None worth retrying."""

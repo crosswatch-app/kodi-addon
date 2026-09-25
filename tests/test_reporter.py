@@ -216,7 +216,7 @@ def test_queue_delivers_submitted_events():
     done = threading.Event()
 
     class Recorder:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             delivered.append(event)
             done.set()
             return True
@@ -233,7 +233,7 @@ def test_queue_drops_rather_than_blocking_when_full(lines, reporter_factory):
     release = threading.Event()
 
     class Slow:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             release.wait(1.0)
             return True
 
@@ -253,7 +253,7 @@ def test_a_sink_that_raises_does_not_kill_the_worker():
         def __init__(self):
             self.first = True
 
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             if self.first:
                 self.first = False
                 raise RuntimeError("boom")
@@ -280,7 +280,7 @@ def test_stop_drains_what_is_queued_before_returning():
     delivered: list[str] = []
 
     class Recorder:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             delivered.append(event.event_id)
             return True
 
@@ -301,7 +301,7 @@ def test_stop_reports_what_it_could_not_deliver(lines, reporter_factory):
     release = threading.Event()
 
     class Slow:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             release.wait(5.0)
             return True
 
@@ -645,3 +645,74 @@ def test_a_server_closing_an_idle_keepalive_is_retried_on_a_fresh_connection(lin
     assert reporter.report(_event(), DEVICE) is True
     assert reporter.report(_event(), DEVICE) is True, "the second event must not be dropped"
     assert len(made) == 2, "the retry must use a fresh connection, not the closed one"
+
+
+def test_a_caller_deadline_bounds_the_retry(reporter_factory):
+    """The queue passes how much of the event's freshness window is left, not a fresh budget."""
+    now = [0.0]
+    attempts: list[float] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(now[0])
+        return FakeConnection(raises=OSError("refused"))
+
+    def sleeper(seconds: float) -> bool:
+        now[0] += seconds
+        return False
+
+    reporter = reporter_factory(
+        "http://host/hook", connection_factory=factory, clock=lambda: now[0], sleeper=sleeper
+    )
+    assert reporter.report(_event(), DEVICE, deadline=30.0) is False
+    assert attempts and max(attempts) <= 30.0
+
+
+def test_a_deadline_already_passed_still_makes_one_attempt(reporter_factory):
+    """An event handed over just inside its window deserves the one attempt it was queued for."""
+    attempts: list[int] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(1)
+        return FakeConnection(raises=OSError("refused"))
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    assert reporter.report(_event(), DEVICE, deadline=-1.0) is False
+    assert len(attempts) == 1
+
+
+@pytest.mark.parametrize(
+    ("response", "raises", "verdict"),
+    [
+        (FakeResponse(200), None, "accepted"),
+        (FakeResponse(200, b'{"ok": true, "ignored": true}'), None, "refused"),
+        (FakeResponse(401, b"{}"), None, "refused"),
+        (FakeResponse(503, b"{}"), None, "unreachable"),
+        (None, OSError("refused"), "unreachable"),
+    ],
+)
+def test_send_once_reports_a_three_way_verdict(reporter_factory, response, raises, verdict):
+    """The outbox has to tell a refusal, which ends an entry, from an outage, which defers it."""
+    connection = FakeConnection(response, raises=raises)
+    reporter = reporter_factory("http://host/hook", connection_factory=lambda *a, **k: connection)
+    assert reporter.send_once({"event": "stop", "event_id": "e-1"}, "stop") == verdict
+
+
+def test_send_once_never_retries(reporter_factory):
+    attempts: list[int] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(1)
+        return FakeConnection(FakeResponse(503, b"{}"))
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    reporter.send_once({"event": "stop"}, "stop")
+    assert len(attempts) == 1
+
+
+def test_send_once_posts_the_stored_body_unchanged(reporter_factory):
+    """A replay must be byte-identical to the first send, event_id and sent_at included."""
+    connection = FakeConnection()
+    reporter = reporter_factory("http://host/hook", connection_factory=lambda *a, **k: connection)
+    body = {"event": "stop", "event_id": "e-1", "sent_at": "2026-09-25T07:00:00Z"}
+    reporter.send_once(body, "stop")
+    assert json.loads(connection.requests[0][2]) == body
