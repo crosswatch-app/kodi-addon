@@ -1,4 +1,7 @@
+from dataclasses import replace
+
 from resources.lib.advanced_settings import Thresholds
+from resources.lib.constants import PROMPT_EVERYONE, PROMPT_HEADING, PROMPT_HEADING_UNTITLED
 from resources.lib.identity import UNRESOLVED, Identity
 from resources.lib.kodi import WINDOW_INVALID
 from resources.lib.models import MediaItem, MediaType, Viewer
@@ -140,22 +143,59 @@ def test_asks_for_a_movie_when_movie_prompts_are_on(tmp_path):
     assert _gate(tmp_path, media=_media("movie")).ask is True
 
 
+EVERYONE = 0  # the Everyone row sits above the viewer names
+
+
+def test_ask_offers_everyone_above_the_viewers_in_configuration_order():
+    kodi = FakeKodi(multiselect_answer=None)
+    ask(kodi, [ANNA, BOB], _media(), autoclose=120)
+    assert kodi.multiselect_calls[0][1] == [f"#{PROMPT_EVERYONE}", "anna", "bob"]
+
+
+def test_ask_names_the_show_in_a_localised_heading():
+    kodi = FakeKodi(multiselect_answer=None)
+    ask(kodi, [ANNA, BOB], _media(), autoclose=120)
+    assert kodi.multiselect_calls[0][0] == f"#{PROMPT_HEADING}"
+
+
+def test_ask_falls_back_to_a_heading_without_a_title():
+    kodi = FakeKodi(multiselect_answer=None)
+    ask(kodi, [ANNA, BOB], replace(_media(), title=""), autoclose=120)
+    assert kodi.multiselect_calls[0][0] == f"#{PROMPT_HEADING_UNTITLED}"
+
+
 def test_ask_returns_the_selected_viewers():
-    assert ask(FakeKodi(multiselect_answer=[1]), [ANNA, BOB], _media(), autoclose=120) == ("bob",)
+    assert ask(FakeKodi(multiselect_answer=[2]), [ANNA, BOB], _media(), autoclose=120) == ("bob",)
 
 
 def test_ask_supports_two_people_watching_together():
-    assert ask(FakeKodi(multiselect_answer=[0, 1]), [ANNA, BOB], _media(), autoclose=120) == ("anna", "bob")
+    assert ask(FakeKodi(multiselect_answer=[1, 2]), [ANNA, BOB], _media(), autoclose=120) == ("anna", "bob")
+
+
+def test_everyone_means_every_configured_viewer():
+    carol = Viewer(name="carol")
+    answer = ask(FakeKodi(multiselect_answer=[EVERYONE]), [ANNA, BOB, carol], _media(), autoclose=120)
+    assert answer == ("anna", "bob", "carol")
+
+
+def test_everyone_wins_over_individual_ticks():
+    carol = Viewer(name="carol")
+    answer = ask(FakeKodi(multiselect_answer=[EVERYONE, 2]), [ANNA, BOB, carol], _media(), autoclose=120)
+    assert answer == ("anna", "bob", "carol")
 
 
 def test_ask_passes_the_autoclose_so_an_abandoned_dialog_cannot_park_the_thread():
-    kodi = FakeKodi(multiselect_answer=[0])
+    kodi = FakeKodi(multiselect_answer=[1])
     ask(kodi, [ANNA, BOB], _media(), autoclose=90)
     assert kodi.multiselect_calls[0][3] == 90
 
 
 def test_a_dismissed_dialog_returns_no_viewers():
     assert ask(FakeKodi(multiselect_answer=None), [ANNA, BOB], _media(), autoclose=120) == ()
+
+
+def test_confirming_with_nothing_ticked_returns_no_viewers():
+    assert ask(FakeKodi(multiselect_answer=[]), [ANNA, BOB], _media(), autoclose=120) == ()
 
 
 def test_remember_stores_under_the_stable_key(tmp_path):

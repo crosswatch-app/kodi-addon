@@ -1,7 +1,7 @@
 from pathlib import Path
 from xml.etree import ElementTree
 
-from resources.lib import config
+from resources.lib import config, constants
 from resources.lib.constants import DEFAULT_INDEX_TTL_SECONDS, DEFAULT_PROGRESS_INTERVAL_SECONDS
 
 SETTINGS = Path(__file__).resolve().parents[1] / "resources" / "settings.xml"
@@ -68,3 +68,13 @@ def test_defaults_match_the_constants():
 
     assert default_of(config.KEY_PROGRESS_INTERVAL) == str(DEFAULT_PROGRESS_INTERVAL_SECONDS)
     assert default_of(config.KEY_INDEX_TTL) == str(DEFAULT_INDEX_TTL_SECONDS // 60)
+
+
+def test_every_string_id_the_code_shows_exists_in_the_language_file():
+    """A missing id renders as an empty string, so the dialog or toast silently loses its text."""
+    text = STRINGS.read_text(encoding="utf-8")
+    ids = {name: value for name, value in vars(constants).items() if name.startswith(("NOTIFY_", "PROMPT_")) and isinstance(value, int) and value >= 30000}
+    assert ids
+    for name, value in ids.items():
+        assert f'msgctxt "#{value}"' in text, name
+

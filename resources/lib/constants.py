@@ -47,9 +47,12 @@ PROMPT_AUTOCLOSE_SECONDS = 120
 FAILURE_BACKOFF_SECONDS = 60
 MAX_FAILURE_BACKOFF_SECONDS = 1800
 
-# strings.po ids for the one thing the addon tells the household directly.
+# strings.po ids for what the addon shows the household directly.
 NOTIFY_HEADING = 30030
 NOTIFY_UNREADABLE = 30031
+PROMPT_HEADING = 30032
+PROMPT_HEADING_UNTITLED = 30033
+PROMPT_EVERYONE = 30034
 
 LOG_MAX_BYTES = 500 * 1024
 LOG_BACKUP_COUNT = 3

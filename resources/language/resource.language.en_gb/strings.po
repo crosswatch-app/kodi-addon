@@ -62,3 +62,15 @@ msgstr ""
 msgctxt "#30031"
 msgid "Playlist could not be read, so viewer identification is reduced: %s"
 msgstr ""
+
+msgctxt "#30032"
+msgid "Who watched %s?"
+msgstr ""
+
+msgctxt "#30033"
+msgid "Who watched this?"
+msgstr ""
+
+msgctxt "#30034"
+msgid "Everyone"
+msgstr ""
