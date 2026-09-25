@@ -435,6 +435,7 @@ class Controller:
                 library_id=session.media.library_id,
             )
             return False
+        percent = session.percent()
         event = PlaybackEvent(
             kind=kind,
             event_id=self._ids(),
@@ -445,7 +446,17 @@ class Controller:
             viewers_source=session.identity.source,
             position_ms=session.position_ms,
             duration_ms=session.duration_ms,
-            percent=session.percent(),
+            percent=percent,
             completed=session.completed,
+            completes_watch=kind == "stop" and self._completes_watch(session.completed, percent),
         )
         return self._queue.submit(event)
+
+    def _completes_watch(self, completed: bool, percent: float | None) -> bool:
+        """Kodi's own watched rule, so the addon keeps what Kodi marks watched.
+
+        CrossWatch applies its own threshold; if that one is lower, a stop between the two
+        counts there but is not kept through an outage here. Kodi's is the threshold the
+        household configured.
+        """
+        return completed or (percent is not None and percent >= self._thresholds.playcount_minimum_percent)

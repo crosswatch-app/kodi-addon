@@ -187,3 +187,8 @@ def test_a_ping_carries_viewers_and_neither_media_nor_a_session():
 
 def test_a_ping_counts_no_skipped_pkc_playbacks_by_default():
     assert PingEvent(event_id="e-1", sent_at="2026-09-19T20:00:00Z", viewers=()).pkc_skipped == 0
+
+
+def test_completes_watch_never_reaches_the_wire():
+    """It steers delivery inside the addon; the contract has no such field."""
+    assert build_payload(_event(completes_watch=True), DEVICE) == build_payload(_event(), DEVICE)
