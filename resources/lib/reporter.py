@@ -6,9 +6,8 @@ wire keys never leave payload.py and the two reporters. It returns a delivery ve
 because HTTP 200 is not delivery: CrossWatch answers 200 for a rejected token, for a
 disabled webhook source and for a route with no sink configured.
 
-Delivery is retried within a bounded budget but is never persisted. Events do not survive a
-restart, and a CrossWatch outage longer than the budget loses them; that is the contract's
-position, and a durable queue is a separate piece of work with its own spec.
+Each event is delivered only within two minutes of being handed over, which is the
+contract's retry window measured from the event rather than from the attempt.
 """
 
 from __future__ import annotations
@@ -315,10 +314,15 @@ class HttpReporter:
 
 
 class ReporterQueue:
-    """Keeps the network off the service thread.
+    """Keeps the network off the service thread, and delivers each event only while it is true.
 
     A full queue drops with a warning: blocking here would park the one thread that delivers
     callbacks and observes abort, which is worse than losing a progress event.
+
+    Every event may be sent until RETRY_BUDGET_SECONDS after it was handed over, and not
+    after: the contract's two minutes are measured from the event, so time spent waiting
+    behind others during an outage counts against it. Without that, an outage queued events
+    two minutes apart and delivered them long after they stopped being true.
     """
 
     def __init__(
@@ -327,13 +331,23 @@ class ReporterQueue:
         device: Device,
         abort: threading.Event,
         maxsize: int = DEFAULT_QUEUE_SIZE,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._sink = sink
         self._device = device
-        self._queue: queue.Queue[Event] = queue.Queue(maxsize=maxsize)
+        # Each item carries its hand-over time on the monotonic clock, never sent_at: a box
+        # with no real-time clock steps its wall clock at NTP sync, which would expire or
+        # resurrect everything queued at that moment.
+        self._queue: queue.Queue[tuple[Event, float, int]] = queue.Queue(maxsize=maxsize)
         self._abort = abort
+        self._clock = clock
         self._stopping = threading.Event()
         self._stopped = False
+        # Newest sequence number handed over per playback session. Decided at dequeue rather
+        # than by editing the queue, so the queue stays a plain queue.Queue.
+        self._latest: dict[str, int] = {}
+        self._latest_lock = threading.Lock()
+        self._sequence = 0
         self._thread = threading.Thread(target=self._run, name="crosswatch-reporter", daemon=True)
         self._thread.start()
 
@@ -341,8 +355,13 @@ class ReporterQueue:
         if self._stopping.is_set():
             _log.warning("reporter.dropped", event=event_kind(event), reason="stopping")
             return False
+        with self._latest_lock:
+            self._sequence += 1
+            sequence = self._sequence
+            if isinstance(event, PlaybackEvent):
+                self._latest[event.session_id] = sequence
         try:
-            self._queue.put_nowait(event)
+            self._queue.put_nowait((event, self._clock(), sequence))
             return True
         except queue.Full:
             _log.warning("reporter.dropped", event=event_kind(event), reason="queue_full")
@@ -351,17 +370,39 @@ class ReporterQueue:
     def _run(self) -> None:
         while True:
             try:
-                event = self._queue.get(timeout=0.2)
+                event, handed_over, sequence = self._queue.get(timeout=0.2)
             except queue.Empty:
                 if self._stopping.is_set():
                     return
                 continue
             try:
-                self._sink.report(event, self._device)
+                self._deliver(event, handed_over, sequence)
             except Exception as exc:
                 _log.error("reporter.crashed", error=str(exc))
             finally:
                 self._queue.task_done()
+
+    def _deliver(self, event: Event, handed_over: float, sequence: int) -> None:
+        kind = event_kind(event)
+        age = self._clock() - handed_over
+        if self._superseded(event, sequence):
+            _log.debug("reporter.superseded", event=kind)
+            return
+        if age > RETRY_BUDGET_SECONDS:
+            _log.debug("reporter.expired", event=kind, age_s=round(age))
+            return
+        self._sink.report(event, self._device, handed_over + RETRY_BUDGET_SECONDS)
+
+    def _superseded(self, event: Event, sequence: int) -> bool:
+        """Only progress: every other kind is a transition the receiver has to see."""
+        if not isinstance(event, PlaybackEvent):
+            return False
+        with self._latest_lock:
+            latest = self._latest.get(event.session_id, sequence)
+            if event.kind == "stop" and latest == sequence:
+                # The session is over; nothing newer can arrive for it.
+                del self._latest[event.session_id]
+        return event.kind == "progress" and latest > sequence
 
     def stop(self, deadline: float = SHUTDOWN_DRAIN_SECONDS) -> int:
         """Drain within a deadline and report what could not be delivered.

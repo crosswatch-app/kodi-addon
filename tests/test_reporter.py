@@ -2,6 +2,7 @@ import itertools
 import json
 import threading
 import time
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -14,6 +15,7 @@ from resources.lib.constants import (
 )
 from resources.lib.models import Device, EventKind, MediaItem, PingEvent, PlaybackEvent
 from resources.lib.reporter import (
+    Event,
     EventSink,
     HttpReporter,
     InvalidWebhookUrl,
@@ -58,6 +60,15 @@ def lines():
     captured: list[str] = []
     logmod.configure(log_dir=None, debug=True, sink=lambda msg, level: captured.append(msg))
     yield captured
+    logmod.reset()
+
+
+@pytest.fixture
+def debug_log(tmp_path):
+    """DEBUG goes only to the addon's own file, never to Kodi's log, so read it from there."""
+    logmod.reset()
+    logmod.configure(log_dir=str(tmp_path), debug=True, sink=lambda msg, level: None)
+    yield lambda: (tmp_path / "crosswatch.log").read_text(encoding="utf-8")
     logmod.reset()
 
 
@@ -716,3 +727,94 @@ def test_send_once_posts_the_stored_body_unchanged(reporter_factory):
     body = {"event": "stop", "event_id": "e-1", "sent_at": "2026-09-25T07:00:00Z"}
     reporter.send_once(body, "stop")
     assert json.loads(connection.requests[0][2]) == body
+
+
+class Gate:
+    """A sink that holds its first event until released, so a test can queue behind it."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.started = threading.Event()
+        self.delivered: list[str] = []
+        self.deadlines: list[float | None] = []
+
+    def report(self, event, device, deadline=None):
+        if not self.delivered:
+            self.started.set()
+            self.release.wait(2.0)
+        self.delivered.append(event.event_id)
+        self.deadlines.append(deadline)
+        return True
+
+
+def _queued(sink, clock, *events: Event) -> ReporterQueue:
+    """Submit a blocker, wait until the worker holds it, then queue the rest behind it."""
+    queue = ReporterQueue(sink, DEVICE, abort=threading.Event(), clock=clock)
+    queue.submit(replace(_event("start"), event_id="blocker", session_id="other"))
+    assert sink.started.wait(2.0)
+    for event in events:
+        queue.submit(event)
+    return queue
+
+
+def test_an_event_older_than_the_window_is_dropped_not_sent(debug_log):
+    now = [0.0]
+    sink = Gate()
+    queue = _queued(sink, lambda: now[0], replace(_event("progress"), event_id="late"))
+    now[0] = RETRY_BUDGET_SECONDS + 1
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker"]
+    assert "reporter.expired | event=progress" in debug_log()
+
+
+def test_the_deadline_is_the_end_of_the_window_from_hand_over():
+    now = [5.0]
+    sink = Gate()
+    queue = _queued(sink, lambda: now[0], replace(_event("progress"), event_id="p"))
+    now[0] = 50.0
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.deadlines[1] == 5.0 + RETRY_BUDGET_SECONDS
+
+
+def test_a_queued_progress_is_dropped_when_a_newer_event_for_its_session_exists(debug_log):
+    sink = Gate()
+    queue = _queued(
+        sink,
+        time.monotonic,
+        replace(_event("progress"), event_id="p1"),
+        replace(_event("progress"), event_id="p2"),
+        replace(_event("stop"), event_id="stop"),
+    )
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker", "stop"]
+    assert debug_log().count("reporter.superseded | event=progress") == 2
+
+
+def test_only_progress_is_ever_superseded():
+    sink = Gate()
+    queue = _queued(
+        sink,
+        time.monotonic,
+        replace(_event("pause"), event_id="pause"),
+        replace(_event("resume"), event_id="resume"),
+        replace(_event("stop"), event_id="stop"),
+    )
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker", "pause", "resume", "stop"]
+
+
+def test_another_sessions_event_does_not_supersede_a_progress():
+    sink = Gate()
+    queue = _queued(
+        sink,
+        time.monotonic,
+        replace(_event("progress"), event_id="p", session_id="s-1"),
+        replace(_event("progress"), event_id="q", session_id="s-2"),
+    )
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker", "p", "q"]
