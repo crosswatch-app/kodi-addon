@@ -64,6 +64,9 @@ class PlaybackEvent:
     duration_ms: int | None
     percent: float | None
     completed: bool = False
+    # Not on the wire. Marks the one event worth keeping through an outage and a restart:
+    # a stop that Kodi itself would count as watched. See the outbox.
+    completes_watch: bool = False
 
 
 @dataclass(frozen=True)

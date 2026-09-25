@@ -6,9 +6,8 @@ wire keys never leave payload.py and the two reporters. It returns a delivery ve
 because HTTP 200 is not delivery: CrossWatch answers 200 for a rejected token, for a
 disabled webhook source and for a route with no sink configured.
 
-Delivery is retried within a bounded budget but is never persisted. Events do not survive a
-restart, and a CrossWatch outage longer than the budget loses them; that is the contract's
-position, and a durable queue is a separate piece of work with its own spec.
+Each event is delivered only within two minutes of being handed over, which is the
+contract's retry window measured from the event rather than from the attempt.
 """
 
 from __future__ import annotations
@@ -19,7 +18,8 @@ import queue
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
 
 from resources.lib.constants import (
@@ -33,6 +33,7 @@ from resources.lib.constants import (
 )
 from resources.lib.log import get_logger, is_debug, redact
 from resources.lib.models import Device, PingEvent, PlaybackEvent
+from resources.lib.outbox import Outbox
 from resources.lib.payload import build_payload
 
 _log = get_logger("reporter")
@@ -40,6 +41,10 @@ _log = get_logger("reporter")
 ALLOWED_SCHEMES = ("http", "https")
 
 Event = PlaybackEvent | PingEvent
+
+# accepted: delivered. refused: a decision, not a hiccup, so never worth sending again.
+# unreachable: nothing decided, so a later attempt may still succeed.
+Verdict = Literal["accepted", "refused", "unreachable"]
 
 
 def event_kind(event: Event) -> str:
@@ -87,7 +92,7 @@ def validate_webhook_url(url: str) -> str:
 
 
 class EventSink(Protocol):
-    def report(self, event: Event, device: Device) -> bool: ...
+    def report(self, event: Event, device: Device, deadline: float | None = None) -> bool: ...
 
 
 class EventQueue(Protocol):
@@ -97,7 +102,8 @@ class EventQueue(Protocol):
 class LogReporter:
     """The default when no webhook is configured. Mechanism at INFO, identity at DEBUG."""
 
-    def report(self, event: Event, device: Device) -> bool:
+    def report(self, event: Event, device: Device, deadline: float | None = None) -> bool:
+        del deadline  # nothing to retry: writing a log line cannot fail in a way worth waiting for
         if isinstance(event, PingEvent):
             _log.info(
                 "reporter.ping",
@@ -187,8 +193,11 @@ class HttpReporter:
                 pass
             self._connection = None
 
-    def report(self, event: Event, device: Device) -> bool:
-        """Deliver one event, retrying within the contract's budget.
+    def report(self, event: Event, device: Device, deadline: float | None = None) -> bool:
+        """Deliver one event, retrying until the deadline, on this reporter's clock.
+
+        The queue passes the end of the event's freshness window, so time the event spent
+        waiting behind others counts against it. Without a deadline the full budget applies.
 
         Retry lives here rather than in the queue because ordering matters: the receiver
         drives a now-playing card from event order, so a retried stop must never land after
@@ -201,7 +210,8 @@ class HttpReporter:
             self.close()
         body = json.dumps(build_payload(event, device)).encode("utf-8")
         kind = event_kind(event)
-        deadline = self._clock() + RETRY_BUDGET_SECONDS
+        if deadline is None:
+            deadline = self._clock() + RETRY_BUDGET_SECONDS
         attempts = 0
         while True:
             verdict = self._attempt(body, kind)
@@ -220,6 +230,17 @@ class HttpReporter:
             if self._sleep(min(backoff, remaining)):
                 _log.warning("reporter.gave_up", event=kind, reason="aborted", attempts=attempts)
                 return False
+
+    def send_once(self, body: dict[str, Any], kind: str) -> Verdict:
+        """One attempt with a stored payload, for the outbox.
+
+        One attempt rather than a retry loop: the outbox runs only while the live queue is
+        idle, and a live event arriving meanwhile must wait at most one request timeout.
+        """
+        verdict = self._attempt(json.dumps(body).encode("utf-8"), kind)
+        if verdict is None:
+            return "unreachable"
+        return "accepted" if verdict else "refused"
 
     def _attempt(self, body: bytes, kind: str) -> bool | None:
         """True delivered, False refused for good, None worth retrying."""
@@ -294,11 +315,33 @@ class HttpReporter:
             _log.warning("reporter.server_too_old", found=reported, expected=MIN_CROSSWATCH_VERSION)
 
 
+def _kept_on_disk(event: Event) -> bool:
+    """Only a stop can mark something watched, whatever else a caller sets."""
+    return isinstance(event, PlaybackEvent) and event.kind == "stop" and event.completes_watch
+
+
+@dataclass(frozen=True)
+class OutboxLane:
+    """Completed watches kept on disk, and how to send one stored payload once.
+
+    Paired so a queue has both or neither: a store with no way to send drains nothing, and a
+    sender with no store has nothing to send.
+    """
+
+    store: Outbox
+    send: Callable[[dict[str, Any], str], Verdict]
+
+
 class ReporterQueue:
-    """Keeps the network off the service thread.
+    """Keeps the network off the service thread, and delivers each event only while it is true.
 
     A full queue drops with a warning: blocking here would park the one thread that delivers
     callbacks and observes abort, which is worse than losing a progress event.
+
+    Every event may be sent until RETRY_BUDGET_SECONDS after it was handed over, and not
+    after: the contract's two minutes are measured from the event, so time spent waiting
+    behind others during an outage counts against it. Without that, an outage queued events
+    two minutes apart and delivered them long after they stopped being true.
     """
 
     def __init__(
@@ -307,13 +350,25 @@ class ReporterQueue:
         device: Device,
         abort: threading.Event,
         maxsize: int = DEFAULT_QUEUE_SIZE,
+        clock: Callable[[], float] = time.monotonic,
+        outbox: OutboxLane | None = None,
     ) -> None:
         self._sink = sink
+        self._outbox = outbox
         self._device = device
-        self._queue: queue.Queue[Event] = queue.Queue(maxsize=maxsize)
+        # Each item carries its hand-over time on the monotonic clock, never sent_at: a box
+        # with no real-time clock steps its wall clock at NTP sync, which would expire or
+        # resurrect everything queued at that moment.
+        self._queue: queue.Queue[tuple[Event, float, int]] = queue.Queue(maxsize=maxsize)
         self._abort = abort
+        self._clock = clock
         self._stopping = threading.Event()
         self._stopped = False
+        # Newest sequence number handed over per playback session. Decided at dequeue rather
+        # than by editing the queue, so the queue stays a plain queue.Queue.
+        self._latest: dict[str, int] = {}
+        self._latest_lock = threading.Lock()
+        self._sequence = 0
         self._thread = threading.Thread(target=self._run, name="crosswatch-reporter", daemon=True)
         self._thread.start()
 
@@ -321,8 +376,17 @@ class ReporterQueue:
         if self._stopping.is_set():
             _log.warning("reporter.dropped", event=event_kind(event), reason="stopping")
             return False
+        if self._outbox is not None and _kept_on_disk(event):
+            # Stored before it is queued, so neither a full queue nor a shutdown between here
+            # and the first attempt can lose it.
+            self._outbox.store.add(build_payload(event, self._device), "stop")
+        with self._latest_lock:
+            self._sequence += 1
+            sequence = self._sequence
+            if isinstance(event, PlaybackEvent):
+                self._latest[event.session_id] = sequence
         try:
-            self._queue.put_nowait(event)
+            self._queue.put_nowait((event, self._clock(), sequence))
             return True
         except queue.Full:
             _log.warning("reporter.dropped", event=event_kind(event), reason="queue_full")
@@ -331,17 +395,61 @@ class ReporterQueue:
     def _run(self) -> None:
         while True:
             try:
-                event = self._queue.get(timeout=0.2)
+                event, handed_over, sequence = self._queue.get(timeout=0.2)
             except queue.Empty:
                 if self._stopping.is_set():
                     return
+                self._try_outbox()
                 continue
             try:
-                self._sink.report(event, self._device)
+                self._deliver(event, handed_over, sequence)
             except Exception as exc:
                 _log.error("reporter.crashed", error=str(exc))
             finally:
                 self._queue.task_done()
+
+    def _deliver(self, event: Event, handed_over: float, sequence: int) -> None:
+        kind = event_kind(event)
+        age = self._clock() - handed_over
+        if self._superseded(event, sequence):
+            _log.debug("reporter.superseded", event=kind)
+            return
+        if age > RETRY_BUDGET_SECONDS:
+            _log.debug("reporter.expired", event=kind, age_s=round(age))
+            return
+        delivered = self._sink.report(event, self._device, handed_over + RETRY_BUDGET_SECONDS)
+        if delivered and self._outbox is not None and _kept_on_disk(event):
+            self._outbox.store.delivered(event.event_id)
+
+    def _try_outbox(self) -> None:
+        """One attempt at the oldest due stored watch, only while no live event is waiting.
+
+        One attempt, not a retry loop, so a live event arriving meanwhile waits at most one
+        request timeout; and never after abort, when the contract says to stop trying.
+        """
+        if self._outbox is None or self._abort.is_set():
+            return
+        entry = self._outbox.store.next_due()
+        if entry is None:
+            return
+        verdict = self._outbox.send(entry.body, entry.kind)
+        if verdict == "accepted":
+            self._outbox.store.delivered(entry.event_id)
+        elif verdict == "refused":
+            self._outbox.store.refused(entry.event_id)
+        else:
+            self._outbox.store.defer(entry.event_id)
+
+    def _superseded(self, event: Event, sequence: int) -> bool:
+        """Only progress: every other kind is a transition the receiver has to see."""
+        if not isinstance(event, PlaybackEvent):
+            return False
+        with self._latest_lock:
+            latest = self._latest.get(event.session_id, sequence)
+            if event.kind == "stop" and latest == sequence:
+                # The session is over; nothing newer can arrive for it.
+                del self._latest[event.session_id]
+        return event.kind == "progress" and latest > sequence
 
     def stop(self, deadline: float = SHUTDOWN_DRAIN_SECONDS) -> int:
         """Drain within a deadline and report what could not be delivered.
@@ -363,6 +471,8 @@ class ReporterQueue:
         undelivered = self._queue.qsize()
         if undelivered:
             _log.warning("reporter.undelivered", count=undelivered)
+        if self._outbox is not None and (pending := self._outbox.store.pending()):
+            _log.warning("reporter.outbox_pending", count=pending)
         if self._thread.is_alive():
             # The worker may still be inside request()/getresponse(). http.client holds no
             # lock, so closing the connection underneath it would corrupt the socket. The

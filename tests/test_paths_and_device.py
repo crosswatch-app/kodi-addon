@@ -9,7 +9,14 @@ from tests.fakes import FakeKodi
 def test_paths_all_hang_off_one_profile_directory():
     kodi = FakeKodi(root="/kodi")
     base = paths.profile_dir(kodi)
-    for path in (paths.viewers_path(kodi), paths.prompts_path(kodi), paths.device_path(kodi), paths.log_dir(kodi)):
+    every = (
+        paths.viewers_path(kodi),
+        paths.prompts_path(kodi),
+        paths.device_path(kodi),
+        paths.outbox_path(kodi),
+        paths.log_dir(kodi),
+    )
+    for path in every:
         assert path.startswith(base)
 
 

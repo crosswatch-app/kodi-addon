@@ -2,6 +2,7 @@ import itertools
 import json
 import threading
 import time
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -13,12 +14,17 @@ from resources.lib.constants import (
     SHUTDOWN_HTTP_TIMEOUT_SECONDS,
 )
 from resources.lib.models import Device, EventKind, MediaItem, PingEvent, PlaybackEvent
+from resources.lib.outbox import Outbox, config_fingerprint
+from resources.lib.payload import build_payload
 from resources.lib.reporter import (
+    Event,
     EventSink,
     HttpReporter,
     InvalidWebhookUrl,
     LogReporter,
+    OutboxLane,
     ReporterQueue,
+    Verdict,
     event_kind,
     validate_webhook_url,
 )
@@ -58,6 +64,15 @@ def lines():
     captured: list[str] = []
     logmod.configure(log_dir=None, debug=True, sink=lambda msg, level: captured.append(msg))
     yield captured
+    logmod.reset()
+
+
+@pytest.fixture
+def debug_log(tmp_path):
+    """DEBUG goes only to the addon's own file, never to Kodi's log, so read it from there."""
+    logmod.reset()
+    logmod.configure(log_dir=str(tmp_path), debug=True, sink=lambda msg, level: None)
+    yield lambda: (tmp_path / "crosswatch.log").read_text(encoding="utf-8")
     logmod.reset()
 
 
@@ -216,7 +231,7 @@ def test_queue_delivers_submitted_events():
     done = threading.Event()
 
     class Recorder:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             delivered.append(event)
             done.set()
             return True
@@ -233,7 +248,7 @@ def test_queue_drops_rather_than_blocking_when_full(lines, reporter_factory):
     release = threading.Event()
 
     class Slow:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             release.wait(1.0)
             return True
 
@@ -253,7 +268,7 @@ def test_a_sink_that_raises_does_not_kill_the_worker():
         def __init__(self):
             self.first = True
 
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             if self.first:
                 self.first = False
                 raise RuntimeError("boom")
@@ -280,7 +295,7 @@ def test_stop_drains_what_is_queued_before_returning():
     delivered: list[str] = []
 
     class Recorder:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             delivered.append(event.event_id)
             return True
 
@@ -301,7 +316,7 @@ def test_stop_reports_what_it_could_not_deliver(lines, reporter_factory):
     release = threading.Event()
 
     class Slow:
-        def report(self, event, device):
+        def report(self, event, device, deadline=None):
             release.wait(5.0)
             return True
 
@@ -645,3 +660,288 @@ def test_a_server_closing_an_idle_keepalive_is_retried_on_a_fresh_connection(lin
     assert reporter.report(_event(), DEVICE) is True
     assert reporter.report(_event(), DEVICE) is True, "the second event must not be dropped"
     assert len(made) == 2, "the retry must use a fresh connection, not the closed one"
+
+
+def test_a_caller_deadline_bounds_the_retry(reporter_factory):
+    """The queue passes how much of the event's freshness window is left, not a fresh budget."""
+    now = [0.0]
+    attempts: list[float] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(now[0])
+        return FakeConnection(raises=OSError("refused"))
+
+    def sleeper(seconds: float) -> bool:
+        now[0] += seconds
+        return False
+
+    reporter = reporter_factory(
+        "http://host/hook", connection_factory=factory, clock=lambda: now[0], sleeper=sleeper
+    )
+    assert reporter.report(_event(), DEVICE, deadline=30.0) is False
+    assert attempts and max(attempts) <= 30.0
+
+
+def test_a_deadline_already_passed_still_makes_one_attempt(reporter_factory):
+    """An event handed over just inside its window deserves the one attempt it was queued for."""
+    attempts: list[int] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(1)
+        return FakeConnection(raises=OSError("refused"))
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    assert reporter.report(_event(), DEVICE, deadline=-1.0) is False
+    assert len(attempts) == 1
+
+
+@pytest.mark.parametrize(
+    ("response", "raises", "verdict"),
+    [
+        (FakeResponse(200), None, "accepted"),
+        (FakeResponse(200, b'{"ok": true, "ignored": true}'), None, "refused"),
+        (FakeResponse(401, b"{}"), None, "refused"),
+        (FakeResponse(503, b"{}"), None, "unreachable"),
+        (None, OSError("refused"), "unreachable"),
+    ],
+)
+def test_send_once_reports_a_three_way_verdict(reporter_factory, response, raises, verdict):
+    """The outbox has to tell a refusal, which ends an entry, from an outage, which defers it."""
+    connection = FakeConnection(response, raises=raises)
+    reporter = reporter_factory("http://host/hook", connection_factory=lambda *a, **k: connection)
+    assert reporter.send_once({"event": "stop", "event_id": "e-1"}, "stop") == verdict
+
+
+def test_send_once_never_retries(reporter_factory):
+    attempts: list[int] = []
+
+    def factory(*args, **kwargs):
+        attempts.append(1)
+        return FakeConnection(FakeResponse(503, b"{}"))
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    reporter.send_once({"event": "stop"}, "stop")
+    assert len(attempts) == 1
+
+
+def test_send_once_posts_the_stored_body_unchanged(reporter_factory):
+    """A replay must be byte-identical to the first send, event_id and sent_at included."""
+    connection = FakeConnection()
+    reporter = reporter_factory("http://host/hook", connection_factory=lambda *a, **k: connection)
+    body = {"event": "stop", "event_id": "e-1", "sent_at": "2026-09-25T07:00:00Z"}
+    reporter.send_once(body, "stop")
+    assert json.loads(connection.requests[0][2]) == body
+
+
+class Gate:
+    """A sink that holds its first event until released, so a test can queue behind it."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.started = threading.Event()
+        self.delivered: list[str] = []
+        self.deadlines: list[float | None] = []
+
+    def report(self, event, device, deadline=None):
+        if not self.delivered:
+            self.started.set()
+            self.release.wait(2.0)
+        self.delivered.append(event.event_id)
+        self.deadlines.append(deadline)
+        return True
+
+
+def _queued(sink, clock, *events: Event) -> ReporterQueue:
+    """Submit a blocker, wait until the worker holds it, then queue the rest behind it."""
+    queue = ReporterQueue(sink, DEVICE, abort=threading.Event(), clock=clock)
+    queue.submit(replace(_event("start"), event_id="blocker", session_id="other"))
+    assert sink.started.wait(2.0)
+    for event in events:
+        queue.submit(event)
+    return queue
+
+
+def test_an_event_older_than_the_window_is_dropped_not_sent(debug_log):
+    now = [0.0]
+    sink = Gate()
+    queue = _queued(sink, lambda: now[0], replace(_event("progress"), event_id="late"))
+    now[0] = RETRY_BUDGET_SECONDS + 1
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker"]
+    assert "reporter.expired | event=progress" in debug_log()
+
+
+def test_the_deadline_is_the_end_of_the_window_from_hand_over():
+    now = [5.0]
+    sink = Gate()
+    queue = _queued(sink, lambda: now[0], replace(_event("progress"), event_id="p"))
+    now[0] = 50.0
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.deadlines[1] == 5.0 + RETRY_BUDGET_SECONDS
+
+
+def test_a_queued_progress_is_dropped_when_a_newer_event_for_its_session_exists(debug_log):
+    sink = Gate()
+    queue = _queued(
+        sink,
+        time.monotonic,
+        replace(_event("progress"), event_id="p1"),
+        replace(_event("progress"), event_id="p2"),
+        replace(_event("stop"), event_id="stop"),
+    )
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker", "stop"]
+    assert debug_log().count("reporter.superseded | event=progress") == 2
+
+
+def test_only_progress_is_ever_superseded():
+    sink = Gate()
+    queue = _queued(
+        sink,
+        time.monotonic,
+        replace(_event("pause"), event_id="pause"),
+        replace(_event("resume"), event_id="resume"),
+        replace(_event("stop"), event_id="stop"),
+    )
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker", "pause", "resume", "stop"]
+
+
+def test_another_sessions_event_does_not_supersede_a_progress():
+    sink = Gate()
+    queue = _queued(
+        sink,
+        time.monotonic,
+        replace(_event("progress"), event_id="p", session_id="s-1"),
+        replace(_event("progress"), event_id="q", session_id="s-2"),
+    )
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker", "p", "q"]
+
+
+def _store(tmp_path, mono=None) -> Outbox:
+    store = Outbox(
+        str(tmp_path / "outbox.json"),
+        config_fingerprint("http://host/hook", "tok"),
+        clock=mono or time.monotonic,
+    )
+    store.load()
+    return store
+
+
+def _watched(event_id: str = "w-1") -> PlaybackEvent:
+    return replace(_event("stop"), event_id=event_id, completes_watch=True)
+
+
+def test_a_completed_watch_is_on_disk_before_the_first_attempt(tmp_path):
+    store = _store(tmp_path)
+    seen: list[int] = []
+
+    class Checking:
+        def report(self, event, device, deadline=None):
+            seen.append(store.pending())
+            return True
+
+    queue = ReporterQueue(Checking(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "accepted"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert seen == [1]
+
+
+def test_a_completed_watch_accepted_live_leaves_the_outbox(tmp_path):
+    store = _store(tmp_path)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "accepted"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert store.pending() == 0
+
+
+def test_a_completed_watch_that_fails_live_stays_in_the_outbox(tmp_path):
+    store = _store(tmp_path)
+
+    class Down:
+        def report(self, event, device, deadline=None):
+            return False
+
+    queue = ReporterQueue(Down(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "unreachable"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert store.pending() == 1
+
+
+def test_any_other_event_is_never_stored(tmp_path):
+    store = _store(tmp_path)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "accepted"))
+    queue.submit(_event("stop"))
+    queue.submit(replace(_event("progress"), completes_watch=True))
+    queue.stop(deadline=2.0)
+    assert (tmp_path / "outbox.json").exists() is False
+
+
+def _idle_queue(tmp_path, verdict: Verdict) -> tuple[Outbox, list[dict]]:
+    """A leftover entry from a previous run, and an idle queue that should pick it up."""
+    _store(tmp_path).add(_body_of(_watched()), "stop")
+    store = _store(tmp_path)
+    sent: list[dict] = []
+    done = threading.Event()
+
+    def send(body, kind):
+        sent.append(body)
+        done.set()
+        return verdict
+
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, send))
+    assert done.wait(2.0)
+    queue.stop(deadline=2.0)
+    return store, sent
+
+
+def _body_of(event: PlaybackEvent) -> dict:
+    return build_payload(event, DEVICE)
+
+
+def test_an_idle_queue_delivers_a_leftover_watch_with_its_original_body(tmp_path):
+    store, sent = _idle_queue(tmp_path, "accepted")
+    assert sent == [_body_of(_watched())]
+    assert store.pending() == 0
+
+
+def test_a_refused_leftover_watch_is_dropped(tmp_path):
+    store, _ = _idle_queue(tmp_path, "refused")
+    assert store.pending() == 0
+
+
+def test_an_unreachable_leftover_watch_is_kept_and_not_retried_at_once(tmp_path):
+    store, sent = _idle_queue(tmp_path, "unreachable")
+    assert store.pending() == 1
+    assert len(sent) == 1, "deferred for an interval, not hammered every idle poll"
+
+
+def test_the_outbox_is_not_attempted_once_stopping(tmp_path):
+    _store(tmp_path).add(_body_of(_watched()), "stop")
+    store = _store(tmp_path)
+    sent: list[dict] = []
+    abort = threading.Event()
+    abort.set()
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=abort, outbox=OutboxLane(store, lambda b, k: sent.append(b) or "accepted"))
+    time.sleep(0.5)
+    queue.stop(deadline=1.0)
+    assert sent == []
+
+
+def test_stop_reports_watches_left_on_disk(tmp_path, lines):
+    store = _store(tmp_path)
+
+    class Down:
+        def report(self, event, device, deadline=None):
+            return False
+
+    queue = ReporterQueue(Down(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "unreachable"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert any("reporter.outbox_pending" in line and "count=1" in line for line in lines)

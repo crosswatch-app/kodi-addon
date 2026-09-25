@@ -280,6 +280,45 @@ def test_completed_playback_is_reported_as_completed(tmp_path):
     assert collector.playback()[-1].completed is True
 
 
+def _stop_at(tmp_path, position_ms: int, completed: bool) -> PlaybackEvent:
+    collector = Collector()
+    kodi = _kodi([])
+    kodi.position_ms = position_ms
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=completed)
+    controller.on_tick()
+    stop = collector.playback()[-1]
+    assert stop.kind == "stop"
+    return stop
+
+
+def test_a_stop_at_kodis_watched_threshold_completes_the_watch(tmp_path):
+    # Thresholds() defaults playcount_minimum_percent to 90; the fake's duration is 1_320_000.
+    assert _stop_at(tmp_path, 1_188_000, completed=False).completes_watch is True
+
+
+def test_a_stop_just_below_the_threshold_does_not(tmp_path):
+    assert _stop_at(tmp_path, 1_187_000, completed=False).completes_watch is False
+
+
+def test_a_stop_kodi_reports_as_ended_completes_the_watch_whatever_the_percent(tmp_path):
+    assert _stop_at(tmp_path, PAST_START, completed=True).completes_watch is True
+
+
+def test_only_a_stop_can_complete_a_watch(tmp_path):
+    collector = Collector()
+    kodi = _kodi([])
+    kodi.position_ms = 1_300_000
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_paused()
+    controller.on_tick()
+    assert collector.playback()
+    assert not any(e.completes_watch for e in collector.playback())
+
+
 def test_an_unknown_duration_reports_percent_as_none(tmp_path):
     collector = Collector()
     kodi = _kodi([])
