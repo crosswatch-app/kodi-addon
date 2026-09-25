@@ -1,3 +1,5 @@
+import pytest
+
 from resources.lib.advanced_settings import DEFAULTS, read_thresholds
 from tests.fakes import FakeKodi
 
@@ -47,3 +49,26 @@ def test_malformed_xml_falls_back_to_defaults():
 def test_a_non_numeric_value_falls_back_to_its_default():
     bad = "<advancedsettings><video><ignoresecondsatstart>soon</ignoresecondsatstart></video></advancedsettings>"
     assert read_thresholds(FakeKodi(files={PROFILE: bad})).ignore_seconds_at_start == 180
+
+
+def _only(tag: str, value: str) -> str:
+    return f"<advancedsettings><video><{tag}>{value}</{tag}></video></advancedsettings>"
+
+
+@pytest.mark.parametrize(
+    ("tag", "value", "field", "expected"),
+    [
+        ("playcountminimumpercent", "150", "playcount_minimum_percent", 101.0),
+        ("playcountminimumpercent", "-5", "playcount_minimum_percent", 0.0),
+        ("playcountminimumpercent", "101", "playcount_minimum_percent", 101.0),
+        ("ignoresecondsatstart", "5000", "ignore_seconds_at_start", 900),
+        ("ignoresecondsatstart", "-1", "ignore_seconds_at_start", 0),
+        ("ignorepercentatend", "120", "ignore_percent_at_end", 100.0),
+        ("ignorepercentatend", "-3", "ignore_percent_at_end", 0.0),
+    ],
+)
+def test_an_out_of_range_value_is_clamped_to_kodis_range(tag, value, field, expected):
+    """Kodi clamps these rather than rejecting them (AdvancedSettings.cpp), so the addon has to
+    agree with Kodi on what counts as watched, not merely read the same element."""
+    got = read_thresholds(FakeKodi(files={PROFILE: _only(tag, value)}))
+    assert getattr(got, field) == expected
