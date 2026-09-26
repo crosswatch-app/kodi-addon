@@ -1,6 +1,6 @@
 # Kodi add-on contract
 
-Version 1.1. Draft.
+Version 1.2. Draft.
 
 Nothing here is set in stone. If something makes the add-on harder to build, just say so and we change it. CrossWatch can adapt.
 
@@ -11,6 +11,12 @@ The add-on tells CrossWatch what is playing and who is watching. It replaces the
 Events go through the normal Kodi watcher routes. So every route keeps its own user whitelist, profile, filters and target.
 
 The add-on finds the ids and the viewers. CrossWatch does the routing, throttling, filters and the now-playing card.
+
+## Where events go
+
+Kodi is the source, not the destination. The add-on says who watched what, and CrossWatch writes it wherever the route points: Trakt, Simkl, or a Plex, Emby or Jellyfin server.
+
+So a Kodi watch can end up marked watched on someone's own Plex. That is why timestamps and an unknown `percent` matter this much.
 
 ## Setup
 
@@ -83,7 +89,8 @@ When the add-on is active, CrossWatch stops polling that Kodi. No double scrobbl
 | `event` | yes | `ping`, `start`, `resume`, `pause`, `progress` or `stop`. |
 | `event_id` | yes | Unique per event. For logs, and for dedupe if CrossWatch ever needs it. |
 | `session_id` | playback | Same value for one playback on one device. |
-| `sent_at` | no | ISO-8601 UTC. |
+| `sent_at` | yes | ISO-8601 UTC, when the event happened. CrossWatch uses it as the watch time. |
+| `replayed` | no | `true` when a stored `stop` is delivered later. |
 | `addon_version` | no | Shown in CrossWatch. |
 | `device.id` | yes | Stable device id. Works with the server UUID filters. |
 | `device.name` | no | Shown in CrossWatch. |
@@ -157,9 +164,10 @@ The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them an
 
 ## Delivery
 
-- No queue needed.
-- CrossWatch down? Retry for 2 minutes, then drop it.
-- Don't replay old events after a restart. A late `stop` gets the wrong watch time. Sync picks up anything missed.
+- No queue for normal events. Retry for 2 minutes counted from when the event happened, then drop it. So nothing arrives late.
+- One exception: a `stop` that completes a watch goes to disk before the first attempt and is kept until CrossWatch takes it, up to 7 days, surviving a Kodi restart. Kodi bumps its own playcount anyway, but only the add-on knows who watched.
+- A stored stop is replayed with its original `event_id` and `sent_at`, and carries `replayed: true`. CrossWatch dates the watch from `sent_at`, not from when it arrives.
+- A late stop never touches the now-playing card. That is keyed per session.
 - Timeout of 10 seconds.
 - Retry on connection errors, timeouts, `5xx` and a lost response. A duplicate is safe: Trakt and Simkl dedupe server side, and the media server sinks just set a watched flag. A lost `stop` is worse.
 - Don't retry a `200` with `ignored: true`, and don't retry a `401`.
@@ -204,3 +212,4 @@ PKC playback is just a normal event with the ids the add-on found. `media.plex_r
 The add-on skips PKC playback by default, so people who also run the Plex watcher with PKC support do not get double scrobbles. Untested so far, since PKC is not installed on the dev machine.
 
 For `plugin://` paths, send them as they are. Path filters just won't match them.
+````
