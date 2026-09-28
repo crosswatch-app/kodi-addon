@@ -432,7 +432,10 @@ class ReporterQueue:
         entry = self._outbox.store.next_due()
         if entry is None:
             return
-        verdict = self._outbox.send(entry.body, entry.kind)
+        # replayed is contract v1.2's marker for a stop delivered from disk. Added here, not
+        # stored, so the file keeps exactly the payload that was built; CrossWatch could
+        # otherwise only guess from the gap between sent_at and arrival.
+        verdict = self._outbox.send({**entry.body, "replayed": True}, entry.kind)
         if verdict == "accepted":
             self._outbox.store.delivered(entry.event_id)
         elif verdict == "refused":

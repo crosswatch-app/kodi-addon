@@ -53,8 +53,9 @@ or played to at least its watched threshold (90 percent by default, the
   (`userdata/addon_data/service.crosswatch/`) before the first send is even attempted. It
   survives CrossWatch being down and Kodi being restarted or switched off.
 - It is retried every five minutes while Kodi runs, and straight away when Kodi starts.
-- When it is finally delivered, it carries its original time, so CrossWatch sees the same
-  event arriving late, not a new one. It is removed from the file once CrossWatch accepts it.
+- When it is finally delivered, it carries its original time and is marked as replayed, so
+  CrossWatch sees the same event arriving late, not a new one, and dates the watch from when
+  it happened. It is removed from the file once CrossWatch accepts it.
 - It is dropped, with a warning in the log, if CrossWatch refuses it, if it has waited more
   than seven days, if more than 200 stops are already waiting (oldest dropped first), or if
   the webhook address or token has changed since it was stored, so a stored stop is never

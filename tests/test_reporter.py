@@ -906,9 +906,30 @@ def _body_of(event: PlaybackEvent) -> dict:
 
 
 def test_an_idle_queue_delivers_a_leftover_watch_with_its_original_body(tmp_path):
+    """Original event_id and sent_at, plus the flag that tells CrossWatch it came off disk."""
     store, sent = _idle_queue(tmp_path, "accepted")
-    assert sent == [_body_of(_watched())]
+    assert sent == [{**_body_of(_watched()), "replayed": True}]
     assert store.pending() == 0
+
+
+def test_the_stored_copy_never_carries_the_replayed_flag(tmp_path):
+    """Added at send time, so the file keeps exactly the payload that was built."""
+    _idle_queue(tmp_path, "unreachable")
+    assert "replayed" not in (tmp_path / "outbox.json").read_text(encoding="utf-8")
+
+
+def test_a_stop_delivered_live_is_not_marked_replayed(tmp_path):
+    sent: list[dict] = []
+
+    class Recorder:
+        def report(self, event, device, deadline=None):
+            sent.append(build_payload(event, device))
+            return True
+
+    queue = ReporterQueue(Recorder(), DEVICE, abort=threading.Event(), outbox=OutboxLane(_store(tmp_path), lambda b, k: "accepted"))
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert len(sent) == 1 and "replayed" not in sent[0]
 
 
 def test_a_refused_leftover_watch_is_dropped(tmp_path):
