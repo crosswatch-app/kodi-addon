@@ -212,4 +212,3 @@ PKC playback is just a normal event with the ids the add-on found. `media.plex_r
 The add-on skips PKC playback by default, so people who also run the Plex watcher with PKC support do not get double scrobbles. Untested so far, since PKC is not installed on the dev machine.
 
 For `plugin://` paths, send them as they are. Path filters just won't match them.
-````
