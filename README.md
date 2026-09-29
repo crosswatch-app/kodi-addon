@@ -14,7 +14,7 @@ Kodi add-on that reports playback and viewers to [CrossWatch](https://github.com
 >
 > **Running it against an older CrossWatch can destroy data.** The add-on omits `percent`
 > when Kodi does not know the duration, which happens for a stream of unknown length. A
-> server older than 0.13.0 turns that missing value into `0`, and zero means watched
+> server older than 0.14.0 turns that missing value into `0`, and zero means watched
 > nothing, so it overwrites the viewer's real resume point in Plex or Emby, on `start` as
 > well as on `stop`. The add-on warns once when the server reports an older version, but it
 > cannot refuse on your behalf. This is the one failure here that loses data rather than
