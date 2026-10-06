@@ -87,11 +87,15 @@ def test_the_connection_actions_run_their_scripts():
     assert settings["unpair"].findtext("data") == "RunScript(service.crosswatch,unpair)"
 
 
-def test_the_connection_actions_keep_the_settings_screen_open():
-    """The scripts' writes land on the open screen and are saved when it closes."""
+def test_the_connection_actions_close_the_settings_screen_first():
+    """Kodi saves and closes the screen before running the script (AddonSettings.cpp).
+
+    Left open, the screen only stages the script's writes, and Back or Cancel then reloads
+    the settings from disk and silently undoes a pairing the user was shown as done.
+    """
     settings = _settings()
     for key in ("pair", "unpair"):
-        assert settings[key].findtext("control/close") == "false", key
+        assert settings[key].findtext("control/close") == "true", key
 
 
 def test_the_status_line_cannot_be_edited():

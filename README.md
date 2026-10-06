@@ -79,8 +79,8 @@ What you see depends on what went wrong:
 - An address that cannot be used, such as one starting with `ftp://`: "Not a CrossWatch
   address: `<address>`"
 
-Kodi saves a setting changed by the add-on's own buttons, such as Pair, when you close the
-settings screen. The add-on switches to the new connection at that point, no Kodi restart
+Pressing Pair or Unpair closes the settings screen first, saving anything else you changed
+there. The add-on switches to the new connection as soon as you finish, no Kodi restart
 needed, and sends a heartbeat right away, so CrossWatch sees it within seconds.
 
 ### Link (shortcut)

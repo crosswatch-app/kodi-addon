@@ -2,9 +2,9 @@
 """The settings scripts that connect this Kodi to CrossWatch: Pair, Link and Unpair.
 
 Each ends by writing settings. The running service picks the change up through
-onSettingsChanged and switches over without a restart; with the add-on's settings screen
-open, Kodi holds the writes on that screen and saves them, and tells the service, when it
-closes.
+onSettingsChanged and switches over without a restart. Pair and Unpair close the settings
+screen before they run (<close>true</close> in settings.xml): with it open, Kodi would only
+stage the writes on it, and leaving with Back or Cancel would discard them.
 """
 
 from __future__ import annotations
