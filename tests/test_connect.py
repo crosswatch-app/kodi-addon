@@ -6,6 +6,7 @@ from resources.lib.constants import (
     LINK_AUTOCLOSE_SECONDS,
     PAIR_BAD_ADDRESS,
     PAIR_CODE,
+    PAIR_DISABLED,
     PAIR_DONE,
     PAIR_FAILED,
     PAIR_INVALID_CODE,
@@ -57,6 +58,7 @@ def test_the_address_is_prefilled_with_the_last_one_used():
         (PairResult("rate_limited", status=429), f"#{PAIR_RATE_LIMITED}"),
         (PairResult("unreachable"), f"#{PAIR_UNREACHABLE}"),
         (PairResult("failed", status=404), f"#{PAIR_FAILED}"),
+        (PairResult("disabled", status=200), f"#{PAIR_DISABLED}"),
     ],
 )
 def test_a_failure_says_why_and_changes_no_setting(result, message):

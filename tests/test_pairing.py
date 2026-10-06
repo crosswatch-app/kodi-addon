@@ -108,6 +108,18 @@ def test_each_answer_has_its_outcome(status, body, outcome):
     assert result.status == status
 
 
+def test_a_switched_off_add_on_feature_has_its_own_outcome():
+    """CrossWatch answers 200 with ignored: true, so the HTTP status alone says nothing useful."""
+    body = b'{"ok": true, "ignored": true, "error": "addon_disabled", "crosswatch_version": "0.13.3"}'
+    result, _ = _exchange(Connection(Response(200, body)))
+    assert (result.outcome, result.status) == ("disabled", 200)
+
+
+def test_any_other_ignored_reply_is_a_plain_failure():
+    result, _ = _exchange(Connection(Response(200, b'{"ok": true, "ignored": true, "error": "other"}')))
+    assert result.outcome == "failed"
+
+
 def test_a_reply_without_an_instance_still_pairs():
     result, _ = _exchange(Connection(Response(200, b'{"ok": true, "token": "tok"}')))
     assert (result.outcome, result.instance) == ("paired", "")

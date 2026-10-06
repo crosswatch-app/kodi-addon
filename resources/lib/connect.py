@@ -21,6 +21,7 @@ from resources.lib.constants import (
     PAIR_ADDRESS,
     PAIR_BAD_ADDRESS,
     PAIR_CODE,
+    PAIR_DISABLED,
     PAIR_DONE,
     PAIR_FAILED,
     PAIR_INVALID_CODE,
@@ -58,6 +59,8 @@ def _failure(kodi: KodiApi, result: PairResult, address: str) -> str:
         return kodi.localised(PAIR_RATE_LIMITED)
     if result.outcome == "unreachable":
         return status.fill(kodi.localised(PAIR_UNREACHABLE), address)
+    if result.outcome == "disabled":
+        return kodi.localised(PAIR_DISABLED)
     return status.fill(kodi.localised(PAIR_FAILED), str(result.status))
 
 
