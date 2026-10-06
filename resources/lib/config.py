@@ -16,6 +16,7 @@ from resources.lib.kodi import KodiApi
 
 KEY_BASE_URL = "webhook_base_url"
 KEY_TOKEN = "webhook_token"
+KEY_STATUS = "connection_status"
 KEY_DEVICE_ID = "device_id"
 KEY_PROGRESS_INTERVAL = "progress_interval_seconds"
 KEY_MOVIE_PROMPTS = "movie_prompts"

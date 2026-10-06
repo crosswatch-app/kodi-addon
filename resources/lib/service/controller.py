@@ -73,8 +73,7 @@ class Controller:
         self._notified_unreadable: frozenset[str] = frozenset()
         self._failures = 0
         self._failed_at: float | None = None
-        # Read by the ping, which is the only place the user can see it: the addon has no
-        # status UI of its own.
+        # Read by the ping, which is the only place it is reported.
         self.pkc_skipped = 0
         self._last_ping_at: float | None = None
         self._shutting_down = False
@@ -85,6 +84,14 @@ class Controller:
         self._settings = settings
         self._thresholds = thresholds
         self.invalidate_index()
+
+    def ping_now(self) -> None:
+        """Ping on the next tick rather than at the end of the interval.
+
+        For a new connection: its first ping is how CrossWatch learns a Link worked, and the
+        reply names the instance for the status line.
+        """
+        self._last_ping_at = None
 
     def invalidate_index(self) -> None:
         self._index_dirty = True
