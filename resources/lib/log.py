@@ -18,7 +18,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, TextIO
 
 from resources.lib.constants import LOG_BACKUP_COUNT, LOG_MAX_BYTES, LOG_NAME
 
@@ -57,7 +57,7 @@ _log_dir: str | None = None
 _debug = False
 _secrets: tuple[str, ...] = ()
 _sink: Callable[[str, int], None] = _null_sink
-_handle: Any = None
+_handle: TextIO | None = None
 _written = 0
 
 
@@ -157,14 +157,16 @@ def _path(index: int = 0) -> str:
     return os.path.join(_log_dir, name)
 
 
-def _open_handle() -> None:
+def _open_handle() -> TextIO:
     global _handle, _written
-    _handle = open(_path(), "a", encoding="utf-8")
+    handle = open(_path(), "a", encoding="utf-8")
+    _handle = handle
     try:
         _written = os.path.getsize(_path())
         os.chmod(_path(), 0o600)
     except OSError:
         _written = 0
+    return handle
 
 
 def _rotate() -> None:
@@ -191,13 +193,14 @@ def _write_file(line: str) -> None:
     record = f"{stamp} {line}\n"
     with _lock:
         try:
-            if _handle is None:
-                _open_handle()
+            # A local, not the global: a type checker cannot see a call reassign a module
+            # global, so it would still think the handle is None after opening it.
+            handle = _handle if _handle is not None else _open_handle()
             if _written >= MAX_BYTES:
                 _rotate()
-                _open_handle()
-            _handle.write(record)
-            _handle.flush()
+                handle = _open_handle()
+            handle.write(record)
+            handle.flush()
             _written += len(record.encode("utf-8"))
         except OSError:
             _handle = None

@@ -171,9 +171,9 @@ pre-commit==4.6.2 \
     --hash=sha256:8f5d7bfb021ecdbcd9d49d89847082dd24172ccde534390081a679ad046e2441 \
     --hash=sha256:e2dde9a75d3bce11bd3831c26d134df00a2803c1d818be6a0383c3dcda25dc4e
     # via -r requirements-dev.txt
-pyright==1.1.383 \
-    --hash=sha256:1df7f12407f3710c9c6df938d98ec53f70053e6c6bbf71ce7bcb038d42f10070 \
-    --hash=sha256:d864d1182a313f45aaf99e9bfc7d2668eeabc99b29a556b5344894fd73cb1959
+pyright==1.1.414 \
+    --hash=sha256:2a6b4b3298c9eec174c5ed83bd338de6eee82df2992f3e1930e6199d381be36f \
+    --hash=sha256:523c0a97c60da6333234955c277730c9cf4f5bd6d5399e7b7d2b0fc5d3599524
     # via -r requirements-dev.txt
 pytest==8.3.3 \
     --hash=sha256:70b98107bd648308a7952b06e6ca9a50bc660be218d53c257cc1fc94fda10181 \
