@@ -171,6 +171,54 @@ msgctxt "#30059"
 msgid "1 playlist"
 msgstr ""
 
+msgctxt "#30060"
+msgid "Pair with CrossWatch"
+msgstr ""
+
+msgctxt "#30061"
+msgid "Status"
+msgstr ""
+
+msgctxt "#30062"
+msgid "Unpair"
+msgstr ""
+
+msgctxt "#30063"
+msgid "CrossWatch address, for example 192.168.1.10:8787"
+msgstr ""
+
+msgctxt "#30064"
+msgid "Pairing code from CrossWatch"
+msgstr ""
+
+msgctxt "#30065"
+msgid "Paired with %s"
+msgstr ""
+
+msgctxt "#30066"
+msgid "Code wrong or expired. Get a new code in CrossWatch."
+msgstr ""
+
+msgctxt "#30067"
+msgid "Too many tries. Wait a minute and try again."
+msgstr ""
+
+msgctxt "#30068"
+msgid "Can't reach CrossWatch at %s."
+msgstr ""
+
+msgctxt "#30069"
+msgid "Pairing failed: CrossWatch answered HTTP %s."
+msgstr ""
+
+msgctxt "#30070"
+msgid "Not a CrossWatch address: %s"
+msgstr ""
+
+msgctxt "#30071"
+msgid "Link this Kodi to CrossWatch at %s?"
+msgstr ""
+
 msgctxt "#30072"
 msgid "Paired with %s at %s"
 msgstr ""
@@ -181,4 +229,8 @@ msgstr ""
 
 msgctxt "#30074"
 msgid "Not paired"
+msgstr ""
+
+msgctxt "#30075"
+msgid "Disconnect this Kodi from CrossWatch? It stops reporting until you pair again."
 msgstr ""

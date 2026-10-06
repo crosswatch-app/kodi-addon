@@ -47,6 +47,7 @@ def test_setting_ids_match_the_config_keys():
     for key in (
         config.KEY_BASE_URL,
         config.KEY_TOKEN,
+        config.KEY_STATUS,
         config.KEY_DEVICE_ID,
         config.KEY_PROGRESS_INTERVAL,
         config.KEY_MOVIE_PROMPTS,
@@ -73,8 +74,40 @@ def test_defaults_match_the_constants():
 def test_every_string_id_the_code_shows_exists_in_the_language_file():
     """A missing id renders as an empty string, so the dialog or toast silently loses its text."""
     text = STRINGS.read_text(encoding="utf-8")
-    ids = {name: value for name, value in vars(constants).items() if name.startswith(("NOTIFY_", "PROMPT_", "STATUS_")) and isinstance(value, int) and value >= 30000}
+    ids = {name: value for name, value in vars(constants).items() if name.startswith(("NOTIFY_", "PROMPT_", "PAIR_", "LINK_", "STATUS_", "UNPAIR_")) and isinstance(value, int) and value >= 30000}
     assert ids
     for name, value in ids.items():
         assert f'msgctxt "#{value}"' in text, name
 
+
+
+def test_the_connection_actions_run_their_scripts():
+    settings = _settings()
+    assert settings["pair"].findtext("data") == "RunScript(service.crosswatch,pair)"
+    assert settings["unpair"].findtext("data") == "RunScript(service.crosswatch,unpair)"
+
+
+def test_the_connection_actions_keep_the_settings_screen_open():
+    """The scripts' writes land on the open screen and are saved when it closes."""
+    settings = _settings()
+    for key in ("pair", "unpair"):
+        assert settings[key].findtext("control/close") == "false", key
+
+
+def test_the_status_line_cannot_be_edited():
+    assert _settings()[config.KEY_STATUS].findtext("enable") == "false"
+
+
+def test_unpair_shows_only_while_a_token_is_set():
+    dependency = _settings()["unpair"].find("dependencies/dependency")
+    assert dependency is not None
+    assert dependency.attrib == {"type": "visible", "setting": config.KEY_TOKEN, "operator": "!is"}
+    assert not (dependency.text or "").strip()
+
+
+def test_pairing_comes_first_and_the_manual_fields_are_advanced():
+    settings = _settings()
+    order = [s.get("id") for s in ElementTree.parse(SETTINGS).getroot().iter("setting")]
+    assert order[:3] == ["pair", config.KEY_STATUS, "unpair"]
+    for key in (config.KEY_BASE_URL, config.KEY_TOKEN):
+        assert settings[key].findtext("level") == "2", key
