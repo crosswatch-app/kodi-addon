@@ -8,7 +8,7 @@
 # change under us on the next pull. Bump it deliberately.
 services:
   crosswatch-test:
-    image: ghcr.io/cenodude/crosswatch-dev@sha256:ba1eb41a375d2d3f2ca739fc67ff619474aebb6a4c85f954804d25c14f6513f0
+    image: ghcr.io/cenodude/crosswatch-dev@sha256:1a2e78a8d4a68599ce1d53c8250778a16875c2281364b005127b0c063f271fb4
     container_name: crosswatch-test
     ports:
       - "127.0.0.1:${CROSSWATCH_TEST_PORT:-8787}:8787"
