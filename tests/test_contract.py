@@ -53,25 +53,19 @@ def stub():
 
 @pytest.fixture
 def reporter(stub):
-    """A reporter pointed at the stub, never sleeping for real, always closed.
+    """A reporter pointed at the stub that never sleeps for real.
 
     Every contract test goes through this. Without the fake sleeper a transient stub failure
-    under CI load turns a red gate into a multi-minute hang that reads as a stuck job; without
-    the close the stub's keep-alive handler thread outlives the test.
+    under CI load turns a red gate into a multi-minute hang that reads as a stuck job.
     """
-    built: list[HttpReporter] = []
 
     def build(**kwargs) -> HttpReporter:
         kwargs.setdefault("token", "stub-token")
         kwargs.setdefault("abort", threading.Event())
         kwargs.setdefault("sleeper", lambda seconds: False)
-        made = HttpReporter(stub.url, **kwargs)
-        built.append(made)
-        return made
+        return HttpReporter(stub.url, **kwargs)
 
-    yield build
-    for made in built:
-        made.close()
+    return build
 
 
 def test_the_request_line_and_headers_match_the_contract(stub, reporter):

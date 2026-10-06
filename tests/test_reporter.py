@@ -170,18 +170,32 @@ def test_http_reporter_posts_the_built_payload(reporter_factory):
     assert json.loads(body)["event"] == "stop"
 
 
-def test_http_reporter_reuses_one_connection(reporter_factory):
-    connection = FakeConnection()
-    made: list[int] = []
+def test_each_event_gets_its_own_connection_and_closes_it(reporter_factory):
+    """Events are a minute or more apart and CrossWatch closes an idle keep-alive after
+    about five seconds, so a reused socket is almost always already dead."""
+    made: list[FakeConnection] = []
 
     def factory(*args, **kwargs):
-        made.append(1)
-        return connection
+        made.append(FakeConnection())
+        return made[-1]
 
     reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=factory)
     reporter.report(_event(), DEVICE)
     reporter.report(_event(), DEVICE)
-    assert len(made) == 1
+    assert len(made) == 2
+    assert all(connection.closed for connection in made)
+
+
+def test_a_failed_attempt_still_closes_its_connection(reporter_factory):
+    made: list[FakeConnection] = []
+
+    def factory(*args, **kwargs):
+        made.append(FakeConnection(FakeResponse(401, b"{}")))
+        return made[-1]
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    reporter.report(_event(), DEVICE)
+    assert made and all(connection.closed for connection in made)
 
 
 def test_an_ignored_response_is_not_delivery(lines, reporter_factory):
@@ -327,14 +341,6 @@ def test_stop_reports_what_it_could_not_deliver(lines, reporter_factory):
     release.set()
     assert undelivered > 0
     assert any("reporter.undelivered" in line for line in lines)
-
-
-def test_stop_closes_a_sink_that_holds_a_connection(reporter_factory):
-    connection = FakeConnection()
-    reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
-    reporter.report(_event(), DEVICE)
-    ReporterQueue(reporter, DEVICE, abort=threading.Event()).stop()
-    assert connection.closed is True
 
 
 def test_a_4xx_is_never_retried(lines, reporter_factory):
@@ -611,8 +617,8 @@ def test_a_connection_opened_after_abort_uses_the_short_timeout():
     assert seen == [SHUTDOWN_HTTP_TIMEOUT_SECONDS]
 
 
-def test_a_keep_alive_socket_is_dropped_once_abort_is_observed():
-    """A socket opened before abort carries the long timeout, so it must not be reused."""
+def test_an_event_after_abort_gets_the_short_timeout_even_after_a_normal_one():
+    """Each attempt opens its own connection, so the timeout follows the abort state."""
     abort = threading.Event()
     seen: list[float] = []
 
@@ -669,7 +675,10 @@ def test_a_server_closing_an_idle_keepalive_is_retried_on_a_fresh_connection(lin
     reporter = reporter_factory("http://host/hook?token=t", connection_factory=factory)
     assert reporter.report(_event(), DEVICE) is True
     assert reporter.report(_event(), DEVICE) is True, "the second event must not be dropped"
-    assert len(made) == 2, "the retry must use a fresh connection, not the closed one"
+    assert len(made) == 2, "each event uses a fresh connection, never the closed one"
+    assert not any("reporter.lost_response" in line for line in lines), (
+        "a routine idle close must not read as a lost response on every event"
+    )
 
 
 def test_a_caller_deadline_bounds_the_retry(reporter_factory):
