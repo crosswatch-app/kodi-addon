@@ -122,3 +122,51 @@ msgstr ""
 msgctxt "#30047"
 msgid "Forget who watched this show? It will be asked again."
 msgstr ""
+
+msgctxt "#30048"
+msgid "Add viewer"
+msgstr ""
+
+msgctxt "#30049"
+msgid "Edit playlists"
+msgstr ""
+
+msgctxt "#30050"
+msgid "Edit Kodi profiles"
+msgstr ""
+
+msgctxt "#30051"
+msgid "Remove viewer"
+msgstr ""
+
+msgctxt "#30052"
+msgid "Playlists for %s"
+msgstr ""
+
+msgctxt "#30053"
+msgid "Kodi profiles for %s, comma separated"
+msgstr ""
+
+msgctxt "#30054"
+msgid "Viewer name, as CrossWatch routes it"
+msgstr ""
+
+msgctxt "#30055"
+msgid "Remove %s?"
+msgstr ""
+
+msgctxt "#30056"
+msgid "%s playlists"
+msgstr ""
+
+msgctxt "#30057"
+msgid "%s missing"
+msgstr ""
+
+msgctxt "#30058"
+msgid "missing"
+msgstr ""
+
+msgctxt "#30059"
+msgid "1 playlist"
+msgstr ""

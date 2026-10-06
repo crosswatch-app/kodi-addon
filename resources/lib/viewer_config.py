@@ -16,6 +16,22 @@ from __future__ import annotations
 from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.config import read_settings
+from resources.lib.constants import (
+    LABEL_BACK,
+    VIEWERS_ADD,
+    VIEWERS_EDIT_PLAYLISTS,
+    VIEWERS_EDIT_PROFILES,
+    VIEWERS_HEADING,
+    VIEWERS_MISSING,
+    VIEWERS_MISSING_COUNT,
+    VIEWERS_NAME_PROMPT,
+    VIEWERS_ONE_PLAYLIST,
+    VIEWERS_PLAYLISTS,
+    VIEWERS_PLAYLISTS_FOR,
+    VIEWERS_PROFILES_FOR,
+    VIEWERS_REMOVE,
+    VIEWERS_REMOVE_CONFIRM,
+)
 from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.log import get_logger
 from resources.lib.models import Viewer
@@ -24,8 +40,12 @@ from resources.lib.storage import JsonViewerStore, ViewerStore
 
 _log = get_logger("config")
 
-ADD_LABEL = "Add viewer"
-DONE_LABEL = "Done"
+
+def _text(kodi: KodiApi, string_id: int, value: object = None) -> str:
+    """A translated label. replace rather than %, so a translation that drops the
+    placeholder cannot raise."""
+    text = kodi.localised(string_id)
+    return text if value is None else text.replace("%s", str(value))
 
 
 def available_playlists(kodi: KodiApi) -> list[str]:
@@ -90,7 +110,7 @@ def missing_playlists(viewer: Viewer, available: list[str]) -> tuple[str, ...]:
     return tuple(name for name in viewer.playlists if name not in known)
 
 
-def viewer_labels(viewers: list[Viewer], available: list[str]) -> list[str]:
+def viewer_labels(kodi: KodiApi, viewers: list[Viewer], available: list[str]) -> list[str]:
     """One row per viewer, marked when a configured playlist has vanished.
 
     This is where someone comes to fix it. The service cannot name the playlist in Kodi's
@@ -99,8 +119,10 @@ def viewer_labels(viewers: list[Viewer], available: list[str]) -> list[str]:
     labels: list[str] = []
     for viewer in viewers:
         gone = missing_playlists(viewer, available)
-        mark = f" {MISSING_MARK} {len(gone)} missing" if gone else ""
-        labels.append(f"{viewer.name} ({len(viewer.playlists)} playlists){mark}")
+        mark = f" {MISSING_MARK} {_text(kodi, VIEWERS_MISSING_COUNT, len(gone))}" if gone else ""
+        count = len(viewer.playlists)
+        playlists = _text(kodi, VIEWERS_ONE_PLAYLIST) if count == 1 else _text(kodi, VIEWERS_PLAYLISTS, count)
+        labels.append(f"{viewer.name} ({playlists}){mark}")
     return labels
 
 
@@ -110,10 +132,11 @@ def _edit_playlists(kodi: KodiApi, viewer: Viewer, playlists: list[str]) -> tupl
     # and confirming silently drops it, so a removal the user never saw looks like their
     # own edit. Shown, unticking it is a choice.
     gone = missing_playlists(viewer, playlists)
-    options = [*playlists, *(f"{name} ({MISSING_MARK} missing)" for name in gone)]
+    missing = _text(kodi, VIEWERS_MISSING)
+    options = [*playlists, *(f"{name} ({MISSING_MARK} {missing})" for name in gone)]
     preselect = [i for i, name in enumerate(playlists) if name in viewer.playlists]
     preselect += [len(playlists) + i for i in range(len(gone))]
-    chosen = kodi.multiselect(f"Playlists for {viewer.name}", options, preselect=preselect)
+    chosen = kodi.multiselect(_text(kodi, VIEWERS_PLAYLISTS_FOR, viewer.name), options, preselect=preselect)
     if chosen is None:
         return None
     kept = [playlists[i] for i in chosen if 0 <= i < len(playlists)]
@@ -125,13 +148,13 @@ def _edit_playlists(kodi: KodiApi, viewer: Viewer, playlists: list[str]) -> tupl
 
 def _edit_profiles(kodi: KodiApi, viewer: Viewer) -> tuple[str, ...]:
     current = ", ".join(viewer.profiles)
-    entered = kodi.text_input(f"Kodi profiles for {viewer.name}, comma separated", current)
+    entered = kodi.text_input(_text(kodi, VIEWERS_PROFILES_FOR, viewer.name), current)
     return tuple(part.strip() for part in entered.split(",") if part.strip())
 
 
 def _add_viewer(kodi: KodiApi, viewers: list[Viewer], playlists: list[str]) -> list[Viewer]:
     try:
-        name = validate_name(kodi.text_input("Viewer name, as CrossWatch routes it"), viewers)
+        name = validate_name(kodi.text_input(_text(kodi, VIEWERS_NAME_PROMPT)), viewers)
     except ValueError as exc:
         _log.info("config.add_rejected", reason=str(exc))
         return viewers
@@ -144,7 +167,8 @@ def _add_viewer(kodi: KodiApi, viewers: list[Viewer], playlists: list[str]) -> l
 
 
 def _edit_viewer(kodi: KodiApi, viewers: list[Viewer], viewer: Viewer, playlists: list[str]) -> list[Viewer]:
-    choice = kodi.select(viewer.name, ["Edit playlists", "Edit Kodi profiles", "Remove viewer", "Back"])
+    actions = [VIEWERS_EDIT_PLAYLISTS, VIEWERS_EDIT_PROFILES, VIEWERS_REMOVE, LABEL_BACK]
+    choice = kodi.select(viewer.name, [_text(kodi, a) for a in actions])
     if choice == 0:
         selected = _edit_playlists(kodi, viewer, playlists)
         if selected is None:
@@ -156,7 +180,7 @@ def _edit_viewer(kodi: KodiApi, viewers: list[Viewer], viewer: Viewer, playlists
         profiles = _edit_profiles(kodi, viewer)
         _log.info("config.viewer_updated", profiles=len(profiles))
         return apply_edit(viewers, viewer.name, viewer.playlists, profiles)
-    if choice == 2 and kodi.confirm("Remove viewer", f"Remove {viewer.name}?"):
+    if choice == 2 and kodi.confirm(_text(kodi, VIEWERS_REMOVE), _text(kodi, VIEWERS_REMOVE_CONFIRM, viewer.name)):
         _log.info("config.viewer_removed")
         return remove_viewer(viewers, viewer.name)
     return viewers
@@ -169,9 +193,10 @@ def run_dialog(kodi: KodiApi, store: ViewerStore) -> None:
         _log.info("config.no_playlists_found")
 
     while True:
-        labels = viewer_labels(viewers, playlists)
-        choice = kodi.select("Viewers", [*labels, ADD_LABEL, DONE_LABEL])
-        if choice < 0 or choice == len(labels) + 1:
+        labels = viewer_labels(kodi, viewers, playlists)
+        # No Done row: Kodi's select dialog has its own Cancel, and leaving either way saves.
+        choice = kodi.select(_text(kodi, VIEWERS_HEADING), [*labels, _text(kodi, VIEWERS_ADD)])
+        if choice < 0 or choice > len(labels):
             break
         if choice == len(labels):
             viewers = _add_viewer(kodi, viewers, playlists)

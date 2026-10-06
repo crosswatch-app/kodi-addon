@@ -1,6 +1,16 @@
 import pytest
 
 from resources.lib import viewer_config
+from resources.lib.constants import (
+    LABEL_BACK,
+    VIEWERS_ADD,
+    VIEWERS_EDIT_PLAYLISTS,
+    VIEWERS_EDIT_PROFILES,
+    VIEWERS_HEADING,
+    VIEWERS_ONE_PLAYLIST,
+    VIEWERS_PLAYLISTS,
+    VIEWERS_REMOVE,
+)
 from resources.lib.models import Viewer
 from resources.lib.storage import JsonViewerStore
 from resources.lib.viewer_config import (
@@ -87,9 +97,11 @@ class ScriptedKodi(FakeKodi):
         self._multiselects = list(multiselects or [])
         self._confirms = list(confirms or [])
         self.select_headings: list[str] = []
+        self.select_options: list[list[str]] = []
 
     def select(self, heading, options):
         self.select_headings.append(heading)
+        self.select_options.append(list(options))
         # No silent fallback: an exhausted script means the test's flow is wrong, and a
         # default of -1 would rescue it by quietly backing out of the menu.
         assert self._selects, f"unscripted select: {heading} {options}"
@@ -108,8 +120,8 @@ class ScriptedKodi(FakeKodi):
 
 def test_a_viewer_can_be_added_on_a_fresh_install(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    # menu is [Add viewer, Done]; after the add it is [anna, Add viewer, Done]
-    kodi = ScriptedKodi(["Anna TV"], selects=[0, 2], inputs=["anna"], multiselects=[[0]])
+    # menu is [Add viewer]; after the add it is [anna, Add viewer]; Cancel closes it
+    kodi = ScriptedKodi(["Anna TV"], selects=[0, -1], inputs=["anna"], multiselects=[[0]])
     run_dialog(kodi, store)
     assert store.viewers() == [Viewer(name="anna", playlists=("Anna TV",))]
 
@@ -117,8 +129,8 @@ def test_a_viewer_can_be_added_on_a_fresh_install(tmp_path):
 def test_editing_preselects_the_current_playlists(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save([Viewer(name="anna", playlists=("Bob TV",))])
-    # pick viewer 0 -> Edit playlists -> keep -> Done
-    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, 2], multiselects=[[1]])
+    # pick viewer 0 -> Edit playlists -> keep -> Cancel
+    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], multiselects=[[1]])
     run_dialog(kodi, store)
     assert kodi.multiselect_calls[0][2] == [1]
     assert store.viewers()[0].playlists == ("Bob TV",)
@@ -127,7 +139,7 @@ def test_editing_preselects_the_current_playlists(tmp_path):
 def test_cancelling_the_playlist_dialog_leaves_the_mapping_alone(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save([Viewer(name="anna", playlists=("Bob TV",))])
-    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, 2], multiselects=[None])
+    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], multiselects=[None])
     run_dialog(kodi, store)
     assert store.viewers()[0].playlists == ("Bob TV",)
 
@@ -135,8 +147,8 @@ def test_cancelling_the_playlist_dialog_leaves_the_mapping_alone(tmp_path):
 def test_a_viewer_can_be_removed(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save([Viewer(name="anna"), Viewer(name="bob")])
-    # [anna, bob, Add, Done] -> pick anna -> Remove -> confirm -> [bob, Add, Done] -> Done
-    kodi = ScriptedKodi([], selects=[0, 2, 2], confirms=[True])
+    # [anna, bob, Add] -> pick anna -> Remove -> confirm -> [bob, Add] -> Cancel
+    kodi = ScriptedKodi([], selects=[0, 2, -1], confirms=[True])
     run_dialog(kodi, store)
     assert [v.name for v in store.viewers()] == ["bob"]
 
@@ -144,7 +156,7 @@ def test_a_viewer_can_be_removed(tmp_path):
 def test_a_duplicate_name_does_not_replace_the_existing_viewer(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save([Viewer(name="anna", playlists=("Anna TV",))])
-    kodi = ScriptedKodi(["Anna TV"], selects=[1, 2], inputs=["ANNA"])
+    kodi = ScriptedKodi(["Anna TV"], selects=[1, -1], inputs=["ANNA"])
     run_dialog(kodi, store)
     assert store.viewers() == [Viewer(name="anna", playlists=("Anna TV",))]
 
@@ -164,6 +176,7 @@ def test_a_viewer_whose_playlist_has_vanished_is_flagged_in_the_list():
     viewer is affected.
     """
     labels = viewer_config.viewer_labels(
+        FakeKodi(),
         [Viewer(name="anna", playlists=("Gone", "Anna TV")), Viewer(name="bob", playlists=("Anna TV",))],
         ["Anna TV"],
     )
@@ -173,19 +186,19 @@ def test_a_viewer_whose_playlist_has_vanished_is_flagged_in_the_list():
 
 
 def test_nothing_is_flagged_when_every_playlist_exists():
-    labels = viewer_config.viewer_labels([Viewer(name="anna", playlists=("Anna TV",))], ["Anna TV"])
+    labels = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("Anna TV",))], ["Anna TV"])
     assert "!" not in labels[0]
 
 
 def test_no_viewer_is_flagged_when_the_playlist_listing_failed():
     """available_playlists returns [] on an RPC failure, which is not the same as none
     existing. Flagging every viewer there would be a false alarm during a Kodi hiccup."""
-    labels = viewer_config.viewer_labels([Viewer(name="anna", playlists=("Anna TV",))], [])
+    labels = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("Anna TV",))], [])
     assert "!" not in labels[0]
 
 
 def test_a_viewer_with_no_playlists_is_not_flagged():
-    labels = viewer_config.viewer_labels([Viewer(name="anna")], ["Anna TV"])
+    labels = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna")], ["Anna TV"])
     assert "!" not in labels[0]
 
 
@@ -217,3 +230,39 @@ def test_unticking_a_missing_playlist_removes_it():
     kodi.multiselect_answer = [0]
     viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
     assert viewer_config._edit_playlists(kodi, viewer, ["Anna TV"]) == ("Anna TV",)
+
+
+# --- translated labels ----------------------------------------------------
+
+
+def test_the_viewer_list_is_translated_and_has_no_done_row(tmp_path):
+    """Kodi's select dialog has its own Cancel, which closes and saves exactly as Done did."""
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="anna")])
+    kodi = ScriptedKodi([], selects=[-1])
+    run_dialog(kodi, store)
+    assert kodi.select_headings == [f"#{VIEWERS_HEADING}"]
+    assert kodi.select_options[0][-1] == f"#{VIEWERS_ADD}"
+    assert len(kodi.select_options[0]) == 2
+
+
+def test_the_viewer_menu_is_translated(tmp_path):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="anna")])
+    kodi = ScriptedKodi([], selects=[0, 3, -1])
+    run_dialog(kodi, store)
+    assert kodi.select_options[1] == [
+        f"#{VIEWERS_EDIT_PLAYLISTS}",
+        f"#{VIEWERS_EDIT_PROFILES}",
+        f"#{VIEWERS_REMOVE}",
+        f"#{LABEL_BACK}",
+    ]
+
+
+def test_one_playlist_reads_in_the_singular():
+    """'anna (1 playlists)' read wrongly."""
+    one = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("A",))], ["A"])
+    two = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("A", "B"))], ["A", "B"])
+    assert one == [f"anna (#{VIEWERS_ONE_PLAYLIST})"]
+    assert two == [f"anna (#{VIEWERS_PLAYLISTS})"]
+
