@@ -14,8 +14,8 @@ from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.config import read_settings
 from resources.lib.constants import (
+    LABEL_BACK,
     NOTIFY_HEADING,
-    REMEMBERED_BACK,
     REMEMBERED_CHANGE,
     REMEMBERED_CONFIRM_FORGET_ALL,
     REMEMBERED_CONFIRM_FORGET_ONE,
@@ -150,9 +150,9 @@ def run(kodi: KodiApi, memory: PromptMemory, viewers: list[Viewer]) -> None:
                 _log.info("config.remembered_forgot_all", count=len(rows))
             continue
         row = rows[choice]
-        actions = [REMEMBERED_CHANGE, REMEMBERED_FORGET, REMEMBERED_BACK] if row.changeable else [REMEMBERED_FORGET, REMEMBERED_BACK]
+        actions = [REMEMBERED_CHANGE, REMEMBERED_FORGET, LABEL_BACK] if row.changeable else [REMEMBERED_FORGET, LABEL_BACK]
         picked = kodi.select(row.label, [kodi.localised(a) for a in actions])
-        action = actions[picked] if 0 <= picked < len(actions) else REMEMBERED_BACK
+        action = actions[picked] if 0 <= picked < len(actions) else LABEL_BACK
         if action == REMEMBERED_CHANGE:
             _change(kodi, memory, row, library, viewers)
         elif action == REMEMBERED_FORGET:
