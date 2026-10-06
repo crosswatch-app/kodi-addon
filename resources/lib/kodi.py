@@ -40,6 +40,7 @@ class KodiApi(Protocol):
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
     def notify(self, heading: str, message: str) -> None: ...
+    def ok(self, heading: str, message: str) -> None: ...
     def localised(self, string_id: int) -> str: ...
     def log(self, message: str, level: int) -> None: ...
 
@@ -183,6 +184,14 @@ class KodiRuntime:
         except Exception:
             # Cosmetic. A skin that refuses to draw a toast must not take the service down.
             pass
+
+    def ok(self, heading: str, message: str) -> None:
+        """A message that wraps and waits to be read.
+
+        For anything longer than a toast holds: Estuary's toast cuts long text off rather
+        than wrapping it.
+        """
+        self._xbmcgui.Dialog().ok(heading, message)
 
     def localised(self, string_id: int) -> str:
         try:

@@ -51,6 +51,7 @@ class FakeKodi:
         self.multiselect_calls: list[tuple[str, list[str], list[int] | None, int]] = []
         self.notifications: list[tuple[str, str]] = []
         self.confirm_calls: list[tuple[str, str, int]] = []
+        self.ok_calls: list[tuple[str, str]] = []
         self.writes: list[tuple[str, str]] = []
         self.logged: list[tuple[str, int]] = []
 
@@ -121,6 +122,9 @@ class FakeKodi:
 
     def notify(self, heading: str, message: str) -> None:
         self.notifications.append((heading, message))
+
+    def ok(self, heading: str, message: str) -> None:
+        self.ok_calls.append((heading, message))
 
     def localised(self, string_id: int) -> str:
         return f"#{string_id}"

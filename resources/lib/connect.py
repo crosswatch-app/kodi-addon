@@ -72,14 +72,16 @@ def pair(kodi: KodiApi, exchange: Exchange = exchange_code) -> bool:
         return False
     address = normalise_address(typed)
     if address is None:
-        kodi.notify(heading, status.fill(kodi.localised(PAIR_BAD_ADDRESS), typed.strip()))
+        kodi.ok(heading, status.fill(kodi.localised(PAIR_BAD_ADDRESS), typed.strip()))
         return False
     code = normalise_code(kodi.text_input(kodi.localised(PAIR_CODE)))
     if not code:
         return False
     result = exchange(address, code)
     if result.outcome != "paired":
-        kodi.notify(heading, _failure(kodi, result, address))
+        # A dialog rather than a toast: these messages are too long for one, and the
+        # household has to act on them.
+        kodi.ok(heading, _failure(kodi, result, address))
         return False
     logmod.set_secret(result.token)
     # The typed address, not the url in the reply: it is the one proven to reach CrossWatch

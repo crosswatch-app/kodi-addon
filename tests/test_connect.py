@@ -66,7 +66,9 @@ def test_a_failure_says_why_and_changes_no_setting(result, message):
     assert connect.pair(kodi, Exchange(result)) is False
     assert kodi.writes == []
     assert kodi.settings == STORED
-    assert kodi.notifications[-1][1] == message
+    # A dialog, not a toast: Kodi's toast cuts these messages off.
+    assert kodi.ok_calls[-1][1] == message
+    assert kodi.notifications == []
 
 
 def test_cancelling_the_address_asks_nothing_more():
@@ -80,7 +82,7 @@ def test_cancelling_the_address_asks_nothing_more():
 def test_an_impossible_address_is_refused_before_the_code_is_asked():
     kodi = FakeKodi(input_answers=["ftp://nas"])
     assert connect.pair(kodi, Exchange(PairResult("paired", token="t"))) is False
-    assert kodi.notifications[-1][1] == f"#{PAIR_BAD_ADDRESS}"
+    assert kodi.ok_calls[-1][1] == f"#{PAIR_BAD_ADDRESS}"
     assert [heading for heading, _ in kodi.input_calls] == [kodi.input_calls[0][0]]
 
 
