@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from resources.lib import log as logmod
 from resources.lib import paths, status
-from resources.lib.config import KEY_BASE_URL, KEY_TOKEN, read_settings, split_token
+from resources.lib.config import KEY_BASE_URL, KEY_TOKEN, read_settings
 from resources.lib.constants import (
     LINK_AUTOCLOSE_SECONDS,
     LINK_CONFIRM,
@@ -38,7 +38,6 @@ from resources.lib.pairing import (
     normalise_address,
     normalise_code,
 )
-from resources.lib.reporter import InvalidWebhookUrl, validate_webhook_url
 
 _log = logmod.get_logger("config")
 
@@ -64,6 +63,25 @@ def _failure(kodi: KodiApi, result: PairResult, address: str) -> str:
     return status.fill(kodi.localised(PAIR_FAILED), str(result.status))
 
 
+def _redeem(kodi: KodiApi, exchange: Exchange, address: str, code: str) -> bool:
+    """Swap a code for the token and store the connection. A failure changes no setting."""
+    heading = kodi.localised(NOTIFY_HEADING)
+    result = exchange(address, code)
+    if result.outcome != "paired":
+        # A dialog rather than a toast: these messages are too long for one, and the
+        # household has to act on them.
+        kodi.ok(heading, _failure(kodi, result, address))
+        return False
+    logmod.set_secret(result.token)
+    # The address the code was posted to, not the url in the reply: it is the one proven to
+    # reach CrossWatch from this Kodi, where CrossWatch's own idea of its address may sit
+    # behind Docker or a proxy.
+    url = f"{address}{WEBHOOK_PATH}"
+    _store(kodi, url, result.token, status.paired(kodi, result.instance, url))
+    kodi.notify(heading, status.fill(kodi.localised(PAIR_DONE), result.instance or status.address_of(url)))
+    return True
+
+
 def pair(kodi: KodiApi, exchange: Exchange = exchange_code) -> bool:
     """Ask for the address, then the code. A cancel or a failure changes no setting."""
     heading = kodi.localised(NOTIFY_HEADING)
@@ -77,20 +95,7 @@ def pair(kodi: KodiApi, exchange: Exchange = exchange_code) -> bool:
     code = normalise_code(kodi.text_input(kodi.localised(PAIR_CODE)))
     if not code:
         return False
-    result = exchange(address, code)
-    if result.outcome != "paired":
-        # A dialog rather than a toast: these messages are too long for one, and the
-        # household has to act on them.
-        kodi.ok(heading, _failure(kodi, result, address))
-        return False
-    logmod.set_secret(result.token)
-    # The typed address, not the url in the reply: it is the one proven to reach CrossWatch
-    # from this Kodi, where CrossWatch's own idea of its address may sit behind Docker or a
-    # proxy.
-    url = f"{address}{WEBHOOK_PATH}"
-    _store(kodi, url, result.token, status.paired(kodi, result.instance, url))
-    kodi.notify(heading, status.fill(kodi.localised(PAIR_DONE), result.instance or status.address_of(url)))
-    return True
+    return _redeem(kodi, exchange, address, code)
 
 
 def parse_arguments(argv: list[str]) -> dict[str, str]:
@@ -98,29 +103,31 @@ def parse_arguments(argv: list[str]) -> dict[str, str]:
     return dict(arg.split("=", 1) for arg in argv if "=" in arg)
 
 
-def link(kodi: KodiApi, arguments: dict[str, str]) -> bool:
-    """CrossWatch's shortcut: it hands over URL and token, the household says yes on the TV.
+def link(kodi: KodiApi, arguments: dict[str, str], exchange: Exchange = exchange_code) -> bool:
+    """CrossWatch's shortcut: it hands over its address and a one-time code, the household
+    says yes on the TV, and the code is redeemed exactly like a typed one.
 
-    Malformed arguments never reach a dialog: they did not come from a person.
+    A code rather than the token, because Kodi writes every script argument to kodi.log at
+    debug level (xbmc/interfaces/python/PythonInvoker.cpp); a code found there is single use
+    and expires within minutes. It is spent only after the yes. Malformed arguments never
+    reach a dialog: they did not come from a person.
     """
-    url, pasted = split_token(arguments.get("url", "").strip())
-    token = arguments.get("token", "").strip() or pasted
-    if not url or not token:
+    url = arguments.get("url", "").strip()
+    code = normalise_code(arguments.get("code", ""))
+    if not url or not code:
         _log.warning("config.link_rejected", reason="missing")
         return False
-    try:
-        validate_webhook_url(url)
-    except InvalidWebhookUrl:
+    address = normalise_address(url)
+    if address is None:
         _log.warning("config.link_rejected", reason="url")
         return False
-    logmod.set_secret(token)
-    question = status.fill(kodi.localised(LINK_CONFIRM), status.address_of(url))
+    question = status.fill(kodi.localised(LINK_CONFIRM), status.address_of(address))
     if not kodi.confirm(kodi.localised(NOTIFY_HEADING), question, autoclose=LINK_AUTOCLOSE_SECONDS):
         _log.info("config.link_declined")
         return False
-    _store(kodi, url.rstrip("/"), token, status.linked(kodi, url))
-    _log.info("config.linked")
-    return True
+    linked = _redeem(kodi, exchange, address, code)
+    _log.info("config.link_result", linked=linked)
+    return linked
 
 
 def unpair(kodi: KodiApi) -> bool:

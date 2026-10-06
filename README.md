@@ -92,16 +92,15 @@ Link only works for a Kodi that CrossWatch can already reach over its own networ
 pair instead.
 
 When it applies, CrossWatch starts it: the TV shows "Link this Kodi to CrossWatch at
-`<address>`?". Choosing Yes connects. Choosing No, or not answering within 60 seconds, changes
-nothing.
+`<address>`?". Choosing Yes connects, using a one-time code CrossWatch sent along, so a Link
+that fails shows the same messages as pairing. Choosing No, or not answering within 60
+seconds, changes nothing.
 
 ### The Status line
 
 This line is read-only; it only ever reports what the add-on last did. It reads one of:
 
-- "Paired with `<instance>` at `<address>`", after pairing.
-- "Linked to CrossWatch at `<address>`", right after a Link. It changes to "Paired with
-  `<instance>` at `<address>`" once CrossWatch answers the first heartbeat.
+- "Paired with `<instance>` at `<address>`", after pairing or a Link.
 - "Not paired", when nothing is connected.
 
 ### Unpair

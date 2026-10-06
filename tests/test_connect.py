@@ -12,7 +12,6 @@ from resources.lib.constants import (
     PAIR_INVALID_CODE,
     PAIR_RATE_LIMITED,
     PAIR_UNREACHABLE,
-    STATUS_LINKED,
     STATUS_NOT_PAIRED,
     STATUS_PAIRED,
 )
@@ -94,23 +93,36 @@ def test_cancelling_the_code_sends_nothing():
     assert exchange.calls == []
 
 
-LINK = {"action": "link", "url": "http://nas:8787/webhook/kodiwatcher", "token": "tok"}
+LINK = {"action": "link", "url": "http://nas:8787/webhook/kodiwatcher", "code": "abc 234"}
+PAIRED = PairResult("paired", token="tok", instance="Living room", status=200)
 
 
-def test_link_asks_with_a_timeout_and_a_yes_stores_url_token_and_status():
+def test_link_asks_with_a_timeout_then_redeems_the_code_like_a_typed_one():
     kodi = FakeKodi(confirm_answer=True)
-    assert connect.link(kodi, LINK) is True
+    exchange = Exchange(PAIRED)
+    assert connect.link(kodi, LINK, exchange) is True
     assert kodi.confirm_calls[0][2] == LINK_AUTOCLOSE_SECONDS
+    assert exchange.calls == [("http://nas:8787", "ABC234")]
     assert kodi.writes == [
         (KEY_TOKEN, "tok"),
         (KEY_BASE_URL, "http://nas:8787/webhook/kodiwatcher"),
-        (KEY_STATUS, f"#{STATUS_LINKED}"),
+        (KEY_STATUS, f"#{STATUS_PAIRED}"),
     ]
+    assert kodi.notifications[-1][1] == f"#{PAIR_DONE}"
 
 
-def test_link_answered_no_or_timed_out_changes_nothing():
+def test_link_answered_no_or_timed_out_never_spends_the_code():
     kodi = FakeKodi(settings=dict(STORED), confirm_answer=False)
-    assert connect.link(kodi, LINK) is False
+    exchange = Exchange(PAIRED)
+    assert connect.link(kodi, LINK, exchange) is False
+    assert exchange.calls == []
+    assert kodi.writes == []
+
+
+def test_a_link_code_that_fails_says_why_and_changes_nothing():
+    kodi = FakeKodi(settings=dict(STORED), confirm_answer=True)
+    assert connect.link(kodi, LINK, Exchange(PairResult("invalid_code", status=401))) is False
+    assert kodi.ok_calls[-1][1] == f"#{PAIR_INVALID_CODE}"
     assert kodi.writes == []
 
 
@@ -119,23 +131,20 @@ def test_link_answered_no_or_timed_out_changes_nothing():
     [
         {"action": "link"},
         {"action": "link", "url": "http://nas/webhook/kodiwatcher"},
-        {"action": "link", "token": "tok"},
-        {"action": "link", "url": "file:///etc/passwd", "token": "tok"},
-        {"action": "link", "url": "nas:8787/webhook/kodiwatcher", "token": "tok"},
+        {"action": "link", "code": "ABC234"},
+        {"action": "link", "url": "file:///etc/passwd", "code": "ABC234"},
+        {"action": "link", "url": "http://nas/webhook/kodiwatcher?token=tok", "code": "ABC234"},
+        # The token form CrossWatch sent before contract 1.4: never accepted as a credential.
+        {"action": "link", "url": "http://nas/webhook/kodiwatcher", "token": "tok"},
     ],
 )
 def test_malformed_link_arguments_never_reach_a_dialog(arguments):
     kodi = FakeKodi(confirm_answer=True)
-    assert connect.link(kodi, arguments) is False
+    exchange = Exchange(PAIRED)
+    assert connect.link(kodi, arguments, exchange) is False
     assert kodi.confirm_calls == []
+    assert exchange.calls == []
     assert kodi.writes == []
-
-
-def test_a_link_url_carrying_a_token_is_stored_plain():
-    kodi = FakeKodi(confirm_answer=True)
-    connect.link(kodi, {"action": "link", "url": "http://nas/webhook/kodiwatcher?token=tok"})
-    assert (KEY_BASE_URL, "http://nas/webhook/kodiwatcher") in kodi.writes
-    assert (KEY_TOKEN, "tok") in kodi.writes
 
 
 def test_unpair_clears_url_token_and_status_after_a_yes():

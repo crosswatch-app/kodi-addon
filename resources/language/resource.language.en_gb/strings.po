@@ -223,10 +223,6 @@ msgctxt "#30072"
 msgid "Paired with %s at %s"
 msgstr ""
 
-msgctxt "#30073"
-msgid "Linked to CrossWatch at %s"
-msgstr ""
-
 msgctxt "#30074"
 msgid "Not paired"
 msgstr ""

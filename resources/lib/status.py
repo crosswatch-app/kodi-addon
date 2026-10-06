@@ -10,7 +10,7 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 from resources.lib.config import KEY_STATUS
-from resources.lib.constants import STATUS_LINKED, STATUS_NOT_PAIRED, STATUS_PAIRED
+from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED
 from resources.lib.kodi import KodiApi
 
 
@@ -33,10 +33,6 @@ def address_of(url: str) -> str:
 
 def paired(kodi: KodiApi, instance: str, url: str) -> str:
     return fill(kodi.localised(STATUS_PAIRED), instance, address_of(url))
-
-
-def linked(kodi: KodiApi, url: str) -> str:
-    return fill(kodi.localised(STATUS_LINKED), address_of(url))
 
 
 def not_paired(kodi: KodiApi) -> str:
