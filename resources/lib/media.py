@@ -117,6 +117,10 @@ class MediaResolver:
                 tvshowid = tvshowid if tvshowid and tvshowid > 0 else None
                 show_ids = self._lookup_show_ids(tvshowid) if tvshowid else {}
                 timer.mark("show_ids")
+                # A scraper can store the series' id on an episode. Sent bare it reads as the
+                # episode's own id and the receiver looks up a show as an episode, so an id
+                # equal to the show's of the same type is not an episode id.
+                own_ids = {name: value for name, value in own_ids.items() if show_ids.get(name) != value}
                 media = MediaItem(
                     media_type="episode",
                     library_id=library_id,

@@ -565,8 +565,18 @@ def test_an_old_server_is_warned_about_once_not_every_event(lines, reporter_fact
     assert "0.12.0" in warnings[0]
 
 
+def test_0_13_0_is_too_old(lines, reporter_factory):
+    """0.13.0 shipped without the fix that stops a missing percent being read as zero."""
+    connection = FakeConnection(FakeResponse(200, b'{"ok": true, "crosswatch_version": "0.13.0"}'))
+    reporter = reporter_factory(
+        "http://host/webhook/kodiwatcher?token=tok", connection_factory=lambda *a, **k: connection
+    )
+    reporter.report(_event(), DEVICE)
+    assert any("reporter.server_too_old" in line for line in lines)
+
+
 def test_a_current_server_produces_no_warning(lines, reporter_factory):
-    body = b'{"ok": true, "crosswatch_version": "0.13.0"}'
+    body = b'{"ok": true, "crosswatch_version": "0.14.0"}'
     connection = FakeConnection(FakeResponse(200, body))
     reporter = reporter_factory(
         "http://host/webhook/kodiwatcher?token=tok", connection_factory=lambda *a, **k: connection

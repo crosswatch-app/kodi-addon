@@ -103,6 +103,23 @@ def test_real_episode_ids_are_carried():
     assert media.episode_ids == {"tvdb": "3110601"}
 
 
+def test_an_episode_id_equal_to_its_shows_is_dropped():
+    """A scraper can store the series' id on its episode. Sent bare, it would be read as the
+    episode's own id, so the receiver would look up a show as an episode."""
+    item = {"item": {**EPISODE_ITEM["item"], "uniqueid": {"imdb": "tt1219024", "tvdb": "3110601"}}}
+    media = MediaResolver(_kodi(item=item)).resolve()
+    assert media is not None
+    assert media.episode_ids == {"tvdb": "3110601"}
+    assert media.show_ids["imdb"] == "tt1219024"
+
+
+def test_only_an_id_of_the_same_type_counts_as_a_duplicate():
+    item = {"item": {**EPISODE_ITEM["item"], "uniqueid": {"tmdb": "83462"}}}
+    media = MediaResolver(_kodi(item=item)).resolve()
+    assert media is not None
+    assert media.episode_ids == {"tmdb": "83462"}
+
+
 def test_credentials_in_the_playing_path_never_reach_the_model():
     item = {"item": {**EPISODE_ITEM["item"], "file": "smb://user:hunter2@nas/tv/S01E01.mkv"}}
     media = MediaResolver(_kodi(item=item)).resolve()
