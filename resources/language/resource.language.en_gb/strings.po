@@ -74,3 +74,51 @@ msgstr ""
 msgctxt "#30034"
 msgid "Everyone"
 msgstr ""
+
+msgctxt "#30035"
+msgid "Remembered answers"
+msgstr ""
+
+msgctxt "#30036"
+msgid "Forget all remembered answers"
+msgstr ""
+
+msgctxt "#30038"
+msgid "Change"
+msgstr ""
+
+msgctxt "#30039"
+msgid "Forget"
+msgstr ""
+
+msgctxt "#30040"
+msgid "Back"
+msgstr ""
+
+msgctxt "#30041"
+msgid "will ask again"
+msgstr ""
+
+msgctxt "#30042"
+msgid "not in library"
+msgstr ""
+
+msgctxt "#30043"
+msgid "Kodi library id %s"
+msgstr ""
+
+msgctxt "#30044"
+msgid "Forget who watched %s shows? Each will be asked again."
+msgstr ""
+
+msgctxt "#30045"
+msgid "No remembered answers yet."
+msgstr ""
+
+msgctxt "#30046"
+msgid "not stable"
+msgstr ""
+
+msgctxt "#30047"
+msgid "Forget who watched this show? It will be asked again."
+msgstr ""

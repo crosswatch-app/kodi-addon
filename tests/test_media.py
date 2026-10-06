@@ -128,6 +128,19 @@ def test_credentials_in_the_playing_path_never_reach_the_model():
     assert "hunter2" not in (media.file or "")
 
 
+def test_the_shows_own_year_is_read_with_its_ids():
+    """Not the episode's year, which Kodi reports per episode and which changes per season."""
+    show = {"tvshowdetails": {"uniqueid": {"tvdb": "83462"}, "year": 2008}}
+    media = MediaResolver(_kodi(show=show)).resolve()
+    assert media is not None
+    assert (media.year, media.show_year) == (2026, 2008)
+
+
+def test_a_show_without_a_year_has_none():
+    media = MediaResolver(_kodi()).resolve()
+    assert media is not None and media.show_year is None
+
+
 def test_show_ids_are_fetched_once_per_show():
     kodi = _kodi()
     resolver = MediaResolver(kodi)

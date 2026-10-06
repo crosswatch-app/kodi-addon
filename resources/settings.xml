@@ -40,6 +40,13 @@
                         <close>false</close>
                     </control>
                 </setting>
+                <setting id="remembered_answers" type="action" label="30035">
+                    <level>0</level>
+                    <data>RunScript(service.crosswatch,remembered)</data>
+                    <control type="button" format="action">
+                        <close>false</close>
+                    </control>
+                </setting>
                 <setting id="movie_prompts" type="boolean" label="30012">
                     <level>0</level>
                     <default>true</default>

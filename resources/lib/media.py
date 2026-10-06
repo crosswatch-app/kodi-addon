@@ -60,7 +60,7 @@ def strip_credentials(path: str) -> str:
     return redact(text)
 
 
-def _clean_ids(uniqueid: Any) -> dict[str, str]:
+def clean_ids(uniqueid: Any) -> dict[str, str]:
     if not isinstance(uniqueid, dict):
         return {}
     out: dict[str, str] = {}
@@ -80,11 +80,11 @@ def _int_or_none(value: Any) -> int | None:
 class MediaResolver:
     def __init__(self, kodi: KodiApi) -> None:
         self._kodi = kodi
-        self._show_ids: dict[int, dict[str, str]] = {}
+        self._shows: dict[int, tuple[dict[str, str], int | None]] = {}
 
     def forget_shows(self) -> None:
-        """Drop memoised show ids; a library scan can change them."""
-        self._show_ids.clear()
+        """Drop memoised show details; a library scan can change them."""
+        self._shows.clear()
 
     def resolve(self) -> MediaItem | None:
         with log_timing(_log, "media.resolve") as timer:
@@ -106,7 +106,7 @@ class MediaResolver:
 
             file_path = strip_credentials(str(item.get("file") or ""))
             is_pkc = file_path.startswith(PKC_PREFIX)
-            own_ids = _clean_ids(item.get("uniqueid"))
+            own_ids = clean_ids(item.get("uniqueid"))
             raw_id = _int_or_none(item.get("id"))
             library_id = raw_id if raw_id is not None and raw_id >= 0 else None
             source: Source = "plexkodiconnect" if is_pkc else "library"
@@ -115,7 +115,7 @@ class MediaResolver:
             if media_type == "episode":
                 tvshowid = _int_or_none(item.get("tvshowid"))
                 tvshowid = tvshowid if tvshowid and tvshowid > 0 else None
-                show_ids = self._lookup_show_ids(tvshowid) if tvshowid else {}
+                show_ids, show_year = self._lookup_show(tvshowid) if tvshowid else ({}, None)
                 timer.mark("show_ids")
                 # A scraper can store the series' id on an episode. Sent bare it reads as the
                 # episode's own id and the receiver looks up a show as an episode, so an id
@@ -136,6 +136,7 @@ class MediaResolver:
                     source=source,
                     is_pkc=is_pkc,
                     plex_rating_key=rating_key,
+                    show_year=show_year,
                 )
             else:
                 media = MediaItem(
@@ -177,22 +178,23 @@ class MediaResolver:
                 return int(player.get("playerid", 1))
         return None
 
-    def _lookup_show_ids(self, tvshowid: int) -> dict[str, str]:
-        cached = self._show_ids.get(tvshowid)
+    def _lookup_show(self, tvshowid: int) -> tuple[dict[str, str], int | None]:
+        cached = self._shows.get(tvshowid)
         if cached is not None:
-            return dict(cached)
+            return dict(cached[0]), cached[1]
         try:
             details = self._kodi.jsonrpc(
-                "VideoLibrary.GetTVShowDetails", {"tvshowid": tvshowid, "properties": ["uniqueid"]}
+                "VideoLibrary.GetTVShowDetails", {"tvshowid": tvshowid, "properties": ["uniqueid", "year"]}
             )
         except Exception as exc:
             _log.warning("media.show_lookup_failed", tvshowid=tvshowid, error=str(exc))
-            return {}
+            return {}, None
         show = details.get("tvshowdetails")
-        ids = _clean_ids(show.get("uniqueid")) if isinstance(show, dict) else {}
+        ids = clean_ids(show.get("uniqueid")) if isinstance(show, dict) else {}
+        year = _int_or_none(show.get("year")) if isinstance(show, dict) else None
         # Negative results are cached too, so a show with no ids is not re-queried per episode.
-        self._show_ids[tvshowid] = ids
-        return dict(ids)
+        self._shows[tvshowid] = (ids, year or None)
+        return dict(ids), year or None
 
     @staticmethod
     def _rating_key(file_path: str) -> str | None:

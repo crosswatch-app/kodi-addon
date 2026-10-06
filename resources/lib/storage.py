@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 import threading
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from resources.lib.log import get_logger
@@ -92,25 +93,74 @@ class JsonViewerStore:
         )
 
 
+@dataclass(frozen=True)
+class RememberedAnswer:
+    """Who watched a show, and which show it was when they said so.
+
+    title and year identify the show for a person reading the list, and guard an answer
+    keyed on Kodi's own database id, which a library clean can hand to a different show.
+    """
+
+    viewers: tuple[str, ...]
+    title: str | None = None
+    year: int | None = None
+
+
+def _parse_answer(raw: Any) -> RememberedAnswer | None:
+    # A bare list is how answers were written before the title and year were kept.
+    if isinstance(raw, list):
+        names = tuple(str(n) for n in raw if n)
+        return RememberedAnswer(viewers=names) if names else None
+    if not isinstance(raw, dict) or not isinstance(raw.get("viewers"), list):
+        return None
+    names = tuple(str(n) for n in raw["viewers"] if n)
+    if not names:
+        return None
+    title = raw.get("title")
+    year = raw.get("year")
+    return RememberedAnswer(
+        viewers=names,
+        title=str(title) if isinstance(title, str) and title else None,
+        year=year if isinstance(year, int) and not isinstance(year, bool) else None,
+    )
+
+
 class PromptMemory:
+    """Answers to the who-watched prompt, one per show.
+
+    Read from disk on every call rather than cached: the settings screen edits the same
+    file from another interpreter, and a change there has to reach the next playback.
+    """
+
     def __init__(self, path: str) -> None:
         self._path = path
         self._lock = threading.Lock()
 
-    def recall(self, key: str) -> tuple[str, ...] | None:
+    def recall(self, key: str) -> RememberedAnswer | None:
         data = _read_json(self._path, {})
-        names = data.get(key) if isinstance(data, dict) else None
-        if not isinstance(names, list) or not names:
-            return None
-        return tuple(str(n) for n in names)
+        return _parse_answer(data.get(key)) if isinstance(data, dict) else None
 
-    def remember(self, key: str, names: tuple[str, ...]) -> None:
+    def entries(self) -> dict[str, RememberedAnswer]:
+        data = _read_json(self._path, {})
+        if not isinstance(data, dict):
+            return {}
+        parsed = {str(key): _parse_answer(raw) for key, raw in data.items()}
+        return {key: answer for key, answer in parsed.items() if answer is not None}
+
+    def remember(self, key: str, viewers: tuple[str, ...], title: str | None = None, year: int | None = None) -> None:
         with self._lock:
             data = _read_json(self._path, {})
             if not isinstance(data, dict):
                 data = {}
-            data[key] = list(names)
+            data[key] = {"viewers": list(viewers), "title": title, "year": year}
             _write_json(self._path, data)
+
+    def forget(self, key: str) -> None:
+        with self._lock:
+            data = _read_json(self._path, {})
+            if isinstance(data, dict) and key in data:
+                del data[key]
+                _write_json(self._path, data)
 
     def forget_all(self) -> None:
         with self._lock:

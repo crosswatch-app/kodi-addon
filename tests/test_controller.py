@@ -533,7 +533,8 @@ def test_the_answer_is_remembered_under_a_stable_key(tmp_path):
     controller.on_tick()
     controller.on_stopped(completed=False)
     controller.on_tick()
-    assert PromptMemory(str(tmp_path / "prompts.json")).recall("show:tvdb:83462") == ("bob",)
+    answer = PromptMemory(str(tmp_path / "prompts.json")).recall("show:tvdb:83462")
+    assert answer is not None and answer.viewers == ("bob",)
 
 
 def test_a_dismissed_prompt_still_emits_the_stop_with_no_viewers(tmp_path):
