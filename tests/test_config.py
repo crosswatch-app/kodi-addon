@@ -1,4 +1,4 @@
-from resources.lib.config import Settings, read_settings
+from resources.lib.config import Settings, read_settings, split_token, write_back_pasted_url
 from tests.fakes import FakeKodi
 
 
@@ -12,9 +12,9 @@ def test_defaults_when_nothing_is_configured():
     assert got.webhook_url() is None
 
 
-def test_webhook_url_assembles_base_and_token():
+def test_webhook_url_is_the_plain_endpoint_without_the_token():
     kodi = FakeKodi(settings={"webhook_base_url": "http://host:8787/webhook/kodiwatcher", "webhook_token": "tok"})
-    assert read_settings(kodi).webhook_url() == "http://host:8787/webhook/kodiwatcher?token=tok"
+    assert read_settings(kodi).webhook_url() == "http://host:8787/webhook/kodiwatcher"
 
 
 def test_webhook_url_is_none_without_a_base():
@@ -26,14 +26,41 @@ def test_webhook_url_is_none_without_a_token():
     assert read_settings(kodi).webhook_url() is None
 
 
-def test_a_token_with_url_unsafe_characters_is_encoded():
-    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodiwatcher", "webhook_token": "a b&c#d"})
-    assert read_settings(kodi).webhook_url() == "http://host/webhook/kodiwatcher?token=a+b%26c%23d"
-
-
-def test_a_base_url_with_a_trailing_slash_does_not_double_up():
+def test_a_base_url_with_a_trailing_slash_loses_it():
     kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodiwatcher/", "webhook_token": "tok"})
-    assert read_settings(kodi).webhook_url() == "http://host/webhook/kodiwatcher?token=tok"
+    assert read_settings(kodi).webhook_url() == "http://host/webhook/kodiwatcher"
+
+
+def test_a_pasted_url_is_split_into_endpoint_and_token():
+    kodi = FakeKodi(settings={"webhook_base_url": "http://host:8787/webhook/kodiwatcher?token=a%26b"})
+    got = read_settings(kodi)
+    assert got.webhook_base_url == "http://host:8787/webhook/kodiwatcher"
+    assert got.webhook_token == "a&b"
+
+
+def test_a_pasted_token_wins_over_the_stored_one():
+    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodiwatcher?token=new", "webhook_token": "old"})
+    assert read_settings(kodi).webhook_token == "new"
+
+
+def test_split_token_keeps_other_query_parameters():
+    assert split_token("http://host/hook?a=1&token=t&b=2") == ("http://host/hook?a=1&b=2", "t")
+
+
+def test_split_token_leaves_a_url_without_a_token_alone():
+    assert split_token("http://host/hook?a=1") == ("http://host/hook?a=1", "")
+
+
+def test_split_token_survives_an_unparseable_url():
+    assert split_token("http://[::1/hook?token=t") == ("http://[::1/hook?token=t", "")
+
+
+def test_the_write_back_stores_token_then_plain_url_and_only_once():
+    kodi = FakeKodi(settings={"webhook_base_url": "http://host/webhook/kodiwatcher?token=tok"})
+    assert write_back_pasted_url(kodi, read_settings(kodi)) is True
+    assert kodi.writes == [("webhook_token", "tok"), ("webhook_base_url", "http://host/webhook/kodiwatcher")]
+    assert write_back_pasted_url(kodi, read_settings(kodi)) is False
+    assert len(kodi.writes) == 2
 
 
 def test_movie_prompts_can_be_switched_off():

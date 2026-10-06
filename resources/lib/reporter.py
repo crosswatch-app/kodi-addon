@@ -157,9 +157,7 @@ class HttpReporter:
         self._sleep = sleeper if sleeper is not None else abort.wait
         self._headers = {"Content-Type": "application/json"}
         if token:
-            # The contract accepts the token in the query string, in this header, or both.
-            # Sent here as well so the query parameter can be dropped once the server stops
-            # requiring it. While both are sent the query-string exposure is unchanged.
+            # The header only: a token in the query string ends up in proxy and access logs.
             self._headers["X-CrossWatch-Token"] = token
 
     def _connect(self) -> Any:

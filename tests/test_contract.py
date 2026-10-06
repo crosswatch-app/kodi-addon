@@ -71,7 +71,9 @@ def reporter(stub):
 def test_the_request_line_and_headers_match_the_contract(stub, reporter):
     assert reporter().report(_event(), DEVICE) is True
     sent = stub.received[0]
-    assert sent["path"] == "/webhook/kodiwatcher?token=stub-token"
+    # The header only: a token in the request line ends up in proxy and access logs.
+    assert sent["path"] == "/webhook/kodiwatcher"
+    assert "stub-token" not in sent["path"]
     assert sent["headers"]["Content-Type"] == "application/json"
     assert sent["headers"]["X-CrossWatch-Token"] == "stub-token"
 

@@ -15,7 +15,7 @@ from dataclasses import replace
 from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.advanced_settings import read_thresholds
-from resources.lib.config import read_settings
+from resources.lib.config import read_settings, write_back_pasted_url
 from resources.lib.constants import ADDON_ID, SHUTDOWN_DRAIN_SECONDS
 from resources.lib.device import device_identity
 from resources.lib.kodi import KodiRuntime
@@ -65,6 +65,7 @@ def main() -> None:
     player = PlaybackMonitor(None)  # controller attached below; construction registers the callback target
     kodi = KodiRuntime(player=player)
     settings = read_settings(kodi)
+    write_back_pasted_url(kodi, settings)
     logmod.configure(log_dir=paths.log_dir(kodi), debug=settings.debug_logging, sink=kodi.log)
     # Registered before anything can log: an illegal token makes http.client raise with the
     # value in the message, and that message is logged as a field on a retryable path.

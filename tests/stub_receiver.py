@@ -25,9 +25,14 @@ class StubCrossWatch:
         self._thread.start()
 
     @property
-    def url(self) -> str:
+    def address(self) -> str:
+        """What a household types when pairing."""
         host, port = self._server.server_address[:2]
-        return f"http://{host}:{port}/webhook/kodiwatcher?token=stub-token"
+        return f"http://{host}:{port}"
+
+    @property
+    def url(self) -> str:
+        return f"{self.address}/webhook/kodiwatcher"
 
     def respond(self, status: int = 200, body: dict[str, Any] | None = None, fail_times: int = 0) -> None:
         """Set the next response. fail_times makes that many requests fail first."""
@@ -50,8 +55,8 @@ class StubCrossWatch:
         stub = self
 
         class Handler(BaseHTTPRequestHandler):
-            # The addon reuses one connection across retries, so the stub has to speak a
-            # protocol version that keeps it open.
+            # HTTP/1.1 keeps the connection open after a response, as a real server does, so
+            # it is the add-on that has to close each one.
             protocol_version = "HTTP/1.1"
 
             def do_POST(self) -> None:
