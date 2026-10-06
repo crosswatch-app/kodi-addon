@@ -22,6 +22,7 @@ So a Kodi watch can end up marked watched on someone's own Plex. That is why tim
 
 - Every Kodi device is its own Kodi instance in CrossWatch.
 - The add-on gets its URL and token by pairing, see below. Nobody types a token on a TV.
+- Manual setup stays possible for people who prefer it: the instance page can still offer the full URL with `?token=` behind a manual option. The add-on accepts that URL pasted into its Webhook URL setting, takes the token out of it, and sends the token only in the header.
 - Routes work like today. For example `Kodi Living room -> Trakt Anna` with whitelist `anna`, and `Kodi Living room -> Trakt Tom` with whitelist `tom`.
 
 ## Endpoint
@@ -58,6 +59,7 @@ Content-Type: application/json
 ```
 
 - The code is 6 characters, valid for 10 minutes, and works once.
+- Capitals and digits, without `0`, `O`, `1` or `I`. CrossWatch ignores case and spaces, and the add-on uppercases the code and strips spaces before sending it.
 - A wrong, expired or used code gets a `401` with `{ "ok": false, "error": "invalid_code" }`.
 - Too many tries get a `429`.
 - `url` is the plain endpoint, without the token. The token only ever travels in the `X-CrossWatch-Token` header.
