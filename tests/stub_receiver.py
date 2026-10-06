@@ -17,7 +17,7 @@ class StubCrossWatch:
     def __init__(self) -> None:
         self.received: list[dict[str, Any]] = []
         self._status = 200
-        self._body: dict[str, Any] = {"ok": True, "crosswatch_version": "0.13.0"}
+        self._body: dict[str, Any] = {"ok": True, "crosswatch_version": "0.14.0"}
         self._fail_times = 0
         self._lock = threading.Lock()
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
@@ -33,7 +33,7 @@ class StubCrossWatch:
         """Set the next response. fail_times makes that many requests fail first."""
         with self._lock:
             self._status = status
-            self._body = body if body is not None else {"ok": True, "crosswatch_version": "0.13.0"}
+            self._body = body if body is not None else {"ok": True, "crosswatch_version": "0.14.0"}
             self._fail_times = fail_times
 
     def close(self) -> None:
