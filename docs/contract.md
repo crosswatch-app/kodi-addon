@@ -1,6 +1,6 @@
 # Kodi add-on contract
 
-Version 1.2. Draft.
+Version 1.3. Draft.
 
 Nothing here is set in stone. If something makes the add-on harder to build, just say so and we change it. CrossWatch can adapt.
 
@@ -21,7 +21,8 @@ So a Kodi watch can end up marked watched on someone's own Plex. That is why tim
 ## Setup
 
 - Every Kodi device is its own Kodi instance in CrossWatch.
-- The instance settings show an add-on URL with a token. The user pastes it into the add-on.
+- The add-on gets its URL and token by pairing, see below. Nobody types a token on a TV.
+- Manual setup stays possible for people who prefer it: the instance page can still offer the full URL with `?token=` behind a manual option. The add-on accepts that URL pasted into its Webhook URL setting, takes the token out of it, and sends the token only in the header.
 - Routes work like today. For example `Kodi Living room -> Trakt Anna` with whitelist `anna`, and `Kodi Living room -> Trakt Tom` with whitelist `tom`.
 
 ## Endpoint
@@ -36,7 +37,59 @@ Use the header. `?token=<token>` still works as a fallback, but it ends up in re
 
 One URL for everything. The event type is in the body.
 
-## Add-on mode (just an idea!)
+## Pairing
+
+The normal way to connect the add-on. The user types the CrossWatch address and a short code into the add-on, and the add-on swaps the code for the token.
+
+1. The user opens the Kodi instance in CrossWatch and asks for a pairing code.
+2. In the add-on they enter the CrossWatch address (for example `http://192.168.1.10:8787`) and the code.
+3. The add-on posts the code:
+
+```
+POST /webhook/kodiwatcher/pair
+Content-Type: application/json
+
+{ "code": "ABC123" }
+```
+
+4. CrossWatch answers with the endpoint, the token and the instance name:
+
+```json
+{ "ok": true, "url": "http://192.168.1.10:8787/webhook/kodiwatcher", "token": "<token>", "instance": "Living room" }
+```
+
+- The code is 6 characters, valid for 10 minutes, and works once.
+- Capitals and digits, without `0`, `O`, `1` or `I`. CrossWatch ignores case and spaces, and the add-on uppercases the code and strips spaces before sending it.
+- A wrong, expired or used code gets a `401` with `{ "ok": false, "error": "invalid_code" }`.
+- Too many tries get a `429`.
+- `url` is the plain endpoint, without the token. The token only ever travels in the `X-CrossWatch-Token` header.
+- The add-on keeps the address it just posted to, since that one is known to reach CrossWatch from this Kodi, and shows `instance` so the user sees which entry it paired with.
+- Right after pairing the add-on sends a `ping`, so CrossWatch sees it within seconds.
+
+### Link (shortcut)
+
+Only for a Kodi that CrossWatch already reaches over JSON-RPC. Kodi has its web server off by default, so most Kodis cannot use this.
+
+CrossWatch calls Kodi:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "Addons.ExecuteAddon",
+  "params": {
+    "addonid": "service.crosswatch",
+    "params": ["action=link", "url=<endpoint>", "token=<token>"]
+  }
+}
+```
+
+- Use the array form of `params`. Kodi quotes each array item, but joins an object as `key=value` with commas and no quoting, so a comma in a value would break it.
+- `url` is the plain endpoint, as with pairing.
+- The add-on asks the user on the TV to confirm, showing the CrossWatch address. Yes stores it and sends a `ping` at once. No, or no answer, changes nothing.
+- Kodi answers `OK` as soon as the add-on starts, before the user has answered. So the first `ping` with the new token is the signal that linking worked.
+
+## Add-on mode
 
 When the add-on is active, CrossWatch stops polling that Kodi. No double scrobbles.
 
@@ -166,7 +219,7 @@ The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them an
 
 - No queue for normal events. Retry for 2 minutes counted from when the event happened, then drop it. So nothing arrives late.
 - One exception: a `stop` that completes a watch goes to disk before the first attempt and is kept until CrossWatch takes it, up to 7 days, surviving a Kodi restart. Kodi bumps its own playcount anyway, but only the add-on knows who watched.
-- A stored stop is replayed with its original `event_id` and `sent_at`, and carries `replayed: true`. CrossWatch dates the watch from `sent_at`, not from when it arrives.
+- A stored stop is replayed with its original `event_id` and `sent_at`, and carries `replayed: true`. Plex, Emby and Jellyfin date the watch from `sent_at`. Trackers, CrossWatch's own history included, record it when it arrives.
 - A late stop never touches the now-playing card. That is keyed per session.
 - Timeout of 10 seconds.
 - Retry on connection errors, timeouts, `5xx` and a lost response. A duplicate is safe: Trakt and Simkl dedupe server side, and the media server sinks just set a watched flag. A lost `stop` is worse.
@@ -174,15 +227,18 @@ The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them an
 
 ## Responses
 
-CrossWatch always answers `200` with JSON.
+CrossWatch always answers with JSON, normally a `200`.
 
 ```json
 { "ok": true, "ignored": false, "crosswatch_version": "0.13.0" }
 ```
 
-If `ignored` is `true`, `error` tells why. For example `invalid_token`, `instance_disabled` or `no_routes`. Show it in the add-on. Don't retry.
+If `ignored` is `true`, `error` tells why. For example `addon_disabled`, `no_routes` or `no_matching_route`. Show it in the add-on. Don't retry.
 
-A `ping` also tells which routes each viewer hits. Handy for a Test connection button.
+- A bad token gets a `401` with `{ "ok": false, "error": "invalid_token" }`. Don't retry.
+- An error inside CrossWatch gets a `500` with `internal_error`. Retry like any `5xx`.
+
+A `ping` also tells which routes each viewer hits. Handy for a Test connection button. With no routes yet it is still a plain `ok`, with an empty `routes` list.
 
 ```json
 {
@@ -196,14 +252,11 @@ A `ping` also tells which routes each viewer hits. Handy for a Test connection b
 }
 ```
 
-A bad token gets a `401`.
-
 ## Versions
 
-CrossWatch takes what it understands and ignores the rest. 
-Also from a newer `version`. Use `crosswatch_version` to warn if CrossWatch is too old.
+CrossWatch takes what it understands and ignores the rest. Also from a newer `version`.
 
-CrossWatch needs 0.13.0 or newer. Older builds turn an absent `percent` into `0`, which wipes real resume points in Plex and Emby.
+There is no minimum CrossWatch version to check. Only a CrossWatch with this endpoint can take an event, and it reads an absent `percent` as unknown. An older CrossWatch answers `404`, so nothing is written.
 
 ## PlexKodiConnect
 
