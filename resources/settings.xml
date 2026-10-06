@@ -3,8 +3,34 @@
     <section id="service.crosswatch">
         <category id="connection" label="30000">
             <group id="1">
-                <setting id="webhook_base_url" type="string" label="30001">
+                <setting id="pair" type="action" label="30060">
                     <level>0</level>
+                    <data>RunScript(service.crosswatch,pair)</data>
+                    <control type="button" format="action">
+                        <close>true</close>
+                    </control>
+                </setting>
+                <setting id="connection_status" type="string" label="30061">
+                    <level>0</level>
+                    <default></default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <enable>false</enable>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="unpair" type="action" label="30062">
+                    <level>0</level>
+                    <dependencies>
+                        <dependency type="visible" setting="webhook_token" operator="!is"></dependency>
+                    </dependencies>
+                    <data>RunScript(service.crosswatch,unpair)</data>
+                    <control type="button" format="action">
+                        <close>true</close>
+                    </control>
+                </setting>
+                <setting id="webhook_base_url" type="string" label="30001">
+                    <level>2</level>
                     <default></default>
                     <constraints>
                         <allowempty>true</allowempty>
@@ -12,7 +38,7 @@
                     <control type="edit" format="string"/>
                 </setting>
                 <setting id="webhook_token" type="string" label="30002">
-                    <level>0</level>
+                    <level>2</level>
                     <default></default>
                     <constraints>
                         <allowempty>true</allowempty>

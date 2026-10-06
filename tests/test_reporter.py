@@ -814,7 +814,7 @@ def test_another_sessions_event_does_not_supersede_a_progress():
 def _store(tmp_path, mono=None) -> Outbox:
     store = Outbox(
         str(tmp_path / "outbox.json"),
-        config_fingerprint("http://host/hook", "tok"),
+        config_fingerprint("tok"),
         clock=mono or time.monotonic,
     )
     store.load()
@@ -953,3 +953,101 @@ def test_stop_reports_watches_left_on_disk(tmp_path, lines):
     queue.submit(_watched())
     queue.stop(deadline=2.0)
     assert any("reporter.outbox_pending" in line and "count=1" in line for line in lines)
+
+
+PING = PingEvent(event_id="p-1", sent_at="2026-10-06T20:00:00Z", viewers=())
+
+
+def _replying(body: bytes):
+    return lambda *a, **k: FakeConnection(FakeResponse(200, body))
+
+
+def test_a_ping_reply_hands_its_instance_name_on(reporter_factory):
+    seen: list[str] = []
+    reporter = reporter_factory(
+        "http://host/hook",
+        connection_factory=_replying(b'{"ok": true, "instance": " Living room ", "routes": []}'),
+        on_instance=seen.append,
+    )
+    assert reporter.report(PING, DEVICE) is True
+    assert seen == ["Living room"]
+
+
+@pytest.mark.parametrize("body", [b'{"ok": true}', b'{"ok": true, "instance": ""}', b'{"ok": true, "instance": 7}'])
+def test_a_ping_reply_without_a_usable_instance_hands_nothing_on(reporter_factory, body):
+    seen: list[str] = []
+    reporter = reporter_factory("http://host/hook", connection_factory=_replying(body), on_instance=seen.append)
+    assert reporter.report(PING, DEVICE) is True
+    assert seen == []
+
+
+def test_only_a_ping_reply_is_read_for_the_instance(reporter_factory):
+    seen: list[str] = []
+    reporter = reporter_factory(
+        "http://host/hook",
+        connection_factory=_replying(b'{"ok": true, "instance": "Living room"}'),
+        on_instance=seen.append,
+    )
+    reporter.report(_event("start"), DEVICE)
+    assert seen == []
+
+
+def test_a_failing_instance_callback_does_not_fail_the_delivery(lines, reporter_factory):
+    def broken(instance: str) -> None:
+        raise RuntimeError("settings unavailable")
+
+    reporter = reporter_factory(
+        "http://host/hook", connection_factory=_replying(b'{"ok": true, "instance": "Living room"}'), on_instance=broken
+    )
+    assert reporter.report(PING, DEVICE) is True
+    assert any("reporter.instance_not_noted" in line for line in lines)
+
+
+def test_after_replace_the_next_event_goes_to_the_new_sink():
+    old, new = Gate(), Gate()
+    new.release.set()
+    queue = _queued(old, time.monotonic)
+    queue.replace(new, None)
+    queue.submit(replace(_event("start"), event_id="after"))
+    old.release.set()
+    queue.stop(deadline=2.0)
+    # The blocker was in flight at the swap and finished against the old sink.
+    assert old.delivered == ["blocker"]
+    assert new.delivered == ["after"]
+
+
+def test_an_event_queued_before_replace_goes_to_the_new_sink_not_dropped():
+    old, new = Gate(), Gate()
+    new.release.set()
+    queue = _queued(old, time.monotonic, replace(_event("start"), event_id="queued"))
+    queue.replace(new, None)
+    old.release.set()
+    queue.stop(deadline=2.0)
+    assert new.delivered == ["queued"]
+
+
+def test_replace_swaps_the_outbox_lane_with_the_sink(tmp_path):
+    store = _store(tmp_path)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event())
+    queue.submit(_watched("before"))
+    queue.replace(LogReporter(), OutboxLane(store, lambda b, k: "unreachable"))
+    queue.submit(_watched("after"))
+    queue.stop(deadline=2.0)
+    # Only the watch handed over once a lane existed was kept, and the live send then
+    # delivered it, so the lane removed it again.
+    assert store.pending() == 0
+    assert (tmp_path / "outbox.json").exists()
+
+
+def test_replace_back_to_no_lane_stops_storing(tmp_path):
+    store = _store(tmp_path)
+
+    class Down:
+        def report(self, event, device, deadline=None):
+            return False
+
+    queue = ReporterQueue(Down(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "unreachable"))
+    queue.replace(LogReporter(), None)
+    queue.submit(_watched())
+    queue.stop(deadline=2.0)
+    assert store.pending() == 0

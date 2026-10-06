@@ -18,6 +18,7 @@ class FakeKodi:
         multiselect_answer: list[int] | None = None,
         select_answer: int = -1,
         input_answer: str = "",
+        input_answers: list[str] | None = None,
         confirm_answer: bool = False,
         dialog_id: int = WINDOW_INVALID,
         playing: bool = True,
@@ -34,6 +35,9 @@ class FakeKodi:
         self.multiselect_answer = multiselect_answer
         self.select_answer = select_answer
         self.input_answer = input_answer
+        # Consumed in order, for a flow that asks more than one question.
+        self.input_answers = list(input_answers or [])
+        self.input_calls: list[tuple[str, str]] = []
         self.confirm_answer = confirm_answer
         self.dialog_id = dialog_id
         self.playing = playing
@@ -46,6 +50,9 @@ class FakeKodi:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.multiselect_calls: list[tuple[str, list[str], list[int] | None, int]] = []
         self.notifications: list[tuple[str, str]] = []
+        self.confirm_calls: list[tuple[str, str, int]] = []
+        self.ok_calls: list[tuple[str, str]] = []
+        self.writes: list[tuple[str, str]] = []
         self.logged: list[tuple[str, int]] = []
 
     def jsonrpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -63,6 +70,10 @@ class FakeKodi:
     def setting_int(self, key: str) -> int:
         raw = self.settings.get(key, "")
         return int(raw) if raw else 0
+
+    def set_setting(self, key: str, value: str) -> None:
+        self.writes.append((key, value))
+        self.settings[key] = value
 
     def addon_version(self) -> str:
         return "0.1.0"
@@ -100,13 +111,20 @@ class FakeKodi:
         return self.select_answer
 
     def text_input(self, heading: str, default: str = "") -> str:
+        self.input_calls.append((heading, default))
+        if self.input_answers:
+            return self.input_answers.pop(0)
         return self.input_answer
 
-    def confirm(self, heading: str, message: str) -> bool:
+    def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool:
+        self.confirm_calls.append((heading, message, autoclose))
         return self.confirm_answer
 
     def notify(self, heading: str, message: str) -> None:
         self.notifications.append((heading, message))
+
+    def ok(self, heading: str, message: str) -> None:
+        self.ok_calls.append((heading, message))
 
     def localised(self, string_id: int) -> str:
         return f"#{string_id}"

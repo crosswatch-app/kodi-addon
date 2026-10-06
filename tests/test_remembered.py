@@ -48,7 +48,7 @@ class ScriptedKodi(FakeKodi):
         self.multiselect_calls.append((heading, list(options), preselect, autoclose))
         return self.multiselects.pop(0) if self.multiselects else None
 
-    def confirm(self, heading, message):
+    def confirm(self, heading, message, autoclose=0):
         return self.confirms.pop(0) if self.confirms else False
 
 
@@ -209,7 +209,7 @@ def test_forget_all_wording_follows_the_count(memory):
     seen: list[str] = []
 
     class Recording(ScriptedKodi):
-        def confirm(self, heading, message):
+        def confirm(self, heading, message, autoclose=0):
             seen.append(message)
             return False
 

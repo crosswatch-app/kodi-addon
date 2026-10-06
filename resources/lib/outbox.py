@@ -6,7 +6,7 @@ report, and Kodi's own shared playcount cannot recover it. Everything else is on
 sending while it is still true, so it stays in memory and expires.
 
 An entry holds the exact payload that was built for sending, so a replay carries the
-original event_id and sent_at, and a fingerprint of the webhook it was meant for, never the
+original event_id and sent_at, and a fingerprint of the token it was meant for, never the
 token itself. A duplicate caused by a crash between acceptance and removal is harmless: the
 receiving sinks dedupe or set an idempotent watched flag.
 """
@@ -31,9 +31,14 @@ _log = get_logger("reporter")
 _FORMAT_VERSION = 1
 
 
-def config_fingerprint(url: str, token: str) -> str:
-    """Which webhook an entry was meant for. A new URL or token may route viewers differently."""
-    return hashlib.sha256(f"{url}\n{token}".encode()).hexdigest()
+def config_fingerprint(token: str) -> str:
+    """Which CrossWatch instance an entry was meant for.
+
+    The token alone, not the URL: CrossWatch maps each token to one Kodi instance on one
+    server, so the same server reached under a new address keeps its stored watches, and
+    another instance, which may route viewers differently, does not get them.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 @dataclass
@@ -100,6 +105,24 @@ class Outbox:
                 self._save()
             if kept:
                 _log.info("reporter.outbox_loaded", count=len(kept))
+
+    def rebind(self, fingerprint: str) -> None:
+        """Point the store at another token, dropping what was kept for a different one.
+
+        The service keeps one store for its whole life and rebinds it, rather than building a
+        second over the same file: two stores would each save their own entries over the
+        other's.
+        """
+        with self._lock:
+            if fingerprint == self._fingerprint:
+                return
+            self._fingerprint = fingerprint
+            kept = [e for e in self._entries if e.fingerprint == fingerprint]
+            dropped = len(self._entries) - len(kept)
+            self._entries = kept
+            if dropped:
+                _log.warning("reporter.outbox_dropped", reason="config", count=dropped)
+                self._save()
 
     def add(self, body: dict[str, Any], kind: str) -> bool:
         """Store before the first send attempt. False means it is held in memory only."""

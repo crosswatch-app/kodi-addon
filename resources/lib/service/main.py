@@ -15,21 +15,14 @@ from dataclasses import replace
 from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.advanced_settings import read_thresholds
-from resources.lib.config import read_settings
+from resources.lib.config import read_settings, write_back_pasted_url
 from resources.lib.constants import ADDON_ID, SHUTDOWN_DRAIN_SECONDS
 from resources.lib.device import device_identity
-from resources.lib.kodi import KodiRuntime
+from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.media import MediaResolver
-from resources.lib.outbox import Outbox, config_fingerprint
-from resources.lib.reporter import (
-    EventSink,
-    HttpReporter,
-    InvalidWebhookUrl,
-    LogReporter,
-    OutboxLane,
-    ReporterQueue,
-)
+from resources.lib.reporter import ReporterQueue
 from resources.lib.service.controller import Controller
+from resources.lib.service.delivery import Delivery
 from resources.lib.service.playback_monitor import PlaybackMonitor
 from resources.lib.service.service_monitor import ServiceMonitor
 from resources.lib.storage import JsonViewerStore, PromptMemory
@@ -41,30 +34,28 @@ def _timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _build_sink(url: str | None, log, *, token: str, abort: threading.Event):
-    """Fall back to logging rather than posting somewhere unexpected."""
-    if not url:
-        return LogReporter()
-    try:
-        return HttpReporter(url, token=token, abort=abort)
-    except InvalidWebhookUrl as exc:
-        log.error("service.webhook_url_rejected", error=str(exc))
-        return LogReporter()
-
-
-def _outbox_lane(sink: EventSink, path: str, url: str | None, *, token: str) -> OutboxLane | None:
-    """Only a real webhook gets one: with nowhere to deliver, the file would only grow."""
-    if not isinstance(sink, HttpReporter) or not url:
-        return None
-    store = Outbox(path, config_fingerprint(url, token))
-    store.load()
-    return OutboxLane(store, sink.send_once)
+def apply_settings(
+    kodi: KodiApi, controller: Controller, queue: ReporterQueue, delivery: Delivery, log: logmod.StructuredLogger
+) -> None:
+    """Everything a settings change means to a running service, including a new connection."""
+    fresh = read_settings(kodi)
+    # Its own writes wake this again; by then the URL is plain and nothing is written.
+    write_back_pasted_url(kodi, fresh)
+    logmod.set_secret(fresh.webhook_token)
+    logmod.set_debug(fresh.debug_logging)
+    controller.on_settings_changed(fresh, read_thresholds(kodi))
+    if delivery.changed(fresh):
+        queue.replace(*delivery.build(fresh))
+        controller.ping_now()
+        log.info("service.connection_changed", configured=fresh.webhook_url() is not None)
+    log.info("service.settings_reloaded", debug=fresh.debug_logging)
 
 
 def main() -> None:
     player = PlaybackMonitor(None)  # controller attached below; construction registers the callback target
     kodi = KodiRuntime(player=player)
     settings = read_settings(kodi)
+    write_back_pasted_url(kodi, settings)
     logmod.configure(log_dir=paths.log_dir(kodi), debug=settings.debug_logging, sink=kodi.log)
     # Registered before anything can log: an illegal token makes http.client raise with the
     # value in the message, and that message is logged as a field on a retryable path.
@@ -75,11 +66,11 @@ def main() -> None:
     # Created here because both sides need it and neither may default it: the queue sets it
     # on stop, the reporter waits on it during a retry backoff.
     abort = threading.Event()
-    sink = _build_sink(settings.webhook_url(), log, token=settings.webhook_token, abort=abort)
+    delivery = Delivery(kodi, paths.outbox_path(kodi), abort)
+    sink, lane = delivery.build(settings)
     # device_identity owns identity, not versioning, and is used by tests that should not
     # need a Kodi handle just to produce a version string.
     device = replace(device_identity(kodi, settings, paths.device_path(kodi)), addon_version=kodi.addon_version())
-    lane = _outbox_lane(sink, paths.outbox_path(kodi), settings.webhook_url(), token=settings.webhook_token)
     queue = ReporterQueue(sink, device, abort, outbox=lane)
     controller = Controller(
         kodi=kodi,
@@ -95,18 +86,13 @@ def main() -> None:
     )
     player._controller = controller
 
-    def reload_settings() -> None:
-        fresh = read_settings(kodi)
-        logmod.set_debug(fresh.debug_logging)
-        controller.on_settings_changed(fresh, read_thresholds(kodi))
-        log.info("service.settings_reloaded", debug=fresh.debug_logging)
-
-    monitor = ServiceMonitor(controller, on_settings_changed=reload_settings)
+    monitor = ServiceMonitor(controller, on_settings_changed=lambda: apply_settings(kodi, controller, queue, delivery, log))
     reason = "abort"
     try:
         while not monitor.abortRequested():
             try:
                 controller.on_tick(shutting_down=monitor.abortRequested())
+                delivery.publish_status()
             except Exception as exc:
                 # The loop is the only callback pump. Losing it silently disables the addon.
                 log.error("service.tick_failed", error=str(exc))

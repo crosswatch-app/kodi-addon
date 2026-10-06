@@ -114,7 +114,7 @@ class ScriptedKodi(FakeKodi):
         self.multiselect_calls.append((heading, list(options), preselect, autoclose))
         return self._multiselects.pop(0) if self._multiselects else None
 
-    def confirm(self, heading, message):
+    def confirm(self, heading, message, autoclose=0):
         return self._confirms.pop(0) if self._confirms else False
 
 

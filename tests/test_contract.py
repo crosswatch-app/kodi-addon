@@ -7,6 +7,7 @@ from dataclasses import replace
 import pytest
 
 from resources.lib.models import Device, MediaItem, PingEvent, PlaybackEvent
+from resources.lib.pairing import exchange_code
 from resources.lib.reporter import HttpReporter
 from tests.stub_receiver import StubCrossWatch
 
@@ -71,7 +72,9 @@ def reporter(stub):
 def test_the_request_line_and_headers_match_the_contract(stub, reporter):
     assert reporter().report(_event(), DEVICE) is True
     sent = stub.received[0]
-    assert sent["path"] == "/webhook/kodiwatcher?token=stub-token"
+    # The header only: a token in the request line ends up in proxy and access logs.
+    assert sent["path"] == "/webhook/kodiwatcher"
+    assert "stub-token" not in sent["path"]
     assert sent["headers"]["Content-Type"] == "application/json"
     assert sent["headers"]["X-CrossWatch-Token"] == "stub-token"
 
@@ -172,3 +175,25 @@ def test_no_token_appears_in_any_log_line(stub, reporter):
         logmod.reset()
     assert captured
     assert not any("stub-token" in line for line in captured)
+
+
+def test_pairing_posts_the_code_to_the_pair_endpoint_without_a_token(stub):
+    stub.respond(200, {"ok": True, "url": stub.url, "token": "paired-token", "instance": "Living room"})
+    result = exchange_code(stub.address, "ABC234")
+    sent = stub.received[-1]
+    assert sent["path"] == "/webhook/kodiwatcher/pair"
+    assert sent["body"] == {"code": "ABC234"}
+    assert "X-CrossWatch-Token" not in sent["headers"]
+    assert (result.outcome, result.token, result.instance) == ("paired", "paired-token", "Living room")
+
+
+def test_pairing_reads_a_401_as_a_wrong_code(stub):
+    stub.respond(401, {"ok": False, "error": "invalid_code"})
+    assert exchange_code(stub.address, "ABC234").outcome == "invalid_code"
+
+
+def test_pairing_with_nothing_listening_is_unreachable():
+    stub = StubCrossWatch()
+    address = stub.address
+    stub.close()
+    assert exchange_code(address, "ABC234", timeout=1.0).outcome == "unreachable"

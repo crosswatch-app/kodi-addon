@@ -1,6 +1,6 @@
 # Kodi add-on contract
 
-Version 1.3. Draft.
+Version 1.4. Draft.
 
 Nothing here is set in stone. If something makes the add-on harder to build, just say so and we change it. CrossWatch can adapt.
 
@@ -79,14 +79,16 @@ CrossWatch calls Kodi:
   "method": "Addons.ExecuteAddon",
   "params": {
     "addonid": "service.crosswatch",
-    "params": ["action=link", "url=<endpoint>", "token=<token>"]
+    "params": ["action=link", "url=<endpoint>", "code=<code>"]
   }
 }
 ```
 
 - Use the array form of `params`. Kodi quotes each array item, but joins an object as `key=value` with commas and no quoting, so a comma in a value would break it.
 - `url` is the plain endpoint, as with pairing.
-- The add-on asks the user on the TV to confirm, showing the CrossWatch address. Yes stores it and sends a `ping` at once. No, or no answer, changes nothing.
+- `code` is a one-time code, like a pairing code: single use, good for 10 minutes. It is separate from the code on the instance page, so linking does not cancel a code the user is typing, and the other way round.
+- Not the token: Kodi writes every script argument to `kodi.log` at debug level, so a token would end up in debug logs. A code found there is already used or expired.
+- The add-on asks the user on the TV to confirm, showing the CrossWatch address. Yes redeems the code at `/webhook/kodiwatcher/pair`, exactly like a typed code (same answer, same `401` and `429`), stores the address and token, and sends a `ping` at once. No, or no answer, changes nothing and leaves the code unused.
 - Kodi answers `OK` as soon as the add-on starts, before the user has answered. So the first `ping` with the new token is the signal that linking worked.
 
 ## Add-on mode

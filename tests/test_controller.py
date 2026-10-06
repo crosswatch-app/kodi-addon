@@ -763,6 +763,15 @@ def test_pings_are_not_sent_more_often_than_the_interval(tmp_path):
     assert len([e for e in collector.events if isinstance(e, PingEvent)]) == 1
 
 
+def test_ping_now_sends_on_the_next_tick_inside_the_interval(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_tick()
+    controller.ping_now()
+    controller.on_tick()
+    assert len([e for e in collector.events if isinstance(e, PingEvent)]) == 2
+
+
 def test_a_ping_carries_the_pkc_skip_count(tmp_path):
     collector = Collector()
     controller = _pkc(tmp_path, collector)

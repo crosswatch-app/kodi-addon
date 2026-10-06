@@ -52,6 +52,73 @@ they just happened to play.
   watching started resolving to one person after a single playback, once it joined that
   person's "Continue Watching" playlist.
 
+## Connecting to CrossWatch
+
+### Pairing
+
+This is the normal way to connect. In the add-on settings, CrossWatch category, select "Pair
+with CrossWatch".
+
+1. In CrossWatch, open the Kodi instance you want this device to use and ask it for a pairing
+   code.
+2. Back in the add-on, type the CrossWatch address: `192.168.1.10:8787` is enough, `http://` is
+   assumed if you leave it off, and a trailing slash or a full webhook URL both work too.
+3. Type the code it gave you: 6 characters, capitals and digits, valid for 10 minutes and good
+   for one use. Case and spaces do not matter, so `ab 23 cd` and `AB23CD` are the same.
+
+On success you get a notification naming the CrossWatch instance, and the Status line
+(read-only, just under the Pair button) reads "Paired with `<instance>` at `<address>`".
+
+If it does not succeed, nothing is changed: the previous connection, if any, stays in place.
+What you see depends on what went wrong:
+
+- A wrong or expired code: "Code wrong or expired. Get a new code in CrossWatch."
+- Too many tries: "Too many tries. Wait a minute and try again."
+- CrossWatch cannot be reached at that address: "Can't reach CrossWatch at `<address>`."
+- Some other failure on CrossWatch's side: "Pairing failed: CrossWatch answered HTTP `<code>`."
+- The Kodi add-on is switched off in CrossWatch: "The Kodi add-on is switched off in
+  CrossWatch. Turn it on there, then pair again."
+- An address that cannot be used, such as one starting with `ftp://`: "Not a CrossWatch
+  address: `<address>`"
+
+Pressing Pair or Unpair closes the settings screen first, saving anything else you changed
+there. The add-on switches to the new connection as soon as you finish, no Kodi restart
+needed, and sends a heartbeat right away, so CrossWatch sees it within seconds.
+
+### Link (shortcut)
+
+Link only works for a Kodi that CrossWatch can already reach over its own network control
+(JSON-RPC). Kodi's web server is off by default, so most households cannot use this and should
+pair instead.
+
+When it applies, CrossWatch starts it: the TV shows "Link this Kodi to CrossWatch at
+`<address>`?". Choosing Yes connects, using a one-time code CrossWatch sent along, so a Link
+that fails shows the same messages as pairing. Choosing No, or not answering within 60
+seconds, changes nothing.
+
+### The Status line
+
+This line is read-only; it only ever reports what the add-on last did. It reads one of:
+
+- "Paired with `<instance>` at `<address>`", after pairing or a Link.
+- "Not paired", when nothing is connected.
+
+### Unpair
+
+The "Unpair" button appears only while the add-on is connected. It asks for confirmation, then
+stops reporting. Any completed watches already kept on disk for delivery during an outage are
+not deleted: they are still sent if you pair again with the same CrossWatch instance. Moving to
+a different CrossWatch does not need Unpair first, just pair again.
+
+### Manual setup (advanced)
+
+If you would rather not pair, "Webhook URL" and "Webhook token" are available at the Advanced
+settings level (use the settings level selector on Kodi's settings screen to see them).
+CrossWatch's instance page also offers a manual option: a full URL with `?token=` in it. You
+can paste that whole URL into "Webhook URL"; the add-on takes the token out of it and moves it
+into "Webhook token" for you. Whichever way the token gets there, it is only ever sent in a
+request header, never in the URL.
+
 ## When CrossWatch cannot be reached
 
 Every playback event (start, pause, resume, progress, stop) and the periodic heartbeat is
@@ -74,8 +141,9 @@ or played to at least its watched threshold (90 percent by default, the
   late shows up late there. It is removed from the file once CrossWatch accepts it.
 - It is dropped, with a warning in the log, if CrossWatch refuses it, if it has waited more
   than seven days, if more than 200 stops are already waiting (oldest dropped first), or if
-  the webhook address or token has changed since it was stored, so a stored stop is never
-  sent to a different CrossWatch.
+  the add-on has since been paired with a different CrossWatch instance (a new token), so a
+  stored stop is never sent to a different CrossWatch. A new address for the same instance
+  keeps it.
 
 Kodi still marks the item watched in its own library either way. But only this add-on knows
 who watched it, so a stop that is ultimately dropped loses the viewer attribution for that

@@ -25,6 +25,7 @@ class KodiApi(Protocol):
     def setting(self, key: str) -> str: ...
     def setting_bool(self, key: str) -> bool: ...
     def setting_int(self, key: str) -> int: ...
+    def set_setting(self, key: str, value: str) -> None: ...
     def addon_version(self) -> str: ...
     def info_label(self, key: str) -> str: ...
     def translate(self, path: str) -> str: ...
@@ -37,8 +38,9 @@ class KodiApi(Protocol):
     ) -> list[int] | None: ...
     def select(self, heading: str, options: list[str]) -> int: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
-    def confirm(self, heading: str, message: str) -> bool: ...
+    def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
     def notify(self, heading: str, message: str) -> None: ...
+    def ok(self, heading: str, message: str) -> None: ...
     def localised(self, string_id: int) -> str: ...
     def log(self, message: str, level: int) -> None: ...
 
@@ -86,6 +88,15 @@ class KodiRuntime:
 
     def setting_int(self, key: str) -> int:
         return int(self._addon.getSettingInt(key))
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Saved at once, unless this add-on's settings screen is open.
+
+        Then Kodi only updates the value on that screen (xbmc/interfaces/legacy/Addon.cpp,
+        UpdateSettingInActiveDialog), and saves it, and tells the service, when the screen
+        closes.
+        """
+        self._addon.setSetting(key, value)
 
     def addon_version(self) -> str:
         return str(self._addon.getAddonInfo("version") or "")
@@ -158,8 +169,9 @@ class KodiRuntime:
     def text_input(self, heading: str, default: str = "") -> str:
         return str(self._xbmcgui.Dialog().input(heading, default) or "")
 
-    def confirm(self, heading: str, message: str) -> bool:
-        return bool(self._xbmcgui.Dialog().yesno(heading, message))
+    def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool:
+        """autoclose is in seconds; a dialog that closes itself counts as No."""
+        return bool(self._xbmcgui.Dialog().yesno(heading, message, autoclose=autoclose * 1000))
 
     def notify(self, heading: str, message: str) -> None:
         """A toast on the household's own screen.
@@ -172,6 +184,14 @@ class KodiRuntime:
         except Exception:
             # Cosmetic. A skin that refuses to draw a toast must not take the service down.
             pass
+
+    def ok(self, heading: str, message: str) -> None:
+        """A message that wraps and waits to be read.
+
+        For anything longer than a toast holds: Estuary's toast cuts long text off rather
+        than wrapping it.
+        """
+        self._xbmcgui.Dialog().ok(heading, message)
 
     def localised(self, string_id: int) -> str:
         try:
