@@ -403,11 +403,8 @@ class Controller:
         Consulted at start as well as at stop, so a show answered once resolves its next
         episode before playback begins.
         """
-        key = prompt_mod.show_key(media)
-        if not key:
-            return ()
         known = {v.name for v in viewers}
-        return tuple(name for name in (self._memory.recall(key) or ()) if name in known)
+        return tuple(name for name in prompt_mod.recall(self._memory, media) if name in known)
 
     def _profile_label(self) -> str:
         try:

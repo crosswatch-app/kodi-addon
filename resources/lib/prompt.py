@@ -37,13 +37,40 @@ def show_key(media: MediaItem) -> str | None:
     """
     if media.media_type != "episode":
         return None
+    return key_for_show(media.show_ids, media.show_library_id)
+
+
+def key_for_show(show_ids: dict[str, str], show_library_id: int | None) -> str | None:
+    """The one rule for a show's key, shared by the prompt and the settings screen."""
     for namespace in _ID_PREFERENCE:
-        value = media.show_ids.get(namespace)
+        value = show_ids.get(namespace)
         if value:
             return f"show:{namespace}:{value}"
-    if media.show_library_id is not None:
-        return f"tvshow:{media.show_library_id}"
+    if show_library_id is not None:
+        return f"{LIBRARY_KEY_PREFIX}{show_library_id}"
     return None
+
+
+# A key on Kodi's own database id. Used only for a show the scraper could not identify, and
+# never trusted on its own: a library clean can hand the id to a different show.
+LIBRARY_KEY_PREFIX = "tvshow:"
+
+
+def recall(memory: PromptMemory, media: MediaItem) -> tuple[str, ...]:
+    """The remembered answer for this show, or nothing.
+
+    An answer keyed on Kodi's database id counts only while the show at that id still has
+    the title and year it had when the answer was given.
+    """
+    key = show_key(media)
+    answer = memory.recall(key) if key else None
+    if answer is None:
+        return ()
+    if key and key.startswith(LIBRARY_KEY_PREFIX):
+        if answer.title is None or (answer.title, answer.year) != (media.title, media.show_year):
+            _log.info("prompt.memory_unverified", media_type=media.media_type, library_id=media.show_library_id)
+            return ()
+    return answer.viewers
 
 
 @dataclass(frozen=True)
@@ -81,16 +108,14 @@ def gate(
     if (position_ms or 0) < thresholds.ignore_seconds_at_start * 1000:
         return refuse("below_ignore_seconds_at_start")
 
-    key = show_key(media)
-    if key:
-        known = {v.name for v in viewers}
-        recalled = memory.recall(key) or ()
-        # Reconcile: a viewer removed from the configuration must stop being reported.
-        surviving = tuple(name for name in recalled if name in known)
-        if surviving:
-            return refuse("remembered", surviving)
-        if recalled:
-            _log.info("prompt.memory_stale", key=key, dropped=len(recalled))
+    recalled = recall(memory, media)
+    # Reconcile: a viewer removed from the configuration must stop being reported.
+    known = {v.name for v in viewers}
+    surviving = tuple(name for name in recalled if name in known)
+    if surviving:
+        return refuse("remembered", surviving)
+    if recalled:
+        _log.info("prompt.memory_stale", dropped=len(recalled))
 
     if shutting_down:
         # Must be checked before the dialog: during shutdown Kodi refuses to draw one and
@@ -103,26 +128,42 @@ def gate(
     return GateDecision(ask=True)
 
 
-def ask(kodi: KodiApi, viewers: list[Viewer], media: MediaItem, autoclose: int) -> tuple[str, ...]:
-    names = [v.name for v in viewers]
-    if media.title:
+def heading_for(kodi: KodiApi, title: str | None) -> str:
+    if title:
         # replace rather than %: a translation that drops the placeholder must not raise.
-        heading = kodi.localised(PROMPT_HEADING).replace("%s", media.title)
-    else:
-        heading = kodi.localised(PROMPT_HEADING_UNTITLED)
+        return kodi.localised(PROMPT_HEADING).replace("%s", title)
+    return kodi.localised(PROMPT_HEADING_UNTITLED)
+
+
+def choose_viewers(
+    kodi: KodiApi, heading: str, viewers: list[Viewer], preselect: tuple[str, ...] = (), autoclose: int = 0
+) -> tuple[str, ...] | None:
+    """The Everyone row, then each viewer. None when cancelled, () when nobody was ticked.
+
+    The two differ for the settings screen: cancel leaves an answer alone, while confirming
+    with nobody ticked is a deliberate request to forget it.
+    """
+    names = [v.name for v in viewers]
     options = [kodi.localised(PROMPT_EVERYONE), *names]
-    chosen = kodi.multiselect(heading, options, autoclose=autoclose)
-    if not chosen:
-        _log.info("prompt.dismissed", media_type=media.media_type, library_id=media.library_id)
-        return ()
-    everyone = _EVERYONE_ROW in chosen
-    if everyone:
+    ticked = [i + 1 for i, name in enumerate(names) if name in preselect]
+    chosen = kodi.multiselect(heading, options, preselect=ticked or None, autoclose=autoclose)
+    if chosen is None:
+        return None
+    if _EVERYONE_ROW in chosen:
         # Expanded to names now rather than remembered as "everyone", so a viewer added
         # later is not credited with shows the household watched before they existed.
-        answer = tuple(names)
-    else:
-        answer = tuple(names[i - 1] for i in chosen if 1 <= i <= len(names))
-    _log.info("prompt.answered", media_type=media.media_type, viewers_count=len(answer), everyone=everyone)
+        return tuple(names)
+    return tuple(names[i - 1] for i in chosen if 1 <= i <= len(names))
+
+
+def ask(kodi: KodiApi, viewers: list[Viewer], media: MediaItem, autoclose: int) -> tuple[str, ...]:
+    answer = choose_viewers(kodi, heading_for(kodi, media.title), viewers, autoclose=autoclose)
+    if not answer:
+        _log.info("prompt.dismissed", media_type=media.media_type, library_id=media.library_id)
+        return ()
+    _log.info(
+        "prompt.answered", media_type=media.media_type, viewers_count=len(answer), everyone=len(answer) == len(viewers)
+    )
     _log.debug("prompt.answer", viewers=",".join(answer))
     return answer
 
@@ -130,4 +171,4 @@ def ask(kodi: KodiApi, viewers: list[Viewer], media: MediaItem, autoclose: int) 
 def remember(memory: PromptMemory, media: MediaItem, names: tuple[str, ...]) -> None:
     key = show_key(media)
     if key and names:
-        memory.remember(key, names)
+        memory.remember(key, names, title=media.title, year=media.show_year)

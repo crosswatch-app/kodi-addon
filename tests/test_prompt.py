@@ -5,8 +5,8 @@ from resources.lib.constants import PROMPT_EVERYONE, PROMPT_HEADING, PROMPT_HEAD
 from resources.lib.identity import UNRESOLVED, Identity
 from resources.lib.kodi import WINDOW_INVALID
 from resources.lib.models import MediaItem, MediaType, Viewer
-from resources.lib.prompt import GateDecision, ask, gate, remember, show_key
-from resources.lib.storage import PromptMemory
+from resources.lib.prompt import GateDecision, ask, choose_viewers, gate, key_for_show, recall, remember, show_key
+from resources.lib.storage import PromptMemory, RememberedAnswer
 from tests.fakes import FakeKodi
 
 ANNA = Viewer(name="anna")
@@ -19,17 +19,21 @@ def _media(
     media_type: MediaType = "episode",
     show_library_id: int | None = 42,
     show_ids: dict[str, str] | None = None,
+    title: str = "Example",
+    show_year: int | None = 2008,
+    year: int | None = 2026,
 ) -> MediaItem:
     return MediaItem(
         media_type=media_type,
         library_id=5,
         show_library_id=show_library_id if media_type == "episode" else None,
-        title="Example",
-        year=2026,
+        title=title,
+        year=year,
         season=1,
         episode=1,
         episode_title=None,
         show_ids=show_ids if show_ids is not None else {"tvdb": "83462"},
+        show_year=show_year,
     )
 
 
@@ -198,13 +202,78 @@ def test_confirming_with_nothing_ticked_returns_no_viewers():
     assert ask(FakeKodi(multiselect_answer=[]), [ANNA, BOB], _media(), autoclose=120) == ()
 
 
-def test_remember_stores_under_the_stable_key(tmp_path):
+def test_remember_stores_under_the_stable_key_with_the_shows_title_and_year(tmp_path):
     memory = PromptMemory(str(tmp_path / "prompts.json"))
     remember(memory, _media(), ("anna",))
-    assert memory.recall("show:tvdb:83462") == ("anna",)
+    assert memory.recall("show:tvdb:83462") == RememberedAnswer(viewers=("anna",), title="Example", year=2008)
+
+
+def test_recall_returns_the_answer_for_a_show_with_a_scraper_id(tmp_path):
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    remember(memory, _media(), ("anna",))
+    assert recall(memory, _media()) == ("anna",)
+
+
+def _no_ids(**kwargs) -> MediaItem:
+    return _media(show_ids={}, **kwargs)
+
+
+def test_a_show_without_scraper_ids_is_remembered_by_library_id_and_checked(tmp_path):
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    remember(memory, _no_ids(), ("anna",))
+    assert recall(memory, _no_ids()) == ("anna",)
+
+
+def test_a_library_id_now_holding_another_title_is_not_trusted(tmp_path):
+    """A library clean can hand a show's database id to a different show."""
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    remember(memory, _no_ids(), ("anna",))
+    assert recall(memory, _no_ids(title="Another Show")) == ()
+
+
+def test_a_library_id_now_holding_another_year_is_not_trusted(tmp_path):
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    remember(memory, _no_ids(), ("anna",))
+    assert recall(memory, _no_ids(show_year=1999)) == ()
+
+
+def test_a_later_season_still_matches_because_the_check_uses_the_shows_year(tmp_path):
+    """Kodi reports an episode's own year during playback, which changes per season."""
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    remember(memory, _no_ids(year=2008), ("anna",))
+    assert recall(memory, _no_ids(year=2011)) == ("anna",)
+
+
+def test_a_library_id_answer_without_a_title_cannot_be_checked_and_is_ignored(tmp_path):
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    memory.remember("tvshow:42", ("anna",))
+    assert recall(memory, _no_ids()) == ()
 
 
 def test_remember_does_nothing_for_a_movie(tmp_path):
     memory = PromptMemory(str(tmp_path / "prompts.json"))
     remember(memory, _media("movie"), ("anna",))
     assert memory.recall("tvshow:42") is None
+
+
+def test_the_picker_preticks_the_given_viewers_below_the_everyone_row():
+    kodi = FakeKodi(multiselect_answer=None)
+    choose_viewers(kodi, "heading", [ANNA, BOB], preselect=("bob",))
+    assert kodi.multiselect_calls[0][2] == [2]
+
+
+def test_the_picker_tells_cancel_apart_from_nobody_ticked():
+    """Cancel leaves an answer alone; OK with nobody ticked is a deliberate 'forget'."""
+    assert choose_viewers(FakeKodi(multiselect_answer=None), "h", [ANNA, BOB]) is None
+    assert choose_viewers(FakeKodi(multiselect_answer=[]), "h", [ANNA, BOB]) == ()
+
+
+def test_the_picker_expands_everyone_like_the_prompt():
+    assert choose_viewers(FakeKodi(multiselect_answer=[EVERYONE]), "h", [ANNA, BOB]) == ("anna", "bob")
+
+
+def test_key_for_show_matches_show_key():
+    """The settings screen builds keys from the library; they must equal the prompt's."""
+    assert key_for_show({"tmdb": "1", "tvdb": "83462"}, 42) == show_key(_media()) == "show:tvdb:83462"
+    assert key_for_show({}, 42) == show_key(_media(show_ids={})) == "tvshow:42"
+    assert key_for_show({}, None) is None

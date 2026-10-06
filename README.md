@@ -34,6 +34,12 @@ It determines the viewer three ways, first match wins:
 3. Asking at the end of playback, remembered per show. At stop, never at start, so it
    cannot delay playback, and skipped entirely for a single-viewer household.
 
+The add-on settings have a Remembered answers entry under Viewers, next to Configure
+viewers and playlists. It lists every show with a remembered answer and who it is for, with
+Change (the who-watched picker, current answer ticked) and Forget (asks again next
+episode). Forget all remembered answers, at the bottom, clears everything after a
+confirmation; changes apply from the next playback, no restart needed.
+
 Playlist membership is checked first, so it overrides a remembered answer to the prompt. That
 makes the choice of playlist matter: it should describe what that person watches, not what
 they just happened to play.

@@ -49,6 +49,9 @@ class MediaItem:
     # observed rather than on a wire string whose vocabulary the receiver owns.
     is_pkc: bool = False
     plex_rating_key: str | None = None
+    # The show's own year, from the library. Not year: during playback Kodi reports the
+    # episode's year there, which changes from season to season.
+    show_year: int | None = None
 
 
 @dataclass(frozen=True)

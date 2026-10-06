@@ -2,7 +2,7 @@ import json
 import os
 
 from resources.lib.models import Viewer
-from resources.lib.storage import JsonViewerStore, PromptMemory
+from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer
 
 
 def test_missing_file_yields_no_viewers(tmp_path):
@@ -47,9 +47,43 @@ def test_prompt_memory_recalls_what_was_remembered(tmp_path):
     path = str(tmp_path / "prompts.json")
     memory = PromptMemory(path)
     assert memory.recall("show:tvdb:83462") is None
-    memory.remember("show:tvdb:83462", ("anna",))
-    assert memory.recall("show:tvdb:83462") == ("anna",)
-    assert PromptMemory(path).recall("show:tvdb:83462") == ("anna",)
+    memory.remember("show:tvdb:83462", ("anna",), title="Example", year=2008)
+    expected = RememberedAnswer(viewers=("anna",), title="Example", year=2008)
+    assert memory.recall("show:tvdb:83462") == expected
+    assert PromptMemory(path).recall("show:tvdb:83462") == expected
+
+
+def test_an_answer_written_before_titles_were_stored_still_reads(tmp_path):
+    """Earlier versions wrote a bare list of names per show."""
+    path = tmp_path / "prompts.json"
+    path.write_text(json.dumps({"show:tvdb:1": ["anna", "bob"]}), encoding="utf-8")
+    assert PromptMemory(str(path)).recall("show:tvdb:1") == RememberedAnswer(viewers=("anna", "bob"))
+
+
+def test_entries_lists_every_remembered_answer(tmp_path):
+    path = tmp_path / "prompts.json"
+    path.write_text(json.dumps({"show:tvdb:1": ["anna"]}), encoding="utf-8")
+    memory = PromptMemory(str(path))
+    memory.remember("tvshow:42", ("bob",), title="No Ids", year=2020)
+    assert memory.entries() == {
+        "show:tvdb:1": RememberedAnswer(viewers=("anna",)),
+        "tvshow:42": RememberedAnswer(viewers=("bob",), title="No Ids", year=2020),
+    }
+
+
+def test_malformed_entries_are_skipped_rather_than_raising(tmp_path):
+    path = tmp_path / "prompts.json"
+    path.write_text(json.dumps({"a": [], "b": "anna", "c": {"viewers": "x"}, "d": {"viewers": ["anna"], "year": "y"}}), encoding="utf-8")
+    assert PromptMemory(str(path)).entries() == {"d": RememberedAnswer(viewers=("anna",))}
+
+
+def test_forget_removes_one_answer_and_keeps_the_rest(tmp_path):
+    path = str(tmp_path / "prompts.json")
+    memory = PromptMemory(path)
+    memory.remember("show:tvdb:1", ("anna",))
+    memory.remember("show:tvdb:2", ("bob",))
+    memory.forget("show:tvdb:1")
+    assert list(PromptMemory(path).entries()) == ["show:tvdb:2"]
 
 
 def test_forget_all_clears_every_remembered_answer(tmp_path):
