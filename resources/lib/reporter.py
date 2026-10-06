@@ -162,7 +162,6 @@ class HttpReporter:
             self._path = f"{self._path}?{parts.query}"
         self._timeout = timeout
         self._factory = connection_factory or _default_connection
-        self._connection: Any = None
         self._safe_url = redact(self._url)
         self._abort = abort
         self._clock = clock
@@ -177,21 +176,11 @@ class HttpReporter:
             self._headers["X-CrossWatch-Token"] = token
 
     def _connect(self) -> Any:
-        if self._connection is None:
-            # A connection opened after abort gets the short timeout. Kodi kills the
-            # interpreter 5000ms after abort and a ten second socket cannot finish inside
-            # that; the contract's timeout applies to normal operation.
-            timeout = SHUTDOWN_HTTP_TIMEOUT_SECONDS if self._abort.is_set() else self._timeout
-            self._connection = self._factory(self._scheme, self._host, self._port, timeout)
-        return self._connection
-
-    def close(self) -> None:
-        if self._connection is not None:
-            try:
-                self._connection.close()
-            except Exception:
-                pass
-            self._connection = None
+        # A connection opened after abort gets the short timeout. Kodi kills the interpreter
+        # 5000ms after abort and a ten second socket cannot finish inside that; the
+        # contract's timeout applies to normal operation.
+        timeout = SHUTDOWN_HTTP_TIMEOUT_SECONDS if self._abort.is_set() else self._timeout
+        return self._factory(self._scheme, self._host, self._port, timeout)
 
     def report(self, event: Event, device: Device, deadline: float | None = None) -> bool:
         """Deliver one event, retrying until the deadline, on this reporter's clock.
@@ -204,10 +193,6 @@ class HttpReporter:
         the next playback's start. Blocking the worker is harmless; nothing waits on it and
         the service thread is a different thread.
         """
-        if self._abort.is_set():
-            # Drop any live keep-alive socket: it was opened with the long timeout, and
-            # reusing it would carry that timeout past abort.
-            self.close()
         body = json.dumps(build_payload(event, device)).encode("utf-8")
         kind = event_kind(event)
         if deadline is None:
@@ -243,14 +228,31 @@ class HttpReporter:
         return "accepted" if verdict else "refused"
 
     def _attempt(self, body: bytes, kind: str) -> bool | None:
-        """True delivered, False refused for good, None worth retrying."""
+        """True delivered, False refused for good, None worth retrying.
+
+        A fresh connection per attempt, closed before returning. Events are a minute or more
+        apart and CrossWatch's server closes an idle keep-alive after about five seconds, so
+        a reused socket is almost always already dead and every event would start with a
+        failed write.
+        """
         try:
             connection = self._connect()
+        except Exception as exc:
+            _log.warning("reporter.failed", url=self._safe_url, event=kind, error=str(exc))
+            return None
+        try:
+            return self._exchange(connection, body, kind)
+        finally:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+    def _exchange(self, connection: Any, body: bytes, kind: str) -> bool | None:
+        try:
             connection.request("POST", self._path, body=body, headers=dict(self._headers))
         except Exception as exc:
-            # Nothing was necessarily written, so this is safe to retry. Drop the connection
-            # so the next attempt reconnects rather than reusing a broken socket.
-            self.close()
+            # Nothing was necessarily written, so this is safe to retry.
             _log.warning("reporter.failed", url=self._safe_url, event=kind, error=str(exc))
             return None
 
@@ -264,18 +266,10 @@ class HttpReporter:
             # /scrobble/* endpoints, which dedupe server side and answer 409, and the media
             # sinks set a watched flag, which is idempotent. So losing the response is worth
             # another attempt, where previously it cost the event.
-            #
-            # This also covers the commoner case, which is not a lost response at all: the
-            # server closed an idle keep-alive, uvicorn does so after about five seconds,
-            # and the write landed on a socket whose peer had already gone.
-            self.close()
             _log.warning("reporter.lost_response", url=self._safe_url, event=kind, error=str(exc))
             return None
 
         if 500 <= status < 600:
-            # Close rather than reuse: a 5xx often carries Connection: close, and reusing the
-            # socket spends a whole backoff interval discovering that.
-            self.close()
             _log.warning("reporter.failed", url=self._safe_url, event=kind, status=status)
             return None
         if status < 200 or status >= 300:
@@ -477,12 +471,7 @@ class ReporterQueue:
         if self._outbox is not None and (pending := self._outbox.store.pending()):
             _log.warning("reporter.outbox_pending", count=pending)
         if self._thread.is_alive():
-            # The worker may still be inside request()/getresponse(). http.client holds no
-            # lock, so closing the connection underneath it would corrupt the socket. The
-            # worker is a daemon thread; leave it and its socket to process exit.
-            _log.warning("reporter.sink_left_open", reason="worker_still_running")
-        else:
-            close = getattr(self._sink, "close", None)
-            if callable(close):
-                close()
+            # Still inside an attempt. It is a daemon thread and its connection is its own,
+            # so process exit takes both; nothing here may touch the socket underneath it.
+            _log.warning("reporter.worker_still_running")
         return undelivered
