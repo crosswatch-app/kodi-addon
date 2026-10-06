@@ -8,7 +8,9 @@ only; the log gets counts and actions, as everywhere that reaches Kodi's shared 
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from resources.lib import log as logmod
 from resources.lib import paths
@@ -19,6 +21,7 @@ from resources.lib.constants import (
     REMEMBERED_CHANGE,
     REMEMBERED_CONFIRM_FORGET_ALL,
     REMEMBERED_CONFIRM_FORGET_ONE,
+    REMEMBERED_COVERED,
     REMEMBERED_FORGET,
     REMEMBERED_FORGET_ALL,
     REMEMBERED_HEADING,
@@ -31,13 +34,20 @@ from resources.lib.constants import (
 from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.media import clean_ids
 from resources.lib.models import Viewer
+from resources.lib.playlist_index import IndexBuilder
 from resources.lib.prompt import LIBRARY_KEY_PREFIX, choose_viewers, heading_for, key_for_show
 from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer
 
 _log = logmod.get_logger("config")
 
-# Library shows by answer key: (title, year).
-Library = dict[str, tuple[str, int | None]]
+class Show(NamedTuple):
+    title: str
+    year: int | None
+    library_id: int | None
+
+
+# Library shows by answer key.
+Library = dict[str, Show]
 
 
 @dataclass(frozen=True)
@@ -66,8 +76,29 @@ def library_shows(kodi: KodiApi) -> Library | None:
         key = key_for_show(clean_ids(show.get("uniqueid")), library_id if isinstance(library_id, int) else None)
         year = show.get("year")
         if key:
-            shows[key] = (str(show.get("title") or ""), year if isinstance(year, int) and year else None)
+            shows[key] = Show(
+                str(show.get("title") or ""),
+                year if isinstance(year, int) and year else None,
+                library_id if isinstance(library_id, int) else None,
+            )
     return shows
+
+
+def covered_by_playlist(kodi: KodiApi, viewers: list[Viewer], library: Library | None) -> frozenset[str]:
+    """Answer keys of shows a viewer's playlist holds, so playback never asks or recalls them.
+
+    Built with the same expansion playback uses, so the screen and playback cannot disagree.
+    An unreadable playlist marks nothing, as it decides nothing during playback either.
+    """
+    if not library:
+        return frozenset()
+    builder = IndexBuilder(kodi, viewers, time.monotonic)
+    while not builder.step():
+        pass
+    index = builder.result()
+    if index is None:
+        return frozenset()
+    return frozenset(key for key, show in library.items() if index.viewers_for("tvshow", show.library_id))
 
 
 def _fallback_name(kodi: KodiApi, key: str) -> str:
@@ -77,22 +108,33 @@ def _fallback_name(kodi: KodiApi, key: str) -> str:
     return " ".join(key.split(":")[1:]) or key
 
 
-def _row(kodi: KodiApi, key: str, answer: RememberedAnswer, library: Library | None, viewers: list[Viewer]) -> Row:
+def _row(
+    kodi: KodiApi,
+    key: str,
+    answer: RememberedAnswer,
+    library: Library | None,
+    viewers: list[Viewer],
+    covered: frozenset[str],
+) -> Row:
     found = library.get(key) if library is not None else None
     title = answer.title
     changeable = True
     suffix = ""
     if key.startswith(LIBRARY_KEY_PREFIX):
         # Trusted only while the show at that id is still the one answered for.
-        changeable = answer.title is not None and (found is None or (answer.title, answer.year) == found)
+        changeable = answer.title is not None and (found is None or (answer.title, answer.year) == (found.title, found.year))
         if not changeable:
             suffix = kodi.localised(REMEMBERED_NOT_STABLE)
         elif found is None and library is not None:
             suffix = kodi.localised(REMEMBERED_NOT_IN_LIBRARY)
     elif found is not None:
-        title = found[0] or title
+        title = found.title or title
     elif library is not None:
         suffix = kodi.localised(REMEMBERED_NOT_IN_LIBRARY)
+    if not suffix and key in covered:
+        # Changing the answer is still allowed: it applies again if the show leaves the
+        # playlist.
+        suffix = kodi.localised(REMEMBERED_COVERED)
     name = title or _fallback_name(kodi, key)
     if suffix:
         name = f"{name} ({suffix})"
@@ -103,9 +145,13 @@ def _row(kodi: KodiApi, key: str, answer: RememberedAnswer, library: Library | N
 
 
 def build_rows(
-    entries: dict[str, RememberedAnswer], library: Library | None, viewers: list[Viewer], kodi: KodiApi
+    entries: dict[str, RememberedAnswer],
+    library: Library | None,
+    viewers: list[Viewer],
+    kodi: KodiApi,
+    covered: frozenset[str] = frozenset(),
 ) -> list[Row]:
-    rows = [_row(kodi, key, answer, library, viewers) for key, answer in entries.items()]
+    rows = [_row(kodi, key, answer, library, viewers, covered) for key, answer in entries.items()]
     return sorted(rows, key=lambda row: row.label.casefold())
 
 
@@ -121,20 +167,22 @@ def _change(kodi: KodiApi, memory: PromptMemory, row: Row, library: Library | No
     found = library.get(row.key) if library is not None else None
     # Keep the stored identity; fill it in from the library only where an older answer
     # had none. A library-id answer reaches here only when it still matches its show.
-    title = stored.title or (found[0] if found else None)
-    year = stored.year if stored.title else (found[1] if found else None)
+    title = stored.title or (found.title if found else None)
+    year = stored.year if stored.title else (found.year if found else None)
     memory.remember(row.key, picked, title=title, year=year)
     _log.info("config.remembered_changed", viewers_count=len(picked))
 
 
 def run(kodi: KodiApi, memory: PromptMemory, viewers: list[Viewer]) -> None:
     library = library_shows(kodi)
+    # Once per screen: the expansion is a whole-library query per playlist.
+    covered = covered_by_playlist(kodi, viewers, library)
     while True:
         entries = memory.entries()
         if not entries:
             kodi.notify(kodi.localised(NOTIFY_HEADING), kodi.localised(REMEMBERED_NONE_YET))
             return
-        rows = build_rows(entries, library, viewers, kodi)
+        rows = build_rows(entries, library, viewers, kodi, covered)
         # No Done row: Kodi's select dialog has its own Cancel, and Back closes it too.
         options = [*(row.label for row in rows), kodi.localised(REMEMBERED_FORGET_ALL)]
         choice = kodi.select(kodi.localised(REMEMBERED_HEADING), options)

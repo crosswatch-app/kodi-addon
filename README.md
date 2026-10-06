@@ -40,9 +40,10 @@ Change (the who-watched picker, current answer ticked) and Forget (asks again ne
 episode). Forget all remembered answers, at the bottom, clears everything after a
 confirmation; changes apply from the next playback, no restart needed.
 
-Playlist membership is checked first, so it overrides a remembered answer to the prompt. That
-makes the choice of playlist matter: it should describe what that person watches, not what
-they just happened to play.
+Playlist membership is checked first, so it overrides a remembered answer to the prompt. The
+Remembered answers screen marks such a show "covered by playlist": its answer is kept, and
+applies again if the show leaves the playlist. That makes the choice of playlist matter: it
+should describe what that person watches, not what they just happened to play.
 
 - Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
 - Avoid playlists whose membership follows from playback itself, such as "Continue Watching"

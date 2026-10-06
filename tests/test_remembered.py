@@ -5,6 +5,7 @@ from resources.lib.constants import (
     REMEMBERED_CHANGE,
     REMEMBERED_CONFIRM_FORGET_ALL,
     REMEMBERED_CONFIRM_FORGET_ONE,
+    REMEMBERED_COVERED,
     REMEMBERED_FORGET,
     REMEMBERED_FORGET_ALL,
     REMEMBERED_LIBRARY_ID,
@@ -218,3 +219,54 @@ def test_forget_all_wording_follows_the_count(memory):
     memory.remember("tvshow:42", ("bob",), title="No Ids", year=2020)
     remembered.run(Recording(selects=[2, -1]), memory, VIEWERS)
     assert seen == [f"#{REMEMBERED_CONFIRM_FORGET_ONE}", f"#{REMEMBERED_CONFIRM_FORGET_ALL}"]
+
+
+# Anna's playlist holds Alpha (library id 1), so playback resolves Alpha by playlist and the
+# remembered answer for it is never used.
+ANNA_LISTED = Viewer(name="anna", playlists=("Anna TV",))
+PLAYLIST_FILE = '<smartplaylist type="tvshows"><name>Anna TV</name></smartplaylist>'
+
+
+class PlaylistKodi(ScriptedKodi):
+    def __init__(self, members=({"id": 1, "type": "tvshow"},), **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.files["special://profile/playlists/video/Anna TV.xsp"] = PLAYLIST_FILE
+        self.rpc_handlers["Files.GetDirectory"] = lambda params: {"files": [dict(m) for m in members]}
+
+
+def test_a_show_a_playlist_covers_is_marked_so(memory):
+    memory.remember("show:tvdb:100", ("bob",))
+    kodi = PlaylistKodi()
+    library = remembered.library_shows(kodi)
+    covered = remembered.covered_by_playlist(kodi, [ANNA_LISTED, BOB], library)
+    rows = remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covered)
+    assert [row.label for row in rows] == [f"Alpha (#{REMEMBERED_COVERED}): bob"]
+    # Still changeable: the answer applies again if the show leaves the playlist.
+    assert rows[0].changeable
+
+
+def test_a_show_no_playlist_covers_is_not_marked(memory):
+    memory.remember("show:tvdb:100", ("bob",))
+    kodi = PlaylistKodi(members=({"id": 42, "type": "tvshow"},))
+    library = remembered.library_shows(kodi)
+    covered = remembered.covered_by_playlist(kodi, [ANNA_LISTED, BOB], library)
+    assert [row.label for row in remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covered)] == [
+        "Alpha: bob"
+    ]
+
+
+def test_an_unreadable_playlist_marks_nothing(memory):
+    kodi = PlaylistKodi()
+    del kodi.files["special://profile/playlists/video/Anna TV.xsp"]
+    assert remembered.covered_by_playlist(kodi, [ANNA_LISTED], remembered.library_shows(kodi)) == frozenset()
+
+
+def test_without_a_library_nothing_is_marked():
+    assert remembered.covered_by_playlist(PlaylistKodi(), [ANNA_LISTED], None) == frozenset()
+
+
+def test_the_screen_marks_covered_shows(memory):
+    memory.remember("show:tvdb:100", ("bob",))
+    kodi = PlaylistKodi()
+    remembered.run(kodi, memory, [ANNA_LISTED, BOB])
+    assert kodi.select_calls[0][1][0] == f"Alpha (#{REMEMBERED_COVERED}): bob"
