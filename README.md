@@ -8,21 +8,17 @@ Kodi add-on that reports playback and viewers to [CrossWatch](https://github.com
 > supported way to install it. Please do not run it against a CrossWatch instance you care
 > about.
 >
-> **The receiving end does not exist yet.** The add-on posts to `/webhook/kodiwatcher`, a
-> route that has not shipped in CrossWatch. Until it does, nothing this sends can be
-> delivered.
+> **The receiving end is not in a CrossWatch release yet.** The add-on posts to
+> `/webhook/kodiwatcher`, which exists in CrossWatch's development code but not in
+> any release up to 0.13.2. A CrossWatch without it answers 404, and the add-on sends
+> nothing anywhere else, so pointing it at an older CrossWatch delivers nothing, but
+> also changes nothing.
 >
-> **Running it against an older CrossWatch can destroy data.** The add-on omits `percent`
-> when Kodi does not know the duration, which happens for a stream of unknown length. A
-> server older than 0.14.0 turns that missing value into `0`, and zero means watched
-> nothing, so it overwrites the viewer's real resume point in Plex or Emby, on `start` as
-> well as on `stop`. The add-on warns once when the server reports an older version, but it
-> cannot refuse on your behalf. This is the one failure here that loses data rather than
-> losing an event.
->
-> **Nothing has been tested end to end.** The add-on is verified against a real Kodi 21.3
-> Omega and against a stub receiver that asserts the published contract, never against a
-> live CrossWatch. See the open pull request for exactly what was and was not verified.
+> **Testing is partial.** The add-on is verified against a real Kodi 21.3 Omega and,
+> since 2026-10-06, end to end against a development build of CrossWatch that has the
+> add-on endpoint: the handshake that switches CrossWatch into add-on mode, routing a
+> playback by viewer, and replaying a stored stop after an outage and a Kodi restart. Not
+> yet verified: delivery through to a real Trakt, Simkl, Plex, Emby or Jellyfin account.
 
 ## What it is for
 
@@ -65,9 +61,11 @@ or played to at least its watched threshold (90 percent by default, the
   (`userdata/addon_data/service.crosswatch/`) before the first send is even attempted. It
   survives CrossWatch being down and Kodi being restarted or switched off.
 - It is retried every five minutes while Kodi runs, and straight away when Kodi starts.
-- When it is finally delivered, it carries its original time and is marked as replayed, so
-  CrossWatch sees the same event arriving late, not a new one, and dates the watch from when
-  it happened. It is removed from the file once CrossWatch accepts it.
+- When it is finally delivered, it carries its original time and is marked as replayed,
+  so CrossWatch sees the same event arriving late, not a new one. Plex, Emby and
+  Jellyfin record the watch at the time it happened; trackers such as Trakt and Simkl,
+  and CrossWatch's own history, record it at the time it arrives, so a watch delivered
+  late shows up late there. It is removed from the file once CrossWatch accepts it.
 - It is dropped, with a warning in the log, if CrossWatch refuses it, if it has waited more
   than seven days, if more than 200 stops are already waiting (oldest dropped first), or if
   the webhook address or token has changed since it was stored, so a stored stop is never

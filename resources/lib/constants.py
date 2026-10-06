@@ -16,9 +16,6 @@ SEEK_MIN_GAP_SECONDS = 5.0
 # after 15 minutes of silence, so 5 minutes leaves room for two lost pings.
 PING_INTERVAL_SECONDS = 300
 
-# Older servers coerce a missing percent to zero, which destroys the viewer's resume point
-# in the downstream sink. Warn rather than refuse: the user may not control the server.
-MIN_CROSSWATCH_VERSION = "0.14.0"
 
 DEFAULT_INDEX_TTL_SECONDS = 3600
 
