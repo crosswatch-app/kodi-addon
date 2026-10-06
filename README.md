@@ -38,6 +38,18 @@ It determines the viewer three ways, first match wins:
 3. Asking at the end of playback, remembered per show. At stop, never at start, so it
    cannot delay playback, and skipped entirely for a single-viewer household.
 
+Playlist membership is checked first, so it overrides a remembered answer to the prompt. That
+makes the choice of playlist matter: it should describe what that person watches, not what
+they just happened to play.
+
+- Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
+- Avoid playlists whose membership follows from playback itself, such as "Continue Watching"
+  or "In Progress" smart playlists (rules on in-progress, play count or last played). Playing
+  a show adds it to such a playlist, so the next episode is attributed to whoever owns it,
+  even if someone else watched it. On a real Kodi, a show two people had been credited with
+  watching started resolving to one person after a single playback, once it joined that
+  person's "Continue Watching" playlist.
+
 ## When CrossWatch cannot be reached
 
 Every playback event (start, pause, resume, progress, stop) and the periodic heartbeat is
