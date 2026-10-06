@@ -44,6 +44,7 @@ DEFAULT_QUEUE_SIZE = 100
 OUTBOX_MAX_ENTRIES = 200
 OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 PROMPT_AUTOCLOSE_SECONDS = 120
+PAIR_TIMEOUT_SECONDS = 10.0
 
 # A permanently unexpandable playlist must not pin the addon into a continuous rebuild loop.
 FAILURE_BACKOFF_SECONDS = 60
