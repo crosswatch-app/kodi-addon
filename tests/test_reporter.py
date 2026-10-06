@@ -814,7 +814,7 @@ def test_another_sessions_event_does_not_supersede_a_progress():
 def _store(tmp_path, mono=None) -> Outbox:
     store = Outbox(
         str(tmp_path / "outbox.json"),
-        config_fingerprint("http://host/hook", "tok"),
+        config_fingerprint("tok"),
         clock=mono or time.monotonic,
     )
     store.load()

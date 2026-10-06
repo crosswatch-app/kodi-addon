@@ -52,11 +52,11 @@ def _build_sink(url: str | None, log, *, token: str, abort: threading.Event):
         return LogReporter()
 
 
-def _outbox_lane(sink: EventSink, path: str, url: str | None, *, token: str) -> OutboxLane | None:
+def _outbox_lane(sink: EventSink, path: str, *, token: str) -> OutboxLane | None:
     """Only a real webhook gets one: with nowhere to deliver, the file would only grow."""
-    if not isinstance(sink, HttpReporter) or not url:
+    if not isinstance(sink, HttpReporter):
         return None
-    store = Outbox(path, config_fingerprint(url, token))
+    store = Outbox(path, config_fingerprint(token))
     store.load()
     return OutboxLane(store, sink.send_once)
 
@@ -80,7 +80,7 @@ def main() -> None:
     # device_identity owns identity, not versioning, and is used by tests that should not
     # need a Kodi handle just to produce a version string.
     device = replace(device_identity(kodi, settings, paths.device_path(kodi)), addon_version=kodi.addon_version())
-    lane = _outbox_lane(sink, paths.outbox_path(kodi), settings.webhook_url(), token=settings.webhook_token)
+    lane = _outbox_lane(sink, paths.outbox_path(kodi), token=settings.webhook_token)
     queue = ReporterQueue(sink, device, abort, outbox=lane)
     controller = Controller(
         kodi=kodi,

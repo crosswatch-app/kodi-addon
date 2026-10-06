@@ -40,15 +40,15 @@ def test_the_shutdown_budget_fits_inside_kodis_kill_window():
 
 
 def test_an_http_reporter_gets_an_outbox_loaded_from_disk(tmp_path):
-    url = "http://host/webhook/kodiwatcher?token=t"
+    url = "http://host/webhook/kodiwatcher"
     path = str(tmp_path / "outbox.json")
-    earlier = Outbox(path, config_fingerprint(url, "t"))
+    earlier = Outbox(path, config_fingerprint("t"))
     earlier.add({"event": "stop", "event_id": "e-1"}, "stop")
-    lane = main_mod._outbox_lane(_sink(url), path, url, token="t")
+    lane = main_mod._outbox_lane(_sink(url), path, token="t")
     assert lane is not None
     assert lane.store.pending() == 1
 
 
 def test_the_log_reporter_gets_no_outbox(tmp_path):
     """With nowhere to deliver, keeping watches would only grow a file nobody drains."""
-    assert main_mod._outbox_lane(_sink(None), str(tmp_path / "outbox.json"), None, token="") is None
+    assert main_mod._outbox_lane(_sink(None), str(tmp_path / "outbox.json"), token="") is None

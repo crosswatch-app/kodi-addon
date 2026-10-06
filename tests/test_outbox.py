@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -6,7 +7,7 @@ from resources.lib import log as logmod
 from resources.lib.constants import OUTBOX_MAX_AGE_SECONDS, OUTBOX_MAX_ENTRIES, PING_INTERVAL_SECONDS
 from resources.lib.outbox import Outbox, config_fingerprint
 
-FINGERPRINT = config_fingerprint("http://host/webhook/kodiwatcher", "tok")
+FINGERPRINT = config_fingerprint("tok")
 DAY = 86_400.0
 
 
@@ -129,11 +130,56 @@ def test_an_entry_from_the_future_is_kept_rather_than_judged_on_a_wrong_clock(tm
     assert _outbox(tmp_path, clocks).pending() == 1
 
 
-def test_an_entry_stored_for_a_different_webhook_is_dropped_at_load(tmp_path, clocks, lines):
+def test_an_entry_stored_for_a_different_token_is_dropped_at_load(tmp_path, clocks, lines):
     _outbox(tmp_path, clocks).add(_body("e-1"), "stop")
-    other = config_fingerprint("http://host/webhook/kodiwatcher", "new-token")
+    other = config_fingerprint("new-token")
     assert _outbox(tmp_path, clocks, fingerprint=other).pending() == 0
     assert any("reporter.outbox_dropped" in line and "reason=config" in line for line in lines)
+
+
+def test_the_fingerprint_ignores_the_address():
+    """The same CrossWatch reached under a new address keeps its stored watches."""
+    assert config_fingerprint("tok") == FINGERPRINT
+
+
+def test_an_entry_stored_under_the_url_and_token_fingerprint_is_dropped_once(tmp_path, clocks, lines):
+    path = tmp_path / "outbox.json"
+    legacy = hashlib.sha256(b"http://host/webhook/kodiwatcher\ntok").hexdigest()
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entries": [
+                    {"event_id": "e-1", "kind": "stop", "body": _body("e-1"), "stored_at": clocks.wall, "fingerprint": legacy}
+                ],
+            }
+        )
+    )
+    assert _outbox(tmp_path, clocks).pending() == 0
+    assert json.loads(path.read_text())["entries"] == []
+
+
+def test_rebinding_to_another_token_drops_its_entries_and_saves(tmp_path, clocks, lines):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add(_body("e-1"), "stop")
+    outbox.rebind(config_fingerprint("other"))
+    assert outbox.pending() == 0
+    assert json.loads((tmp_path / "outbox.json").read_text())["entries"] == []
+    assert any("reporter.outbox_dropped" in line and "reason=config" in line for line in lines)
+
+
+def test_rebinding_to_the_same_token_keeps_everything(tmp_path, clocks):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add(_body("e-1"), "stop")
+    outbox.rebind(FINGERPRINT)
+    assert outbox.pending() == 1
+
+
+def test_entries_added_after_a_rebind_carry_the_new_fingerprint(tmp_path, clocks):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.rebind(config_fingerprint("other"))
+    outbox.add(_body("e-2"), "stop")
+    assert _outbox(tmp_path, clocks, fingerprint=config_fingerprint("other")).pending() == 1
 
 
 def test_the_cap_drops_the_oldest_entry(tmp_path, clocks, lines):
