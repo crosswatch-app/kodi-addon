@@ -1,0 +1,100 @@
+name: Bug report
+description: Something in the CrossWatch add-on for Kodi does not work as described
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For problems in CrossWatch itself (its web interface, routes, Trakt, Simkl or media server sync), use the [CrossWatch issue tracker](https://github.com/cenodude/CrossWatch/issues) instead.
+
+  - type: input
+    id: addon-version
+    attributes:
+      label: Add-on version
+      description: In Kodi, Add-ons, My add-ons, Services, CrossWatch
+      placeholder: e.g. 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: kodi-version
+    attributes:
+      label: Kodi version and platform
+      placeholder: e.g. Kodi 21.3 Omega on LibreELEC 12
+    validations:
+      required: true
+
+  - type: input
+    id: crosswatch-version
+    attributes:
+      label: CrossWatch version
+      description: Shown in CrossWatch's web interface
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How is the add-on connected?
+      options:
+        - Pair with CrossWatch (address and code)
+        - Link from CrossWatch
+        - Manual Webhook URL and token
+        - Not connected
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: viewers
+    attributes:
+      label: Viewer setup
+      description: For problems with who is credited. How many viewers, and do they use smart playlists, Kodi profiles or the question at the end? Names are not needed.
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        1. In the add-on settings, Advanced, turn on "Enable debug logging"
+        2. Reproduce the problem
+        3. Attach `userdata/addon_data/service.crosswatch/logs/crosswatch.log`, or paste the relevant part below
+
+        A debug log contains titles and viewer names; remove what you do not want to share. It never contains the webhook token or a pairing code.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Did it work in an earlier version? Is PlexKodiConnect involved? Anything else that might help.
+    validations:
+      required: false
