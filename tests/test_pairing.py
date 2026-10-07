@@ -1,3 +1,5 @@
+import ssl
+
 import pytest
 
 from resources.lib import log as logmod
@@ -151,3 +153,10 @@ def test_the_log_carries_neither_code_nor_token_nor_instance():
         logmod.reset()
     assert any("config.pair_result" in line and "outcome=paired" in line for line in lines)
     assert not any(word in line for line in lines for word in ("ABC234", "secret-tok", "Living room", "nas"))
+
+
+def test_a_rejected_certificate_has_its_own_outcome():
+    """A self-signed or otherwise untrusted certificate is not an unreachable server."""
+    error = ssl.SSLCertVerificationError(1, "certificate verify failed: self-signed certificate")
+    result, _ = _exchange(Connection(raises=error), address="https://nas:8443")
+    assert result.outcome == "certificate"

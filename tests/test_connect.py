@@ -5,6 +5,7 @@ from resources.lib.config import KEY_BASE_URL, KEY_STATUS, KEY_TOKEN
 from resources.lib.constants import (
     LINK_AUTOCLOSE_SECONDS,
     PAIR_BAD_ADDRESS,
+    PAIR_CERTIFICATE,
     PAIR_CODE,
     PAIR_DISABLED,
     PAIR_DONE,
@@ -58,6 +59,7 @@ def test_the_address_is_prefilled_with_the_last_one_used():
         (PairResult("unreachable"), f"#{PAIR_UNREACHABLE}"),
         (PairResult("failed", status=404), f"#{PAIR_FAILED}"),
         (PairResult("disabled", status=200), f"#{PAIR_DISABLED}"),
+        (PairResult("certificate"), f"#{PAIR_CERTIFICATE}"),
     ],
 )
 def test_a_failure_says_why_and_changes_no_setting(result, message):

@@ -238,3 +238,7 @@ msgstr ""
 msgctxt "#30077"
 msgid "covered by playlist"
 msgstr ""
+
+msgctxt "#30078"
+msgid "The certificate of %s was not accepted. HTTPS needs a certificate from a public certificate authority; a self-signed one does not work."
+msgstr ""
