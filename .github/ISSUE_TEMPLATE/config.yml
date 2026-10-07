@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: CrossWatch itself
+    url: https://github.com/cenodude/CrossWatch/issues
+    about: Problems or ideas for CrossWatch's web interface, routes, or Trakt, Simkl and media server sync.
+  - name: CrossWatch wiki
+    url: https://wiki.crosswatch.app
+    about: How to set up CrossWatch, including its Kodi page and watcher routes.
