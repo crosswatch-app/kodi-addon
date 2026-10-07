@@ -14,6 +14,13 @@
         <platform>all</platform>
         <license>GPL-2.0-only</license>
         <source>https://github.com/crosswatch-app/kodi-addon</source>
+        <news>v1.0.0~beta1 (2026-10-07)
+- Reports what you watch in Kodi to your own CrossWatch, including who in the household watched it.
+- Works out who watched using smart playlists, your Kodi profile, or a question at the end of playback that is remembered per show.
+- Pair with CrossWatch using an address and a one-time code, or link it from CrossWatch with a confirmation on the TV. No restart needed.
+- Settings to manage viewers, their playlists or profiles, and remembered answers.
+- Keeps a finished watch safe through an outage or restart, and sends it once CrossWatch is back.
+- Supports connecting to CrossWatch over HTTPS.</news>
         <assets>
             <icon>icon.png</icon>
         </assets>

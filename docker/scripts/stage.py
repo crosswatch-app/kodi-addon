@@ -9,9 +9,12 @@ cannot reach a user by being forgotten.
     stage.py zip OUTDIR    write OUTDIR/<id>-v<version>.zip and print its path
 """
 
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
@@ -50,6 +53,25 @@ def stage_folder(dest: Path) -> None:
     _copy(dest)
 
 
+def _build_time() -> tuple[int, int, int, int, int, int]:
+    """The commit's time, so the same commit always gives the same zip, byte for byte.
+
+    SOURCE_DATE_EPOCH wins when set, as reproducible-build tooling expects; outside a git
+    checkout the zip format's earliest date is used.
+    """
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if not epoch:
+        try:
+            epoch = subprocess.run(
+                ["git", "-C", str(ROOT), "log", "-1", "--format=%ct"], capture_output=True, text=True, check=True
+            ).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            epoch = ""
+    if not epoch:
+        return (1980, 1, 1, 0, 0, 0)
+    return time.gmtime(int(epoch))[:6]
+
+
 def stage_zip(outdir: Path) -> Path:
     addon_id, version = _addon()
     # Kodi's files use the tilde form; file names, like tags, use a hyphen.
@@ -59,9 +81,21 @@ def stage_zip(outdir: Path) -> Path:
         folder = Path(tmp) / addon_id
         folder.mkdir()
         _copy(folder)
+        stamp = _build_time()
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
             for path in sorted(folder.rglob("*")):
-                archive.write(path, path.relative_to(tmp).as_posix())
+                name = path.relative_to(tmp).as_posix()
+                # Fixed time and plain permissions rather than whatever the checkout had: the
+                # builder's umask and clock are not part of the release.
+                if path.is_dir():
+                    info = zipfile.ZipInfo(f"{name}/", date_time=stamp)
+                    info.external_attr = (0o40755 << 16) | 0x10
+                    archive.writestr(info, b"")
+                else:
+                    info = zipfile.ZipInfo(name, date_time=stamp)
+                    info.external_attr = 0o100644 << 16
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    archive.writestr(info, path.read_bytes())
     return target
 
 

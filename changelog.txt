@@ -1,7 +1,7 @@
 CrossWatch for Kodi Changelog
 =============================
 
-v1.0.0~beta1 (unreleased)
+v1.0.0~beta1 (2026-10-07)
 -------------------------
 New Features:
   - Reports Kodi playback to CrossWatch over its add-on webhook
@@ -22,6 +22,12 @@ New Features:
     every other event is sent only within two minutes.
   - PlexKodiConnect playback is skipped by default, and labelled when
     it is reported.
+  - Supports https:// addresses for CrossWatch; a certificate the
+    add-on does not trust is reported with its own message instead of
+    a generic connection failure.
+  - Pairing and Link failures are shown in an OK dialog instead of a
+    toast notification, since Kodi's toast truncates longer messages.
+  - Added icon.png as the add-on icon.
 
 Internal:
   - The token travels only in the X-CrossWatch-Token header.
