@@ -1,0 +1,29 @@
+CrossWatch for Kodi Changelog
+=============================
+
+v1.0.0~beta1 (unreleased)
+-------------------------
+New Features:
+  - Reports Kodi playback to CrossWatch over its add-on webhook
+    (/webhook/kodiwatcher, contract 1.4): start, pause, resume,
+    progress, stop and a five-minute ping, with the viewers who
+    watched.
+  - Works out who is watching inside one Kodi profile: smart playlist
+    membership of the show first, then the active Kodi profile, then a
+    question at the end of playback that is remembered per show.
+  - Pairing with an address and a one-time code from CrossWatch, Link
+    from CrossWatch over JSON-RPC with a confirmation on the TV, and
+    Unpair. Connection changes take effect without a Kodi restart.
+  - Settings screens for viewers and their playlists or profiles, and
+    for remembered answers (change, forget, forget all; shows a
+    playlist covers are marked).
+  - Completed watches are kept in outbox.json through an outage and a
+    restart (7 days, 200 entries) and replayed once CrossWatch is back;
+    every other event is sent only within two minutes.
+  - PlexKodiConnect playback is skipped by default, and labelled when
+    it is reported.
+
+Internal:
+  - The token travels only in the X-CrossWatch-Token header.
+  - Gates: ruff, pyright with Kodistubs, vulture and pytest with a
+    coverage floor, from a hash-pinned lock, in CI and pre-commit.
