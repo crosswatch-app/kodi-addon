@@ -1,5 +1,6 @@
 """What ships: the staging script decides what a test install and a release zip contain."""
 
+import stat
 import subprocess
 import sys
 import zipfile
@@ -55,3 +56,14 @@ def test_the_release_zip_holds_one_folder_named_after_the_addon(tmp_path):
         names = archive.namelist()
     assert all(name.startswith("service.crosswatch/") for name in names)
     assert "service.crosswatch/addon.xml" in names
+
+
+def test_the_release_zip_is_reproducible_with_plain_permissions(tmp_path):
+    """Same commit, same bytes: anyone can rebuild the published zip and compare it."""
+    first = Path(_run("zip", str(tmp_path / "a")))
+    second = Path(_run("zip", str(tmp_path / "b")))
+    assert first.read_bytes() == second.read_bytes()
+    with zipfile.ZipFile(first) as archive:
+        for info in archive.infolist():
+            mode = stat.S_IMODE(info.external_attr >> 16)
+            assert mode == (0o755 if info.is_dir() else 0o644), info.filename
