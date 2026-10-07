@@ -39,7 +39,8 @@ This add-on has not reached the official Kodi add-on repository yet. Install the
 [GitHub release](https://github.com/crosswatch-app/kodi-addon/releases) instead:
 
 1. Download `service.crosswatch-v1.0.0-beta1.zip` from that release's assets.
-2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources".
+2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources". Kodi warns that add-ons
+   get access to personal data; choose Yes to continue.
 3. Go to Add-ons > "Install from zip file" and pick the zip.
 4. Follow the [Quick start](#quick-start) below.
 
