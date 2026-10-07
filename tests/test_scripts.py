@@ -1,5 +1,4 @@
-import configure
-from resources.lib import connect, remembered, viewer_config
+from resources.lib import connect, remembered, scripts, viewer_config
 
 
 def _spy(monkeypatch):
@@ -14,30 +13,30 @@ def _spy(monkeypatch):
 
 def test_no_argument_opens_the_viewer_dialog(monkeypatch):
     opened = _spy(monkeypatch)
-    configure.dispatch(["configure.py"])
+    scripts.dispatch(["configure.py"])
     assert opened == ["viewers"]
 
 
 def test_the_remembered_argument_opens_the_remembered_answers_screen(monkeypatch):
     opened = _spy(monkeypatch)
-    configure.dispatch(["configure.py", "remembered"])
+    scripts.dispatch(["configure.py", "remembered"])
     assert opened == ["remembered"]
 
 
 def test_pair_and_unpair_open_their_screens(monkeypatch):
     opened = _spy(monkeypatch)
-    configure.dispatch(["configure.py", "pair"])
-    configure.dispatch(["configure.py", "unpair"])
+    scripts.dispatch(["configure.py", "pair"])
+    scripts.dispatch(["configure.py", "unpair"])
     assert opened == ["pair", "unpair"]
 
 
 def test_a_link_from_execute_addon_is_handed_its_arguments(monkeypatch):
     opened = _spy(monkeypatch)
-    configure.dispatch(["configure.py", "action=link", "url=http://nas/webhook/kodiwatcher", "token=tok"])
+    scripts.dispatch(["configure.py", "action=link", "url=http://nas/webhook/kodiwatcher", "token=tok"])
     assert opened == [("link", {"action": "link", "url": "http://nas/webhook/kodiwatcher", "token": "tok"})]
 
 
 def test_an_unknown_action_opens_nothing(monkeypatch):
     opened = _spy(monkeypatch)
-    configure.dispatch(["configure.py", "action=other"])
+    scripts.dispatch(["configure.py", "action=other"])
     assert opened == []

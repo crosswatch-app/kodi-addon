@@ -16,21 +16,8 @@ ADDON_ID="$(python3 "$SCRIPT_DIR/addon_meta.py" id "$ADDON_SRC")"
 NATIVE_DATA="$HOME/.var/app/tv.kodi.Kodi/data"
 
 copy_tree() {
-    local dest="$1"
-    mkdir -p "$dest"
-    # Everything dev-only is excluded, so what Kodi loads is what a released zip would
-    # contain. A file listed here that stops existing is harmless; one that appears and is
-    # not listed ships to users.
-    rsync -a --delete \
-        --exclude '.git' --exclude '.github' --exclude '.gitignore' \
-        --exclude 'tests' --exclude 'docker' --exclude 'docs' \
-        --exclude '.claude' --exclude 'notes' --exclude 'CLAUDE.md' \
-        --exclude '__pycache__' --exclude '*.pyc' \
-        --exclude '.pytest_cache' --exclude '.ruff_cache' --exclude '.coverage' \
-        --exclude 'pyproject.toml' --exclude 'requirements-dev.txt' \
-        --exclude 'requirements-dev.lock' \
-        --exclude 'pyrightconfig.json' --exclude '.pre-commit-config.yaml' \
-        "$ADDON_SRC/" "$dest/"
+    # stage.py's allow-list, so what Kodi loads is exactly what a release zip contains.
+    python3 "$SCRIPT_DIR/stage.py" folder "$1"
 }
 
 case "$MODE" in
