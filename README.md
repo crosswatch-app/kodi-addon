@@ -14,8 +14,8 @@ CrossWatch itself is set up.
 > add-on support yet (see Requirements below).
 >
 > It has been tested on Kodi 21.3 (Omega) against those builds, including pairing, Link,
-> routing playback by viewer, and replay after an outage. Not yet verified: delivery through
-> to real Trakt, Simkl, Plex, Emby or Jellyfin accounts, and Android.
+> routing playback by viewer, and replay after an outage. Not yet tested: Kodi on Android, and
+> skins other than Estuary.
 
 ## Requirements
 
