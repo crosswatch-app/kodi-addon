@@ -57,3 +57,12 @@ def test_news_fits_kodis_metadata_schema():
     """The schema caps <news> at 1500 characters, and the checker fails the build past it."""
     news = _root().find("extension/news")
     assert news is None or len(news.text or "") <= 1500
+
+
+def test_every_declared_asset_ships_with_the_addon():
+    """Kodi shows a blank tile for a declared asset that is missing; the zip carries it."""
+    assets = _root().find("extension/assets")
+    assert assets is not None
+    for asset in assets:
+        assert (ADDON_XML.parent / (asset.text or "")).is_file(), asset.tag
+    assert assets.findtext("icon") == "icon.png"
