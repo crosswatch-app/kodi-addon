@@ -1,57 +1,58 @@
-# kodi-addon
+# CrossWatch for Kodi
 
-Kodi add-on that reports playback and viewers to [CrossWatch](https://github.com/cenodude/CrossWatch).
+A Kodi service add-on that reports what you watch to your own
+[CrossWatch](https://github.com/cenodude/CrossWatch), including **who** in the household
+watched it. CrossWatch then syncs each person's watch history to their own Trakt, Simkl,
+Plex, Emby or Jellyfin account, so a household sharing one Kodi profile does not end up
+sharing one watch history. See the [CrossWatch wiki](https://wiki.crosswatch.app) for how
+CrossWatch itself is set up.
 
 > ## Not ready to run
 >
-> This is unreleased work in progress. There is no release, no repository zip, and no
-> supported way to install it. Please do not run it against a CrossWatch instance you care
-> about.
+> This add-on has not been released yet, and there is no supported way to install it. It
+> needs a CrossWatch release with Kodi add-on support (pairing and Link), which is not out
+> yet either.
 >
-> **The receiving end is not in a CrossWatch release yet.** The add-on posts to
-> `/webhook/kodiwatcher`, which exists in CrossWatch's development code but not in
-> any release up to 0.13.2. A CrossWatch without it answers 404, and the add-on sends
-> nothing anywhere else, so pointing it at an older CrossWatch delivers nothing, but
-> also changes nothing.
->
-> **Testing is partial.** The add-on is verified against a real Kodi 21.3 Omega and,
-> since 2026-10-06, end to end against a development build of CrossWatch that has the
-> add-on endpoint: the handshake that switches CrossWatch into add-on mode, routing a
-> playback by viewer, and replaying a stored stop after an outage and a Kodi restart. Not
-> yet verified: delivery through to a real Trakt, Simkl, Plex, Emby or Jellyfin account.
+> It has been tested on Kodi 21.3 (Omega) against CrossWatch development builds, including
+> pairing, Link, routing playback by viewer, and replay after an outage. Not yet verified:
+> delivery through to a real Trakt, Simkl, Plex, Emby or Jellyfin account.
 
-## What it is for
+## Requirements
 
-CrossWatch routes a scrobble per user, but Kodi cannot say who pressed play inside a single
-profile. A shared MySQL or MariaDB library gives every profile the same watched state, so
-separate Kodi profiles are not a workaround either. This add-on works out who is watching
-inside Kodi and sends that with the playback event.
+- Kodi 21 (Omega). Later versions have not been tested; do not assume they work.
+- A CrossWatch release with Kodi add-on support. Not out yet; this README will name a
+  version once it is.
+- Kodi able to reach CrossWatch over the network, for example both on the same home
+  network. CrossWatch does not need to reach Kodi, except for Link.
 
-It determines the viewer three ways, first match wins:
+Kodi's web server and JSON-RPC interface are not needed. The only thing that uses them is
+the optional Link shortcut, described below.
 
-1. Smart playlist membership of the playing item's parent show.
-2. The active Kodi profile.
-3. Asking at the end of playback, remembered per show. At stop, never at start, so it
-   cannot delay playback, and skipped entirely for a single-viewer household.
+## Install
 
-The add-on settings have a Remembered answers entry under Viewers, next to Configure
-viewers and playlists. It lists every show with a remembered answer and who it is for, with
-Change (the who-watched picker, current answer ticked) and Forget (asks again next
-episode). Forget all remembered answers, at the bottom, clears everything after a
-confirmation; changes apply from the next playback, no restart needed.
+Once released, this add-on will be installable from the official Kodi add-on repository and
+from the author's own repository. Until then, there is nothing to install.
 
-Playlist membership is checked first, so it overrides a remembered answer to the prompt. The
-Remembered answers screen marks such a show "covered by playlist": its answer is kept, and
-applies again if the show leaves the playlist. That makes the choice of playlist matter: it
-should describe what that person watches, not what they just happened to play.
+## Quick start
 
-- Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
-- Avoid playlists whose membership follows from playback itself, such as "Continue Watching"
-  or "In Progress" smart playlists (rules on in-progress, play count or last played). Playing
-  a show adds it to such a playlist, so the next episode is attributed to whoever owns it,
-  even if someone else watched it. On a real Kodi, a show two people had been credited with
-  watching started resolving to one person after a single playback, once it joined that
-  person's "Continue Watching" playlist.
+1. In CrossWatch, open the Kodi entry and choose to add this device with the add-on option
+   (CrossWatch also offers a JSON-RPC option; that is for Link, covered below). CrossWatch
+   gives you a pairing code. See the CrossWatch wiki for its exact screens.
+2. In Kodi, go to Add-ons > My add-ons > Services > CrossWatch > Configure, open the
+   CrossWatch category, and select "Pair with CrossWatch". Enter the address first, then
+   the code.
+3. In CrossWatch, set up a Kodi watcher route for each person in the household. In each
+   route's "Username whitelist" (the names that route accepts), enter that person's name.
+   Once the add-on is paired and has viewers, the route's "Find users" button also lists
+   the viewer names it reported.
+4. In the add-on settings, Viewers category, select "Configure viewers and playlists" and
+   add one viewer per person. Each viewer's name must match exactly the username you put in
+   that person's route. Give each viewer one or more smart playlists, or one or more Kodi
+   profiles.
+
+Names have to match because CrossWatch sends a playback to the route whose username whitelist
+contains the viewer's name. A viewer named differently from every whitelist is still sent,
+but only a route with an empty whitelist accepts it.
 
 ## Connecting to CrossWatch
 
@@ -60,15 +61,24 @@ should describe what that person watches, not what they just happened to play.
 This is the normal way to connect. In the add-on settings, CrossWatch category, select "Pair
 with CrossWatch".
 
+<img src="https://github.com/user-attachments/assets/a3cfda91-bc75-4deb-b217-530ee5abb142" alt="Add-on settings: Pair with CrossWatch, Status, Unpair" width="600">
+
 1. In CrossWatch, open the Kodi instance you want this device to use and ask it for a pairing
    code.
 2. Back in the add-on, type the CrossWatch address: `192.168.1.10:8787` is enough, `http://` is
    assumed if you leave it off, and a trailing slash or a full webhook URL both work too.
+
+   ![Address prompt](https://github.com/user-attachments/assets/c6b62c2d-ac0a-44a2-be2d-c9b3774cfbfd)
+
 3. Type the code it gave you: 6 characters, capitals and digits, valid for 10 minutes and good
    for one use. Case and spaces do not matter, so `ab 23 cd` and `AB23CD` are the same.
 
+   ![Pairing code prompt](https://github.com/user-attachments/assets/2f8d8be9-c55c-4eb7-b70d-d502ecbee397)
+
 On success you get a notification naming the CrossWatch instance, and the Status line
 (read-only, just under the Pair button) reads "Paired with `<instance>` at `<address>`".
+
+![Paired notification](https://github.com/user-attachments/assets/31dc03c9-43b0-4062-8323-4b4912b91257)
 
 If it does not succeed, nothing is changed: the previous connection, if any, stays in place.
 What you see depends on what went wrong:
@@ -82,20 +92,28 @@ What you see depends on what went wrong:
 - An address that cannot be used, such as one starting with `ftp://`: "Not a CrossWatch
   address: `<address>`"
 
+![Wrong code message](https://github.com/user-attachments/assets/12e7591b-ac25-4e7e-915d-02ef55248283)
+
+Each of these appears in a dialog on screen.
+
 Pressing Pair or Unpair closes the settings screen first, saving anything else you changed
 there. The add-on switches to the new connection as soon as you finish, no Kodi restart
 needed, and sends a heartbeat right away, so CrossWatch sees it within seconds.
 
 ### Link (shortcut)
 
-Link only works for a Kodi that CrossWatch can already reach over its own network control
-(JSON-RPC). Kodi's web server is off by default, so most households cannot use this and should
-pair instead.
+Link only works when CrossWatch already controls this Kodi through Kodi's web interface
+(JSON-RPC), which is off by default. Most households will not have this on and should pair
+instead.
 
 When it applies, CrossWatch starts it: the TV shows "Link this Kodi to CrossWatch at
-`<address>`?". Choosing Yes connects, using a one-time code CrossWatch sent along, so a Link
-that fails shows the same messages as pairing. Choosing No, or not answering within 60
-seconds, changes nothing.
+`<address>`?" with No already selected.
+
+![Link question on the TV](https://github.com/user-attachments/assets/46d8a992-096d-4855-b52e-a59df31bce4f)
+
+Choosing Yes connects, using a one-time code CrossWatch sent along, so a Link that fails
+shows the same messages as pairing above. Choosing No, or not answering within 60 seconds,
+changes nothing.
 
 ### The Status line
 
@@ -114,11 +132,169 @@ a different CrossWatch does not need Unpair first, just pair again.
 ### Manual setup (advanced)
 
 If you would rather not pair, "Webhook URL" and "Webhook token" are available at the Advanced
-settings level (use the settings level selector on Kodi's settings screen to see them).
+settings level (use the settings level button on Kodi's settings screen to change the level).
+
+![Settings at the Advanced level](https://github.com/user-attachments/assets/e9d8afce-11e0-44ae-ba1c-9ded5f327c1b)
+
 CrossWatch's instance page also offers a manual option: a full URL with `?token=` in it. You
 can paste that whole URL into "Webhook URL"; the add-on takes the token out of it and moves it
 into "Webhook token" for you. Whichever way the token gets there, it is only ever sent in a
 request header, never in the URL.
+
+## Who watched
+
+The add-on works out who was watching, first match wins:
+
+### Smart playlists
+
+A show (for an episode) or a film is credited to every viewer whose playlist contains it.
+Playlists are video smart playlists from Kodi's playlists folder, of shows or of films;
+playlists of episodes or music videos are not used.
+
+- Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
+- Avoid playlists whose membership follows from playback itself, such as "Continue Watching"
+  or "In Progress" smart playlists (rules on in-progress, play count or last played). Playing
+  a show adds it to such a playlist, so the next episode is attributed to whoever owns it,
+  even if someone else watched it.
+
+If a viewer's playlist cannot be read (it was deleted or renamed), the viewer list shows it
+as missing, Kodi shows a notification, and all of that viewer's playlists stop counting until
+it is fixed: that viewer falls through to profile matching and the end-of-playback question.
+
+### Kodi profile
+
+If the active Kodi profile is one of a viewer's profiles (the name match ignores case), that
+viewer is credited. Profiles are entered comma separated under "Edit Kodi profiles".
+
+### The question at the end
+
+When neither of the above answered, Kodi asks who watched when playback stops, never at the
+start, so it never delays playback. The dialog offers an "Everyone" row plus each viewer,
+lets you pick more than one, and closes by itself after 120 seconds with no answer.
+
+It is not asked:
+
+- with fewer than two viewers configured.
+- for a film, when "Ask who watched a film" is off.
+- when playback stopped within Kodi's "ignore at start" time (180 seconds unless changed in
+  Kodi's advanced settings).
+- while another dialog is already open.
+- when the next item starts playing right away (binge or autoplay); the one that just ended
+  is then sent with no viewer.
+
+For a show, the answer is remembered and reused for later episodes, including from the start
+of playback. For a film, nothing is remembered.
+
+### Nobody resolved
+
+If no viewer is resolved by any of the above, the event is sent with no viewers. CrossWatch
+treats that as an unknown viewer.
+
+### One person in the household
+
+You do not need to configure any viewers. Use a CrossWatch route with an empty username
+whitelist.
+
+### Remembered answers
+
+The add-on settings have a Remembered answers entry under Viewers, next to Configure
+viewers and playlists. It lists every show with a remembered answer and who it is for, with
+Change (the who-watched picker, current answer ticked) and Forget (asks again next
+episode). Forget all remembered answers, at the bottom, clears everything after a
+confirmation; changes apply from the next playback, no restart needed.
+
+Playlist membership is checked first, so it overrides a remembered answer to the prompt. The
+Remembered answers screen marks such a show "covered by playlist": its answer is kept, and
+applies again if the show leaves the playlist. That makes the choice of playlist matter: it
+should describe what that person watches, not what they just happened to play.
+
+### Viewer list
+
+"Configure viewers and playlists" lists the viewers, with "Add viewer" to add one. Adding a
+viewer asks for its name ("Viewer name, as CrossWatch routes it"), then which playlists are
+theirs. Each viewer in the list offers Edit playlists, Edit Kodi profiles and Remove viewer.
+
+## Settings reference
+
+### CrossWatch
+
+| Setting | Default | What it does |
+|---|---|---|
+| Pair with CrossWatch | | Starts pairing: enter the CrossWatch address, then the pairing code. |
+| Status | (read-only) | Shows "Paired with `<instance>` at `<address>`" or "Not paired". |
+| Unpair | | Disconnects this Kodi from CrossWatch. Only shown while paired. |
+| Webhook URL | (blank) | Advanced level. Manual webhook address, instead of pairing. |
+| Webhook token | (blank) | Advanced level. Manual webhook token, instead of pairing. |
+| Device id (blank to generate) | (blank) | Advanced level. Leave blank to have the add-on generate one. |
+
+### Viewers
+
+| Setting | Default | What it does |
+|---|---|---|
+| Configure viewers and playlists | | Add, edit or remove viewers and their playlists or Kodi profiles. |
+| Remembered answers | | View, change or forget who-watched answers remembered per show. |
+| Ask who watched a film | on | Whether the who-watched question is also asked after a film. |
+| Skip PlexKodiConnect playback | on | PlexKodiConnect playback is not reported, so a household also running CrossWatch's own Plex watcher does not get the same watch counted twice. Turn off to report PlexKodiConnect playback instead, labelled as such. This setting has not been tested, because PlexKodiConnect is not available on the test machine. |
+
+### Advanced
+
+| Setting | Default | Range | What it does |
+|---|---|---|---|
+| Progress report interval (seconds) | 60 | 30 to 600, steps of 30 | Standard level. How often a progress event is sent while something is playing, and again after a seek. |
+| Playlist refresh interval (minutes) | 60 | 5 to 720 | Advanced level. How often playlist membership is re-read. Also re-read after a library scan or clean, and after a settings change. |
+| Enable debug logging (records viewing history to disk) | off | | Writes detailed lines to the add-on's own log, including titles and viewer names. Leave off unless troubleshooting. |
+
+## Troubleshooting
+
+**Nothing arrives in CrossWatch**
+
+- Check the Status line: if it says "Not paired", pair again.
+- Check CrossWatch is reachable at the paired address.
+- If the add-on is switched off in CrossWatch, pairing itself will say so.
+- PlexKodiConnect playback is skipped by default; see "Skip PlexKodiConnect playback" above.
+
+**Playback arrives under nobody, or under the wrong person**
+
+- Check the viewer's name matches the name in that person's route "Username whitelist"
+  exactly.
+- Check the viewer has a playlist or Kodi profile configured.
+- Check whether a playback-driven playlist (such as "Continue Watching") is attributing it to
+  the wrong person; see "Smart playlists" above.
+- Check the Remembered answers screen for a show marked "covered by playlist".
+
+**The who-watched question never appears**
+
+See "The question at the end" above for the cases where it is not asked.
+
+**A playlist shows as missing**
+
+The playlist was renamed or deleted. Edit that viewer's playlists and point it at a playlist
+that still exists.
+
+### Logs
+
+The add-on writes its own log under
+`userdata/addon_data/service.crosswatch/logs/crosswatch.log`
+(see the [Kodi wiki](https://kodi.wiki/view/Userdata) for where `userdata` is on your system).
+Turn on "Enable debug logging" for more detail.
+
+The log never contains the webhook token or a pairing code. Normal lines carry counts, not
+names. Debug lines carry titles and viewer names.
+
+## What the add-on sends
+
+Everything goes only to your own CrossWatch, which then passes it on to whatever services you
+have set up there:
+
+- Playback events (start, pause, resume, progress, stop) and a heartbeat every five minutes.
+- The device name, a generated device id and the add-on's version.
+- Viewer names, and how they were found (playlist, profile or the question).
+- Title, year, season and episode; the ids Kodi's library has for it (such as TMDb, TVDb, IMDb);
+  playback position and progress; the file path; and, for PlexKodiConnect playback, the Plex
+  rating key.
+
+The webhook token travels only in a request header, never in a URL. Nothing is sent anywhere
+other than your own CrossWatch.
 
 ## When CrossWatch cannot be reached
 
@@ -153,18 +329,12 @@ watch, not the watched state itself.
 Nothing is stored when no webhook is configured. No other event is written to disk: progress,
 pause and heartbeat events are held only in memory for their two-minute window.
 
-## Status
+## Getting help
 
-| | |
-|---|---|
-| Kodi | 21 Omega and later, Python 3.11 |
-| Contract | implements `docs/contract.md` |
-| Verified against | a real Kodi 21.3 Omega, and a contract-asserting stub receiver |
-| Verified against a live CrossWatch | no, the route has not shipped |
-| Released | no |
+Open an issue at [crosswatch-app/kodi-addon](https://github.com/crosswatch-app/kodi-addon/issues).
+A Kodi forum thread will follow with the first release.
 
-The payload contract and the open questions behind it are in
-[issue #1](https://github.com/crosswatch-app/kodi-addon/issues/1).
+Developers: the payload contract is [docs/contract.md](docs/contract.md).
 
 ## Licence
 
