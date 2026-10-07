@@ -8,6 +8,7 @@ only: the code, the token, the address and the instance name stay off Kodi's sha
 from __future__ import annotations
 
 import json
+import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -21,7 +22,7 @@ _log = get_logger("config")
 WEBHOOK_PATH = "/webhook/kodiwatcher"
 PAIR_PATH = f"{WEBHOOK_PATH}/pair"
 
-Outcome = Literal["paired", "invalid_code", "rate_limited", "unreachable", "disabled", "failed"]
+Outcome = Literal["paired", "invalid_code", "rate_limited", "unreachable", "certificate", "disabled", "failed"]
 
 
 @dataclass(frozen=True)
@@ -81,16 +82,14 @@ def exchange_code(
     try:
         connection = connect(target.scheme, target.host, target.port, timeout)
     except Exception as exc:
-        _log.warning("config.pair_failed", outcome="unreachable", error=type(exc).__name__)
-        return PairResult("unreachable")
+        return _transport_failure(exc)
     try:
         connection.request("POST", target.path, body=body, headers={"Content-Type": "application/json"})
         response = connection.getresponse()
         status = int(getattr(response, "status", 0) or 0)
         raw = response.read()
     except Exception as exc:
-        _log.warning("config.pair_failed", outcome="unreachable", error=type(exc).__name__)
-        return PairResult("unreachable")
+        return _transport_failure(exc)
     finally:
         try:
             connection.close()
@@ -99,6 +98,15 @@ def exchange_code(
     result = _verdict(status, raw)
     _log.info("config.pair_result", outcome=result.outcome, status=status)
     return result
+
+
+def _transport_failure(exc: Exception) -> PairResult:
+    # The server answered, but with a certificate Python does not trust (self-signed, or a
+    # platform without a certificate store). Telling it apart from "unreachable" sends the
+    # household to the certificate rather than to the network.
+    outcome: Outcome = "certificate" if isinstance(exc, ssl.SSLCertVerificationError) else "unreachable"
+    _log.warning("config.pair_failed", outcome=outcome, error=type(exc).__name__)
+    return PairResult(outcome)
 
 
 def _verdict(status: int, raw: bytes) -> PairResult:

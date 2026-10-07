@@ -24,6 +24,9 @@ CrossWatch itself is set up.
   version once it is.
 - Kodi able to reach CrossWatch over the network, for example both on the same home
   network. CrossWatch does not need to reach Kodi, except for Link.
+- For an `https://` address: a certificate from a public certificate authority, such as
+  Let's Encrypt through a reverse proxy. Self-signed certificates are not supported. Type the
+  address with `https://`; without a scheme, `http://` is assumed.
 
 Kodi's web server and JSON-RPC interface are not needed. The only thing that uses them is
 the optional Link shortcut, described below.
@@ -89,6 +92,9 @@ What you see depends on what went wrong:
 - Some other failure on CrossWatch's side: "Pairing failed: CrossWatch answered HTTP `<code>`."
 - The Kodi add-on is switched off in CrossWatch: "The Kodi add-on is switched off in
   CrossWatch. Turn it on there, then pair again."
+- An HTTPS certificate the add-on does not trust: "The certificate of `<address>` was not
+  accepted. HTTPS needs a certificate from a public certificate authority; a self-signed one
+  does not work."
 - An address that cannot be used, such as one starting with `ftp://`: "Not a CrossWatch
   address: `<address>`"
 
@@ -252,6 +258,9 @@ theirs. Each viewer in the list offers Edit playlists, Edit Kodi profiles and Re
 - Check CrossWatch is reachable at the paired address.
 - If the add-on is switched off in CrossWatch, pairing itself will say so.
 - PlexKodiConnect playback is skipped by default; see "Skip PlexKodiConnect playback" above.
+- Using `https://`: the certificate must come from a public certificate authority. A
+  certificate problem shows its own message when pairing; after pairing, the add-on's log
+  shows `CERTIFICATE_VERIFY_FAILED` on each failed send.
 
 **Playback arrives under nobody, or under the wrong person**
 
@@ -289,9 +298,9 @@ have set up there:
 - Playback events (start, pause, resume, progress, stop) and a heartbeat every five minutes.
 - The device name, a generated device id and the add-on's version.
 - Viewer names, and how they were found (playlist, profile or the question).
-- Title, year, season and episode; the ids Kodi's library has for it (such as TMDb, TVDb, IMDb);
-  playback position and progress; the file path; and, for PlexKodiConnect playback, the Plex
-  rating key.
+- Title, year, season and episode; the ids Kodi's library has for it (such as TMDb, TVDb,
+  IMDb); playback position and progress; the file path; and, for PlexKodiConnect playback,
+  the Plex rating key.
 
 The webhook token travels only in a request header, never in a URL. Nothing is sent anywhere
 other than your own CrossWatch.
