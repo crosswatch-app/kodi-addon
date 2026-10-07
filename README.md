@@ -7,21 +7,21 @@ Plex, Emby or Jellyfin account, so a household sharing one Kodi profile does not
 sharing one watch history. See the [CrossWatch wiki](https://wiki.crosswatch.app) for how
 CrossWatch itself is set up.
 
-> ## Not ready to run
+> ## Beta
 >
-> This add-on has not been released yet, and there is no supported way to install it. It
-> needs a CrossWatch release with Kodi add-on support (pairing and Link), which is not out
-> yet either.
+> This is a beta (1.0.0~beta1), installable from a GitHub release; see the Install section
+> below. It needs a CrossWatch development build, because no CrossWatch release has Kodi
+> add-on support yet (see Requirements below).
 >
-> It has been tested on Kodi 21.3 (Omega) against CrossWatch development builds, including
-> pairing, Link, routing playback by viewer, and replay after an outage. Not yet verified:
-> delivery through to a real Trakt, Simkl, Plex, Emby or Jellyfin account.
+> It has been tested on Kodi 21.3 (Omega) against those builds, including pairing, Link,
+> routing playback by viewer, and replay after an outage. Not yet verified: delivery through
+> to real Trakt, Simkl, Plex, Emby or Jellyfin accounts, and Android.
 
 ## Requirements
 
 - Kodi 21 (Omega). Later versions have not been tested; do not assume they work.
-- A CrossWatch release with Kodi add-on support. Not out yet; this README will name a
-  version once it is.
+- For this beta, a CrossWatch development build (`ghcr.io/cenodude/crosswatch-dev:dev-db`);
+  a CrossWatch release once Kodi add-on support ships.
 - Kodi able to reach CrossWatch over the network, for example both on the same home
   network. CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority, such as
@@ -33,8 +33,25 @@ the optional Link shortcut, described below.
 
 ## Install
 
-Once released, this add-on will be installable from the official Kodi add-on repository and
-from the author's own repository. Until then, there is nothing to install.
+### Beta
+
+This add-on has not reached the official Kodi add-on repository yet. Install the beta from a
+[GitHub release](https://github.com/crosswatch-app/kodi-addon/releases) instead:
+
+1. Download `service.crosswatch-v1.0.0-beta1.zip` from that release's assets.
+2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources".
+3. Go to Add-ons > "Install from zip file" and pick the zip.
+4. Follow the [Quick start](#quick-start) below.
+
+A zip install does not update itself: to update, install the next zip over it.
+
+This beta needs a CrossWatch development build, because no CrossWatch release has Kodi
+add-on support yet. See [Requirements](#requirements) above.
+
+### Later
+
+Once CrossWatch's Kodi add-on support is released, this add-on will come to the official
+Kodi add-on repository and to the author's own repository, with automatic updates.
 
 ## Quick start
 
