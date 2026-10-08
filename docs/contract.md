@@ -2,8 +2,6 @@
 
 Version 1.4. Draft.
 
-Nothing here is set in stone. If something makes the add-on harder to build, just say so and we change it. CrossWatch can adapt.
-
 ## The idea
 
 The add-on tells CrossWatch what is playing and who is watching. It replaces the JSON-RPC polling for that Kodi.
