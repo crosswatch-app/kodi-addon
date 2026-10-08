@@ -10,18 +10,18 @@ CrossWatch itself is set up.
 > ## Beta
 >
 > This is a beta (1.0.0~beta1), installable from a GitHub release; see the Install section
-> below. It needs a CrossWatch development build, because no CrossWatch release has Kodi
-> add-on support yet (see Requirements below).
+> below. It needs CrossWatch v0.13.3 or later, where Kodi add-on support is marked
+> experimental.
 >
-> It has been tested on Kodi 21.3 (Omega) against those builds, including pairing, Link,
-> routing playback by viewer, and replay after an outage. Not yet tested: Kodi on Android, and
+> It has been tested on Kodi 21.3 (Omega) against CrossWatch v0.13.3 and the development
+> builds before it, including pairing, Link, routing playback by viewer, and replay after an
+> outage. Not yet tested: Kodi on Android, and
 > skins other than Estuary.
 
 ## Requirements
 
 - Kodi 21 (Omega). Later versions have not been tested; do not assume they work.
-- For this beta, a CrossWatch development build (`ghcr.io/cenodude/crosswatch-dev:dev-db`);
-  a CrossWatch release once Kodi add-on support ships.
+- CrossWatch v0.13.3 or later, the first release with Kodi add-on support.
 - Kodi able to reach CrossWatch over the network, for example both on the same home
   network. CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority, such as
@@ -46,19 +46,17 @@ This add-on has not reached the official Kodi add-on repository yet. Install the
 
 A zip install does not update itself: to update, install the next zip over it.
 
-This beta needs a CrossWatch development build, because no CrossWatch release has Kodi
-add-on support yet. See [Requirements](#requirements) above.
-
 ### Later
 
-Once CrossWatch's Kodi add-on support is released, this add-on will come to the official
-Kodi add-on repository and to the author's own repository, with automatic updates.
+Once the beta has run for a while, this add-on will come to the official Kodi add-on
+repository and to the author's own repository, with automatic updates.
 
 ## Quick start
 
 1. In CrossWatch, open the Kodi entry and choose to add this device with the add-on option
    (CrossWatch also offers a JSON-RPC option; that is for Link, covered below). CrossWatch
-   gives you a pairing code. See the CrossWatch wiki for its exact screens.
+   gives you a pairing code. CrossWatch's wiki shows its screens:
+   [Kodi add-on](https://wiki.crosswatch.app/crosswatch/settings/connections/media-clients/kodi/kodi-add-on).
 2. In Kodi, go to Add-ons > My add-ons > Services > CrossWatch > Configure, open the
    CrossWatch category, and select "Pair with CrossWatch". Enter the address first, then
    the code.

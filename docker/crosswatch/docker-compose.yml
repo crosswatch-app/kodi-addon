@@ -8,17 +8,20 @@
 # change under us on the next pull. Bump it deliberately.
 services:
   crosswatch-test:
-    image: ghcr.io/cenodude/crosswatch-dev@sha256:1a2e78a8d4a68599ce1d53c8250778a16875c2281364b005127b0c063f271fb4
+    # CrossWatch v0.13.3, the first release with Kodi add-on support.
+    image: ghcr.io/cenodude/crosswatch@sha256:d7cfc99a662acf0535bc6aa37afafaceb554f6027a7da4c4b3ce4cf69d89f8bf
     container_name: crosswatch-test
     ports:
       - "127.0.0.1:${CROSSWATCH_TEST_PORT:-8787}:8787"
     environment:
       TZ: "${TZ:-Europe/Amsterdam}"
     volumes:
-      - crosswatch_test_config:/config
+      - crosswatch_release_config:/config
     # No restart policy: this is a test rig and should not come back on its own after a
     # reboot, quietly polling a Kodi nobody is watching.
     restart: "no"
 
 volumes:
-  crosswatch_test_config:
+  # Separate from the volume the development builds used, so a release never opens data a
+  # development build wrote.
+  crosswatch_release_config:
