@@ -38,6 +38,12 @@ INDEXABLE_TYPES = {"tvshows": "tvshow", "movies": "movie"}
 _TYPE = re.compile(r"<smartplaylist[^>]*\btype\s*=\s*[\"']([a-z]+)[\"']", re.IGNORECASE)
 
 
+def declared_type(text: str) -> str:
+    """The type a smart playlist declares; Kodi reads one without a type as tvshows."""
+    match = _TYPE.search(text)
+    return match.group(1).lower() if match else "tvshows"
+
+
 @dataclass(frozen=True)
 class PlaylistIndex:
     by_key: dict[tuple[str, int], tuple[str, ...]] = field(default_factory=dict)
@@ -139,10 +145,7 @@ class IndexBuilder:
         missing a viewer's entire show set, and pays full cost for an episodes list.
         """
         text = self._kodi.read_text(_path(playlist))
-        if text is None:
-            return None
-        match = _TYPE.search(text)
-        return match.group(1).lower() if match else "tvshows"
+        return None if text is None else declared_type(text)
 
     def _expand(self, playlist: str, names: list[str]) -> None:
         declared = self._declared_type(playlist)

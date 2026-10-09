@@ -7,11 +7,15 @@ from resources.lib.constants import (
     VIEWERS_EDIT_PLAYLISTS,
     VIEWERS_EDIT_PROFILES,
     VIEWERS_HEADING,
+    VIEWERS_MISSING_COUNT,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_PLAYLISTS,
     VIEWERS_REMOVE,
+    VIEWERS_UNUSABLE,
+    VIEWERS_UNUSABLE_COUNT,
 )
 from resources.lib.models import Viewer
+from resources.lib.playlist_index import PLAYLIST_DIR
 from resources.lib.storage import JsonViewerStore
 from resources.lib.viewer_config import (
     apply_edit,
@@ -29,7 +33,7 @@ def _listing(names):
 
 
 def test_lists_playlists_from_the_profile_folder():
-    assert available_playlists(_listing(["Anna TV", "Bob TV"])) == ["Anna TV", "Bob TV"]
+    assert available_playlists(_listing(["Anna TV", "Bob TV"])).matchable == ["Anna TV", "Bob TV"]
 
 
 def test_non_xsp_entries_are_ignored():
@@ -43,14 +47,76 @@ def test_non_xsp_entries_are_ignored():
             }
         }
     )
-    assert available_playlists(kodi) == ["Anna TV"]
+    assert available_playlists(kodi).matchable == ["Anna TV"]
 
 
 def test_a_failing_listing_yields_nothing_rather_than_raising():
     def boom(params):
         raise RuntimeError("gone")
 
-    assert available_playlists(FakeKodi(rpc_handlers={"Files.GetDirectory": boom})) == []
+    assert available_playlists(FakeKodi(rpc_handlers={"Files.GetDirectory": boom})) == ([], [])
+
+
+def _typed_listing(types):
+    """A listing whose .xsp files declare the given type; None leaves a file unreadable."""
+    files = [{"label": n, "file": f"{PLAYLIST_DIR}/{n}.xsp"} for n in types]
+    contents = {
+        f"{PLAYLIST_DIR}/{n}.xsp": f'<smartplaylist type="{t}"><name>{n}</name></smartplaylist>'
+        for n, t in types.items()
+        if t is not None
+    }
+    return FakeKodi(rpc_handlers={"Files.GetDirectory": lambda params: {"files": files}}, files=contents)
+
+
+def test_only_show_and_film_playlists_are_offered():
+    """The index matches tvshows and movies playlists only. Offering an episodes playlist
+    lets a household pick one that never credits anybody, with nothing on screen saying so."""
+    listing = available_playlists(_typed_listing({"Anna TV": "tvshows", "Films": "movies", "Eps": "episodes"}))
+    assert listing.matchable == ["Anna TV", "Films"]
+    assert listing.unusable == ["Eps"]
+
+
+def test_a_playlist_without_a_type_is_offered_as_the_index_reads_it_as_shows():
+    kodi = _typed_listing({})
+    kodi.rpc_handlers["Files.GetDirectory"] = lambda params: {
+        "files": [{"label": "Old", "file": f"{PLAYLIST_DIR}/Old.xsp"}]
+    }
+    kodi.files[f"{PLAYLIST_DIR}/Old.xsp"] = "<smartplaylist><name>Old</name></smartplaylist>"
+    assert available_playlists(kodi).matchable == ["Old"]
+
+
+def test_an_unreadable_playlist_is_still_offered():
+    """Its type is unknown, not wrong. Hiding it would make a configured playlist look
+    deleted during a read hiccup; the index already reports one it cannot read."""
+    assert available_playlists(_typed_listing({"Anna TV": None})).matchable == ["Anna TV"]
+
+
+def test_a_viewer_with_an_unusable_playlist_is_flagged_but_not_as_missing():
+    labels = viewer_config.viewer_labels(
+        FakeKodi(), [Viewer(name="anna", playlists=("Eps", "Anna TV"))], ["Anna TV"], ["Eps"]
+    )
+    assert f"#{VIEWERS_UNUSABLE_COUNT}" in labels[0]
+    assert f"#{VIEWERS_MISSING_COUNT}" not in labels[0]
+
+
+def test_an_unusable_playlist_is_offered_only_to_the_viewer_who_has_it():
+    kodi = FakeKodi()
+    kodi.multiselect_answer = []
+    viewer_config._edit_playlists(kodi, Viewer(name="bob"), ["Anna TV"], ["Eps"])
+    _heading, options, _preselect, _autoclose = kodi.multiselect_calls[0]
+    assert options == ["Anna TV"]
+
+
+def test_an_unusable_playlist_is_shown_ticked_and_kept_under_its_real_name():
+    """Like a missing one: dropping it unseen would look like the user's own edit."""
+    kodi = FakeKodi()
+    kodi.multiselect_answer = [0, 1]
+    viewer = Viewer(name="anna", playlists=("Eps", "Anna TV"))
+    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"], ["Eps"])
+    _heading, options, preselect, _autoclose = kodi.multiselect_calls[0]
+    assert options[1] == f"Eps (! #{VIEWERS_UNUSABLE})"
+    assert preselect == [0, 1]
+    assert kept == ("Anna TV", "Eps")
 
 
 def test_adding_a_viewer_appends_it():
