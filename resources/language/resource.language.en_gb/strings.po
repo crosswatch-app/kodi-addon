@@ -242,3 +242,11 @@ msgstr ""
 msgctxt "#30078"
 msgid "The certificate of %s was not accepted. HTTPS needs a certificate from a public certificate authority; a self-signed one does not work."
 msgstr ""
+
+msgctxt "#30079"
+msgid "%s unusable"
+msgstr ""
+
+msgctxt "#30080"
+msgid "not a TV show or film playlist"
+msgstr ""

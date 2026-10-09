@@ -171,7 +171,11 @@ The add-on works out who was watching, first match wins:
 
 A show (for an episode) or a film is credited to every viewer whose playlist contains it.
 Playlists are video smart playlists from Kodi's playlists folder, of shows or of films;
-playlists of episodes or music videos are not used.
+playlists of episodes or music videos are not used. The playlist picker only offers playlists
+of shows or films. If a viewer already had a playlist of another type, it stays in their list,
+marked "not a TV show or film playlist" (and the viewer shows "unusable" in the viewer list).
+It never credits anyone and is simply ignored: the viewer's other playlists still count.
+Untick it in the picker to remove it.
 
 - Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
 - Avoid playlists whose membership follows from playback itself, such as "Continue Watching"
@@ -295,6 +299,12 @@ See "The question at the end" above for the cases where it is not asked.
 
 The playlist was renamed or deleted. Edit that viewer's playlists and point it at a playlist
 that still exists.
+
+**A playlist shows as unusable**
+
+The playlist is not a TV show or film playlist, so it can never credit anyone. Edit that
+viewer's playlists and untick it, or change the playlist's type in Kodi to shows or films.
+The viewer's other playlists keep working in the meantime.
 
 ### Logs
 
