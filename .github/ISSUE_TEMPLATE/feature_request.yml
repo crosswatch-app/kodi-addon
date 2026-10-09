@@ -1,5 +1,6 @@
 name: Feature request
 description: Suggest a feature or improvement for the CrossWatch add-on for Kodi
+type: Feature
 labels: ["enhancement"]
 body:
   - type: markdown
