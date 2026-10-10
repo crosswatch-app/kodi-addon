@@ -256,7 +256,7 @@ every show with a remembered answer. The top line has "CROSSWATCH" on the left, 
 the middle and a count on the right that shows how many ("12 shows", or "3 of 12" when a
 search or viewer narrows the list).
 
-![Remembered answers](screenshots/remembered/remembered-split-covered.png)
+![Remembered answers](docs/screenshots/remembered/remembered-split-covered.png)
 
 On the left are the Search box, the Viewer button below it, and then the shows, each with a
 small poster and its title. A warning icon on a show means its answer needs a look: the show
@@ -316,7 +316,7 @@ The viewers are listed by name on the left. A warning icon on a row means someth
 viewer needs fixing: a missing or unusable playlist, a profile Kodi no longer has, or no
 CrossWatch route.
 
-![The Viewers window](screenshots/viewers/viewers-split.png)
+![The Viewers window](docs/screenshots/viewers/viewers-split.png)
 
 The right side shows the highlighted viewer, so moving up and down the list changes it. It
 has the viewer's name, directly below it the CrossWatch line (described below), then
