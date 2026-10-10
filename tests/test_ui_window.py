@@ -633,3 +633,19 @@ def test_ok_on_a_row_of_a_plain_list_still_opens_it():
     dialog.onInit()
     dialog.onClick(LIST_ROWS)
     assert dialog.result.action == "open" and dialog.getProperty("CW.Pick") == ""
+
+
+def test_a_bulk_always_button_acts_with_nothing_shown():
+    request = ListRequest(
+        heading="Viewers", rows=SHOWS, count_one="1 viewer", count_all="%s viewers",
+        bulk_all="Add viewer", bulk_shown="Add viewer", bulk_always=True,
+    )
+    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, ListState(search="zzz"), lambda i: LIST_TEXTS.get(i, ""))
+    rows, edit = FakeRows(), FakeEdit()
+    dialog.set_control(LIST_ROWS, rows)
+    dialog.set_control(LIST_SEARCH, edit)
+    dialog.onInit()
+    assert rows.items == [] and dialog.getProperty("CW.Bulk") == "Add viewer"
+    dialog.onClick(BUTTON_BULK)
+    assert dialog.result.action == "bulk" and dialog.result.keys == ()

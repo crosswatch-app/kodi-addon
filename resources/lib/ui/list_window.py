@@ -52,6 +52,8 @@ class ListRequest:
     # Empty hides the bulk button.
     bulk_all: str = ""
     bulk_shown: str = ""
+    # The bulk button acts on the screen, not on the rows shown, so it stays with none.
+    bulk_always: bool = False
     # A pick list: OK ticks a row in place, Done returns every ticked key.
     pick: bool = False
     ticked: tuple[str, ...] = ()
@@ -87,6 +89,8 @@ def count_text(request: ListRequest, localised: Callable[[int], str], shown: int
 
 def bulk_label(request: ListRequest, shown: int) -> str:
     """The bulk button's label; empty hides the button."""
+    if request.bulk_always:
+        return request.bulk_all
     if not shown:
         return ""
     if shown == len(request.rows):
