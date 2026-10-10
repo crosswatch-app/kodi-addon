@@ -1,15 +1,31 @@
 import time
 from typing import Any
 
-from resources.lib.constants import PROMPT_EVERYONE, WHO_WATCHED_QUESTION, WINDOW_CLOSES_IN, WINDOW_NO, WINDOW_YES
+from resources.lib.constants import (
+    PROMPT_EVERYONE,
+    WHO_WATCHED_QUESTION,
+    WINDOW_CLOSES_IN,
+    WINDOW_COUNT_ALL,
+    WINDOW_COUNT_SOME,
+    WINDOW_NO,
+    WINDOW_VIEWER,
+    WINDOW_YES,
+)
+from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, ListState
 from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
+    BUTTON_BULK,
+    BUTTON_CLOSE,
     BUTTON_DONE,
     BUTTON_NO,
     BUTTON_SKIP,
     BUTTON_YES,
+    LIST_FILTER,
+    LIST_ROWS,
+    LIST_SEARCH,
     LIST_VIEWERS,
     ConfirmDialog,
+    ListDialog,
     WhoWatchedDialog,
 )
 
@@ -266,3 +282,163 @@ def test_confirm_yes_is_true_and_no_or_back_is_not():
     back.onAction(Action(92))
     assert back.result is None
     assert back._thread is None  # no countdown, no playback watch
+
+LIST_TEXTS = {WINDOW_COUNT_ALL: "%s shows", WINDOW_COUNT_SOME: "%s of %s", WINDOW_VIEWER: "Viewer: %s"}
+SHOWS = tuple(
+    ListRow(key=k, title=t, detail=", ".join(n) or "will ask again", thumb=f"image://{k}/", names=n)
+    for k, t, n in [("a", "Alpha", ("anna",)), ("b", "Beta", ("bob",)), ("c", "Gamma", ("anna", "bob")), ("d", "Delta", ())]
+)
+FILTERS = (
+    ListFilter("All", lambda row: True),
+    ListFilter("anna", lambda row: "anna" in row.names),
+    ListFilter("bob", lambda row: "bob" in row.names),
+)
+
+
+class FakeRows(FakeList):
+    def reset(self) -> None:
+        self.items = []
+        self.position = 0
+
+    def size(self) -> int:
+        return len(self.items)
+
+    def selectItem(self, index: int) -> None:
+        self.position = index
+
+
+class FakeEdit:
+    def __init__(self) -> None:
+        self.text = ""
+
+    def getText(self) -> str:
+        return self.text
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+
+START = ListState()
+
+
+def _list(state=START, filters=FILTERS) -> tuple[Any, FakeRows, FakeEdit]:
+    request = ListRequest("Remembered answers", SHOWS, filters, "Forget all", "Forget %s shown")
+    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, state, lambda i: LIST_TEXTS.get(i, ""))
+    rows, edit = FakeRows(), FakeEdit()
+    dialog.set_control(LIST_ROWS, rows)
+    dialog.set_control(LIST_SEARCH, edit)
+    return dialog, rows, edit
+
+
+def _titles(rows: FakeRows) -> list[str]:
+    return [item.getLabel() for item in rows.items]
+
+
+def test_the_list_opens_with_every_row_and_focus_on_the_list():
+    dialog, rows, _ = _list()
+    dialog.onInit()
+    assert _titles(rows) == ["Alpha", "Beta", "Gamma", "Delta"]
+    assert rows.items[0].getProperty("detail") == "anna" and rows.items[0].getArt("thumb") == "image://a/"
+    assert dialog.getProperty("CW.Count") == "4 shows"
+    assert dialog.getProperty("CW.Bulk") == "Forget all"
+    assert dialog.getProperty("CW.Filter") == "Viewer: All"
+    assert dialog.focused == LIST_ROWS
+
+
+def test_typing_in_the_search_refilters_after_each_key():
+    dialog, rows, edit = _list()
+    dialog.onInit()
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "a"
+    dialog.onAction(Action(0))
+    assert _titles(rows) == ["Alpha", "Beta", "Gamma", "Delta"]  # every title or name has an "a"
+    edit.text = "alp"
+    dialog.onAction(Action(0))
+    assert _titles(rows) == ["Alpha"]
+    assert dialog.getProperty("CW.Count") == "1 of 4"
+
+
+def test_search_and_filter_combine_and_the_bulk_label_follows():
+    dialog, rows, edit = _list()
+    dialog.onInit()
+    dialog.onClick(LIST_FILTER)  # All -> anna
+    assert _titles(rows) == ["Alpha", "Gamma"]
+    assert dialog.getProperty("CW.Filter") == "Viewer: anna"
+    assert dialog.getProperty("CW.Bulk") == "Forget 2 shown"
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "gam"
+    dialog.onAction(Action(0))
+    assert _titles(rows) == ["Gamma"]
+    dialog.onClick(LIST_FILTER)  # anna -> bob, search kept
+    assert _titles(rows) == ["Gamma"]
+    dialog.onClick(LIST_FILTER)  # bob -> All
+    assert dialog.getProperty("CW.Filter") == "Viewer: All"
+
+
+def test_nothing_matching_shows_the_empty_line():
+    dialog, rows, edit = _list()
+    dialog.onInit()
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "zzz"
+    dialog.onAction(Action(0))
+    assert rows.items == []
+    assert dialog.getProperty("CW.Empty") == "true"
+    assert dialog.getProperty("CW.Count") == "0 of 4"
+
+
+def test_ok_on_a_row_returns_it_with_the_state():
+    dialog, rows, _ = _list()
+    dialog.onInit()
+    dialog.onClick(LIST_FILTER)  # anna: Alpha, Gamma
+    rows.position = 1
+    dialog.onClick(LIST_ROWS)
+    assert dialog.result.action == "open" and dialog.result.key == "c"
+    assert dialog.result.state == ListState(search="", filter_index=1, position=1)
+
+
+def test_the_bulk_button_returns_the_keys_shown():
+    dialog, _, _ = _list()
+    dialog.onInit()
+    dialog.onClick(LIST_FILTER)
+    dialog.onClick(BUTTON_BULK)
+    assert dialog.result.action == "bulk" and dialog.result.keys == ("a", "c")
+
+
+def test_close_returns_close_and_back_is_a_cancel():
+    dialog, _, _ = _list()
+    dialog.onInit()
+    dialog.onClick(BUTTON_CLOSE)
+    assert dialog.result.action == "close"
+    back, _, _ = _list()
+    back.onInit()
+    back.onAction(Action(10))
+    assert back.result is None and back.close_reason == "back"
+
+
+def test_a_kept_state_reopens_where_the_household_was():
+    dialog, rows, edit = _list(ListState(search="a", filter_index=2, position=1))
+    dialog.onInit()
+    assert edit.text == "a"
+    assert _titles(rows) == ["Beta", "Gamma"]
+    assert rows.position == 1
+
+
+def test_a_kept_position_past_the_end_selects_the_last_row():
+    dialog, rows, _ = _list(ListState(position=9))
+    dialog.onInit()
+    assert rows.position == 3
+
+
+def test_a_filter_index_out_of_range_falls_back_to_all():
+    dialog, rows, _ = _list(ListState(filter_index=7))
+    dialog.onInit()
+    assert dialog.getProperty("CW.Filter") == "Viewer: All"
+
+
+def test_without_filters_the_viewer_button_is_hidden():
+    dialog, rows, _ = _list(filters=())
+    dialog.onInit()
+    assert dialog.getProperty("CW.Filter") == ""
+    dialog.onClick(LIST_FILTER)
+    assert _titles(rows) == ["Alpha", "Beta", "Gamma", "Delta"]

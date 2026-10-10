@@ -39,6 +39,8 @@ class FakeKodi:
         self.who_watched_calls: list[Any] = []
         self.confirm_window_answer = confirm_window_answer
         self.confirm_window_calls: list[tuple[str, str]] = []
+        self.list_window_results: list[Any] = []
+        self.list_window_calls: list[tuple[Any, Any]] = []
         self.select_answer = select_answer
         self.input_answer = input_answer
         # Consumed in order, for a flow that asks more than one question.
@@ -120,6 +122,14 @@ class FakeKodi:
     def confirm_window(self, heading: str, message: str) -> bool:
         self.confirm_window_calls.append((heading, message))
         return self.confirm_window_answer
+
+    def list_window(self, request: Any, state: Any) -> Any:
+        from resources.lib.ui.list_window import ListResult
+
+        self.list_window_calls.append((request, state))
+        if self.list_window_results:
+            return self.list_window_results.pop(0)
+        return ListResult("close", state)
 
     def select(self, heading: str, options: list[str]) -> int:
         return self.select_answer

@@ -130,6 +130,18 @@ def pick(url: str, kind: str, title: str | None, folder: str) -> dict:
     return {"title": item["title"], "year": item.get("year") or None, "poster": item["art"]["poster"]}
 
 
+def pick_many(url: str, kind: str, folder: str, count: int) -> list[dict]:
+    method, key = LIBRARY[kind]
+    result = rpc(url, method, {"properties": ["title", "year", "art", "file"]})
+    items = (result.get(key) or []) if isinstance(result, dict) else []
+    usable = [
+        i for i in items
+        if folder in str(i.get("file") or "") and str(i.get("title") or "")[:1].isalnum() and (i.get("art") or {}).get("poster")
+    ]
+    chosen = sorted(random.sample(usable, min(count, len(usable))), key=lambda i: str(i["title"]).casefold())
+    return [{"title": i["title"], "year": i.get("year") or None, "poster": i["art"]["poster"]} for i in chosen]
+
+
 def toast(url: str) -> bool:
     condition = "Window.IsVisible(notification)"
     result = rpc(url, "XBMC.GetInfoBooleans", {"booleans": [condition]})
@@ -191,6 +203,8 @@ def main() -> None:
         "tvshow": pick(args.rpc, "tvshow", args.show, args.show_folder),
         "movie": pick(args.rpc, "movie", args.movie, args.movie_folder),
     }
+    # A list's rows: a handful of shows, sorted as the screens sort them.
+    library["shows"] = pick_many(args.rpc, "tvshow", args.show_folder, 8)
     (KODI_DATA / "addons" / HELPER_ID / "library.json").write_text(json.dumps(library), encoding="utf-8")
     print(f"show: {library['tvshow']['title']}, film: {library['movie']['title']}")
     OUT.mkdir(exist_ok=True)

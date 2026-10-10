@@ -2,6 +2,7 @@ import pytest
 
 from resources.lib.kodi import KodiRpcError, KodiRuntime
 from resources.lib.ui import window as window_mod
+from resources.lib.ui.list_window import ListRequest, ListResult, ListState
 from resources.lib.ui.who_watched import WhoWatchedRequest
 
 
@@ -186,3 +187,25 @@ def test_confirm_window_back_and_failure_are_no(runtime, monkeypatch):
 
     monkeypatch.setattr(window_mod, "ConfirmDialog", broken)
     assert runtime.confirm_window("h", "m") is False
+
+LIST_REQUEST = ListRequest("h", (), (), "Forget all", "Forget %s shown")
+
+
+def test_list_window_returns_what_the_window_returned(runtime, monkeypatch):
+    class Dialog(window_mod.ListDialog):
+        def doModal(self) -> None:
+            self.finish("open", ListResult("open", ListState(search="x"), key="k"))
+
+    monkeypatch.setattr(window_mod, "ListDialog", Dialog)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.list_window(LIST_REQUEST, ListState()) == ListResult("open", ListState(search="x"), key="k")
+
+
+def test_list_window_back_or_failure_is_close_with_the_state_kept(runtime, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("no skin file")
+
+    monkeypatch.setattr(window_mod, "ListDialog", broken)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    state = ListState(search="a")
+    assert runtime.list_window(LIST_REQUEST, state) == ListResult("close", state)

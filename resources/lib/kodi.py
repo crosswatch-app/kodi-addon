@@ -19,6 +19,7 @@ from resources.lib.constants import ADDON_ID
 from resources.lib.log import get_logger
 
 if TYPE_CHECKING:
+    from resources.lib.ui.list_window import ListRequest, ListResult, ListState
     from resources.lib.ui.who_watched import WhoWatchedRequest
 
 _log = get_logger("ui")
@@ -47,6 +48,7 @@ class KodiApi(Protocol):
     ) -> list[int] | None: ...
     def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
     def confirm_window(self, heading: str, message: str) -> bool: ...
+    def list_window(self, request: ListRequest, state: ListState) -> ListResult: ...
     def select(self, heading: str, options: list[str]) -> int: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
@@ -220,6 +222,22 @@ class KodiRuntime:
 
         dialog = self._modal("confirm", make)
         return dialog is not None and dialog.result is True
+
+    def list_window(self, request: ListRequest, state: ListState) -> ListResult:
+        """What the household did; Back and a failed window both close, keeping the state."""
+        from resources.lib.ui.list_window import ListResult
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
+            dialog.prepare(request, state, self.localised)
+            return dialog
+
+        dialog = self._modal("list", make)
+        if dialog is None or dialog.result is None:
+            return ListResult("close", state)
+        return dialog.result
 
     def select(self, heading: str, options: list[str]) -> int:
         choices: list[Any] = list(options)  # widened for the same reason as multiselect

@@ -87,3 +87,23 @@ def test_confirm_starts_on_no_and_labels_come_from_strings_po():
     assert yes.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_YES}]"
     assert no.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_NO}]"
     CONFIRM.read_text(encoding="ascii")
+
+
+LIST = SKIN / "1080i" / "crosswatch-list.xml"
+
+
+def test_the_list_window_navigates_between_search_rows_and_buttons():
+    root = ET.parse(LIST).getroot()
+
+    def control(control_id: str) -> ET.Element:
+        found = root.find(f".//control[@id='{control_id}']")
+        assert found is not None, control_id
+        return found
+
+    assert root.findtext("defaultcontrol") == "100"
+    assert control("100").findtext("onup") == "2" and control("100").findtext("ondown") == "20"
+    assert control("2").get("type") == "edit" and control("2").findtext("ondown") == "100"
+    assert control("2").findtext("onright") == "3" and control("3").findtext("onleft") == "2"
+    assert control("20").findtext("onright") == "21" and control("21").findtext("onleft") == "20"
+    assert control("100").findtext("pagecontrol") == "101"
+    LIST.read_text(encoding="ascii")

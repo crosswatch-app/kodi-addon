@@ -90,6 +90,7 @@ def test_colours_come_from_the_palette(window):
     text = window.read_text(encoding="ascii")
     found = re.findall(r"<(?:textcolor|focusedcolor|disabledcolor|colordiffuse)>([0-9A-Fa-f]{8})<", text)
     found += re.findall(r'colordiffuse="([0-9A-Fa-f]{8})"', text)
+    found += re.findall(r"\[COLOR ([0-9A-Fa-f]{8})\]", text)
     assert found
     for colour in found:
         assert colour.upper() in PALETTE.values(), colour

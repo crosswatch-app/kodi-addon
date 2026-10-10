@@ -51,6 +51,36 @@ def _who_watched(scene: dict, path: str) -> None:
         dialog.stop()
 
 
+DEMO_WHO = [("Anna", "Ben"), ("Chloe",), (), ("Ben",), ("Anna",), ("Anna", "Chloe"), ("Ben",), ()]
+DEMO_TAG = ["", "", "", "covered by playlist", "", "not in library", "", ""]
+
+
+def _list(scene: dict, path: str) -> None:
+    from resources.lib.ui import list_window as lw
+
+    with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
+        shows = json.load(handle)["shows"]
+    rows = tuple(
+        lw.ListRow(
+            key=str(i), title=show["title"], detail=", ".join(DEMO_WHO[i % 8]) or "will ask again",
+            tag=DEMO_TAG[i % 8], thumb=show["poster"], names=DEMO_WHO[i % 8],
+        )
+        for i, show in enumerate(shows)
+    )
+    filters = (
+        lw.ListFilter("All", lambda row: True),
+        *(lw.ListFilter(n, lambda row, n=n: n in row.names) for n in ("Anna", "Ben", "Chloe")),
+        lw.ListFilter("will ask again", lambda row: not row.names),
+    )
+    request = lw.ListRequest("Remembered answers", rows, filters, "Forget all", "Forget %s shown")
+    dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
+    dialog.prepare(request, lw.ListState(search=scene["search"], filter_index=scene["filter"]), TARGET.getLocalizedString)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
 def _confirm(scene: dict, path: str) -> None:
     dialog = window.ConfirmDialog(window.CONFIRM_XML, path, "Default", "1080i")
     dialog.prepare(scene["heading"], scene["message"], TARGET.getLocalizedString)
@@ -60,7 +90,7 @@ def _confirm(scene: dict, path: str) -> None:
         dialog.stop()
 
 
-WINDOWS = {window.WHO_WATCHED_XML: _who_watched, window.CONFIRM_XML: _confirm}
+WINDOWS = {window.WHO_WATCHED_XML: _who_watched, window.LIST_XML: _list, window.CONFIRM_XML: _confirm}
 
 
 def main() -> None:
