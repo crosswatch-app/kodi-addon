@@ -192,3 +192,10 @@ def test_a_ping_counts_no_skipped_pkc_playbacks_by_default():
 def test_completes_watch_never_reaches_the_wire():
     """It steers delivery inside the addon; the contract has no such field."""
     assert build_payload(_event(completes_watch=True), DEVICE) == build_payload(_event(), DEVICE)
+
+
+def test_viewers_without_a_mechanism_send_no_viewers_source():
+    """The single-viewer household: a name, but no playlist, profile or prompt decided it."""
+    body = build_payload(_event(viewers=("anna",), viewers_source=None), DEVICE)
+    assert body["viewers"] == ["anna"]
+    assert "viewers_source" not in body

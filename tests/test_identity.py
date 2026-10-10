@@ -65,13 +65,46 @@ def test_an_unmatched_profile_leaves_identity_unresolved():
 
 
 def test_an_empty_profile_label_leaves_identity_unresolved():
-    assert resolve(PlaylistIndex(), [ANNA], _episode(), "") is UNRESOLVED
+    assert resolve(PlaylistIndex(), [ANNA, BOB], _episode(), "") is UNRESOLVED
 
 
 def test_an_episode_with_no_parent_show_skips_the_playlist_step():
     index = PlaylistIndex({("tvshow", 42): ("anna",)})
-    assert resolve(index, [ANNA], _episode(show_library_id=None), "Guest") is UNRESOLVED
+    assert resolve(index, [ANNA, BOB], _episode(show_library_id=None), "Guest") is UNRESOLVED
 
 
 def test_no_index_yet_still_falls_through_to_profile():
     assert resolve(None, [ANNA], _episode(), "Anna") == Identity(("anna",), "profile")
+
+
+def test_the_only_viewer_is_credited_when_nothing_else_applies():
+    """One person in the household: whatever plays is theirs. No mechanism ran, so no
+    viewers_source is claimed for it."""
+    assert resolve(None, [Viewer(name="anna")], _episode(), "Master user") == Identity(("anna",), None)
+
+
+def test_the_only_viewer_is_credited_for_a_film_too():
+    assert resolve(None, [Viewer(name="anna")], _movie(), "") == Identity(("anna",), None)
+
+
+def test_a_single_viewers_playlist_still_names_the_mechanism():
+    index = PlaylistIndex({("tvshow", 42): ("anna",)})
+    assert resolve(index, [ANNA], _episode(), "") == Identity(("anna",), "playlist")
+
+
+def test_two_viewers_with_nothing_matching_stay_unresolved():
+    assert resolve(None, [ANNA, BOB], _episode(), "Master user") == UNRESOLVED
+
+
+def test_no_viewers_configured_stays_unresolved():
+    assert resolve(None, [], _episode(), "Master user") == UNRESOLVED
+
+
+def test_the_single_viewer_case_is_logged_as_its_own_source():
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+    resolve(None, [Viewer(name="anna")], _episode(), "")
+    line = next(m for m in captured if "identity.resolved" in m)
+    assert "source=single" in line and "anna" not in line
