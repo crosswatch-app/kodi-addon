@@ -238,5 +238,93 @@
     "search": "zzzz",
     "keys": [],
     "group": "remembered"
+  },
+  "rate-episode": {
+    "window": "crosswatch-rate.xml",
+    "autoclose_seconds": 60,
+    "keys": [],
+    "group": "rating",
+    "library": "tvshow",
+    "subtitle": "Season 1, episode 5",
+    "viewer": "Anna",
+    "counter": [
+      1,
+      1
+    ]
+  },
+  "rate-score-focused": {
+    "window": "crosswatch-rate.xml",
+    "autoclose_seconds": 60,
+    "keys": [
+      "Up",
+      "Right",
+      "Right",
+      "Right",
+      "Right",
+      "Right",
+      "Right",
+      "Right"
+    ],
+    "group": "rating",
+    "library": "tvshow",
+    "subtitle": "Season 1, episode 5",
+    "viewer": "Anna",
+    "counter": [
+      1,
+      1
+    ]
+  },
+  "rate-film": {
+    "window": "crosswatch-rate.xml",
+    "autoclose_seconds": 60,
+    "keys": [],
+    "group": "rating",
+    "library": "movie",
+    "subtitle": "{year}",
+    "viewer": "Ben",
+    "counter": [
+      1,
+      1
+    ]
+  },
+  "rate-no-poster": {
+    "window": "crosswatch-rate.xml",
+    "autoclose_seconds": 60,
+    "keys": [],
+    "group": "rating",
+    "title": "Untitled Home Video",
+    "subtitle": "",
+    "poster": "",
+    "viewer": null,
+    "counter": [
+      1,
+      1
+    ]
+  },
+  "rate-shared": {
+    "window": "crosswatch-rate.xml",
+    "autoclose_seconds": 60,
+    "keys": [],
+    "group": "rating",
+    "library": "tvshow",
+    "subtitle": "Season 1, episode 5",
+    "viewer": null,
+    "counter": [
+      1,
+      1
+    ]
+  },
+  "rate-counter": {
+    "window": "crosswatch-rate.xml",
+    "autoclose_seconds": 60,
+    "keys": [],
+    "group": "rating",
+    "library": "tvshow",
+    "subtitle": "Season 1, episode 5",
+    "viewer": "Ben",
+    "counter": [
+      2,
+      3
+    ]
   }
 }

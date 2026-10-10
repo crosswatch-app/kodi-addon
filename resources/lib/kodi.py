@@ -20,6 +20,7 @@ from resources.lib.log import get_logger
 
 if TYPE_CHECKING:
     from resources.lib.ui.list_window import ListRequest, ListResult, ListState
+    from resources.lib.ui.rating import RateRequest
     from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
     from resources.lib.ui.who_watched import WhoWatchedRequest
 
@@ -46,6 +47,8 @@ class KodiApi(Protocol):
     def topmost_dialog_id(self) -> int: ...
     def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
     def confirm_window(self, heading: str, message: str) -> bool: ...
+    def rate(self, request: RateRequest) -> int | None: ...
+    def set_user_rating(self, media_type: str, library_id: int, value: int) -> bool: ...
     def list_window(self, request: ListRequest, state: ListState) -> ListResult: ...
     def remembered_window(self, request: ListRequest, state: ListState) -> ListResult: ...
     def viewers_window(self, request: ViewersRequest, key: str) -> ViewersResult: ...
@@ -197,6 +200,39 @@ class KodiRuntime:
 
         dialog = self._modal("who_watched", make)
         return dialog.result if dialog is not None else None
+
+    def rate(self, request: RateRequest) -> int | None:
+        """1 to 10 a score, 0 Remove, None for Skip, Back, the countdown or playback starting,
+        and RATE_FAILED for a window that could not be shown."""
+        from resources.lib.ui.rating import RATE_FAILED
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.RatingDialog(window.RATING_XML, path, "Default", "1080i")
+            dialog.prepare(request, self.localised, self.is_playing, self._xbmc.Monitor().waitForAbort)
+            return dialog
+
+        dialog = self._modal("rating", make)
+        if dialog is None or dialog.close_reason == "error":
+            return RATE_FAILED
+        return dialog.result
+
+    def set_user_rating(self, media_type: str, library_id: int, value: int) -> bool:
+        """Kodi's own user rating for a library item, which every profile on a shared library sees."""
+        method, key = (
+            ("VideoLibrary.SetEpisodeDetails", "episodeid")
+            if media_type == "episode"
+            else ("VideoLibrary.SetMovieDetails", "movieid")
+        )
+        try:
+            self.jsonrpc(method, {key: library_id, "userrating": value})
+        except Exception as exc:
+            _log.warning(
+                "rating.library_write_failed", media_type=media_type, library_id=library_id, error_type=type(exc).__name__
+            )
+            return False
+        return True
 
     def confirm_window(self, heading: str, message: str) -> bool:
         """True only for Yes; No, Back and a failed window all leave things as they are."""

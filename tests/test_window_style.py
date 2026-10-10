@@ -54,6 +54,7 @@ ROLE_FONTS = {
     "Window.Property(CW.Line1)": "font13",
     "Window.Property(CW.Line2)": "font13",
     "Window.Property(CW.Count)": "font13",
+    "Window.Property(CW.Counter)": "font13",
     "Window.Property(CW.Footer)": "font12",
     "ListItem.Label": "font30_title",
     "ListItem.Property(detail)": "font13",

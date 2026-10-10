@@ -3,6 +3,7 @@ import pytest
 from resources.lib.kodi import KodiRpcError, KodiRuntime
 from resources.lib.ui import window as window_mod
 from resources.lib.ui.list_window import ListRequest, ListResult, ListState
+from resources.lib.ui.rating import RATE_FAILED, RateRequest
 from resources.lib.ui.who_watched import WhoWatchedRequest
 
 
@@ -266,3 +267,60 @@ def test_remembered_window_back_or_failure_closes_keeping_the_state(runtime, mon
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
     state = ListState(search="x", key="a")
     assert runtime.remembered_window(request, state) == ListResult("close", state)
+
+
+RATE_REQUEST = RateRequest(title="t", subtitle="", poster="", question="How was it?", autoclose_seconds=60)
+
+
+def _rating_window(monkeypatch, behaviour):
+    class Dialog(window_mod.RatingDialog):
+        def doModal(self) -> None:
+            behaviour(self)
+
+    monkeypatch.setattr(window_mod, "RatingDialog", Dialog)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+
+
+def test_rate_returns_the_score_given(runtime, monkeypatch):
+    _rating_window(monkeypatch, lambda dialog: dialog.finish("score", 8))
+    assert runtime.rate(RATE_REQUEST) == 8
+
+
+def test_rate_returns_zero_for_remove_and_none_for_skip(runtime, monkeypatch):
+    _rating_window(monkeypatch, lambda dialog: dialog.finish("remove", 0))
+    assert runtime.rate(RATE_REQUEST) == 0
+    _rating_window(monkeypatch, lambda dialog: dialog.finish("skip"))
+    assert runtime.rate(RATE_REQUEST) is None
+
+
+def test_a_rating_window_that_cannot_be_built_is_a_failure_not_a_skip(runtime, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("Unable to load skin file")
+
+    monkeypatch.setattr(window_mod, "RatingDialog", broken)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.rate(RATE_REQUEST) == RATE_FAILED
+
+
+def test_a_rating_window_whose_fill_failed_is_a_failure(runtime, monkeypatch):
+    _rating_window(monkeypatch, lambda dialog: dialog.finish("error"))
+    assert runtime.rate(RATE_REQUEST) == RATE_FAILED
+
+
+@pytest.mark.parametrize(
+    ("media_type", "method", "key"),
+    [("movie", "VideoLibrary.SetMovieDetails", "movieid"), ("episode", "VideoLibrary.SetEpisodeDetails", "episodeid")],
+)
+def test_set_user_rating_writes_the_library(runtime, monkeypatch, media_type, method, key):
+    calls = []
+    monkeypatch.setattr(runtime, "jsonrpc", lambda m, p=None: calls.append((m, p)) or {"result": "OK"})
+    assert runtime.set_user_rating(media_type, 12, 8) is True
+    assert calls == [(method, {key: 12, "userrating": 8})]
+
+
+def test_a_failed_library_write_is_reported_not_raised(runtime, monkeypatch):
+    def fail(method, params=None):
+        raise KodiRpcError(method, {"code": -32602})
+
+    monkeypatch.setattr(runtime, "jsonrpc", fail)
+    assert runtime.set_user_rating("movie", 12, 8) is False

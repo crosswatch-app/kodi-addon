@@ -418,3 +418,55 @@ msgstr ""
 msgctxt "#30138"
 msgid "Write the rating to Kodi's library"
 msgstr ""
+
+msgctxt "#30139"
+msgid "%s, how was it?"
+msgstr ""
+
+msgctxt "#30140"
+msgid "How was it?"
+msgstr ""
+
+msgctxt "#30141"
+msgid "Remove rating"
+msgstr ""
+
+msgctxt "#30143"
+msgid "Awful"
+msgstr ""
+
+msgctxt "#30144"
+msgid "Very bad"
+msgstr ""
+
+msgctxt "#30145"
+msgid "Bad"
+msgstr ""
+
+msgctxt "#30146"
+msgid "Poor"
+msgstr ""
+
+msgctxt "#30147"
+msgid "Average"
+msgstr ""
+
+msgctxt "#30148"
+msgid "Fair"
+msgstr ""
+
+msgctxt "#30149"
+msgid "Good"
+msgstr ""
+
+msgctxt "#30150"
+msgid "Great"
+msgstr ""
+
+msgctxt "#30151"
+msgid "Superb"
+msgstr ""
+
+msgctxt "#30152"
+msgid "Masterpiece"
+msgstr ""

@@ -44,6 +44,9 @@ DEFAULT_QUEUE_SIZE = 100
 OUTBOX_MAX_ENTRIES = 200
 OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 PROMPT_AUTOCLOSE_SECONDS = 120
+# Shorter than who-watched: at the end of a binge several follow each other, and Skip is the
+# answer an empty room gives.
+RATING_AUTOCLOSE_SECONDS = 60
 # A Link arrives from CrossWatch, maybe while nobody is watching the TV; unanswered is No.
 LINK_AUTOCLOSE_SECONDS = 60
 PAIR_TIMEOUT_SECONDS = 10.0
@@ -136,3 +139,8 @@ PAIR_CERTIFICATE = 30078
 
 LOG_MAX_BYTES = 500 * 1024
 LOG_BACKUP_COUNT = 3
+RATING_QUESTION_NAMED = 30139
+RATING_QUESTION_HOUSEHOLD = 30140
+RATING_REMOVE = 30141
+# Score 1 first; the window shows the word of the score that has focus.
+RATING_WORDS = (30143, 30144, 30145, 30146, 30147, 30148, 30149, 30150, 30151, 30152)
