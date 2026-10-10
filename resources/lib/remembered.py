@@ -52,7 +52,7 @@ _log = logmod.get_logger("config")
 
 # Text slots beside the poster. The XML has one set of controls per slot;
 # tests/test_skin_xml.py checks the two agree.
-REMEMBERED_SLOTS = 10
+REMEMBERED_SLOTS = 15
 
 # (viewer, playlist) pairs whose playlist holds a show, by answer key.
 Covers = dict[str, tuple[tuple[str, str], ...]]

@@ -434,10 +434,13 @@ def test_a_covered_show_names_each_viewer_and_playlist(memory):
 
 def test_many_covering_playlists_are_cut_with_and_n_more(memory):
     memory.remember("show:tvdb:100", ("bob",))
-    covers = {"show:tvdb:100": tuple(("anna", f"List {n}") for n in range(12))}
+    pairs = remembered.REMEMBERED_SLOTS + 5
+    covers = {"show:tvdb:100": tuple(("anna", f"List {n}") for n in range(pairs))}
     row = _lines(memory, Worded(), covers=covers)["show:tvdb:100"]
     props = slot_properties(row.lines, "and %s more", remembered.REMEMBERED_SLOTS)
-    assert props[f"slot{remembered.REMEMBERED_SLOTS}"] == "and 7 more"  # year, Answer, bob, Covered by, 5 of 12
+    # The year, Answer, bob and Covered by take four slots and the cut line one more.
+    shown = remembered.REMEMBERED_SLOTS - 5
+    assert props[f"slot{remembered.REMEMBERED_SLOTS}"] == f"and {pairs - shown} more"
 
 
 def test_a_show_gone_from_the_library_says_so_and_warns(memory):

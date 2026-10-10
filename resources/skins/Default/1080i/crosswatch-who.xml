@@ -184,6 +184,7 @@
                 <control type="button" id="20">
                     <width>170</width><height>72</height>
                     <align>center</align><aligny>center</aligny>
+                    <textoffsetx>10</textoffsetx>
                     <font>font30_title</font>
                     <textcolor>FFF1F3F5</textcolor>
                     <focusedcolor>FFF1F3F5</focusedcolor>
@@ -196,6 +197,7 @@
                 <control type="button" id="21">
                     <width>170</width><height>72</height>
                     <align>center</align><aligny>center</aligny>
+                    <textoffsetx>10</textoffsetx>
                     <font>font30_title</font>
                     <textcolor>FFF1F3F5</textcolor>
                     <focusedcolor>FFF1F3F5</focusedcolor>

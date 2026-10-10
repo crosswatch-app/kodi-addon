@@ -30,28 +30,30 @@
                 <texture>crosswatch/gradient.png</texture>
             </control>
             <control type="label">
-                <left>50</left><top>40</top><width>1140</width><height>34</height>
+                <left>50</left><top>40</top><width>200</width><height>50</height>
                 <aligny>center</aligny>
                 <font>font25_title</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>CROSSWATCH</label>
             </control>
+            <!-- Centred on the panel, between the brand and the count; a long heading is cut at
+                 this width rather than running into either. -->
             <control type="label">
-                <left>50</left><top>80</top><width>900</width><height>50</height>
-                <aligny>center</aligny>
+                <left>270</left><top>40</top><width>700</width><height>50</height>
+                <align>center</align><aligny>center</aligny>
                 <font>font32_title</font>
                 <textcolor>FFF1F3F5</textcolor>
                 <label>$INFO[Window.Property(CW.Heading)]</label>
             </control>
             <control type="label">
-                <left>1022</left><top>80</top><width>168</width><height>50</height>
+                <left>990</left><top>40</top><width>200</width><height>50</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Window.Property(CW.Count)]</label>
             </control>
             <control type="label">
-                <left>50</left><top>146</top><width>440</width><height>66</height>
+                <left>50</left><top>110</top><width>440</width><height>66</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FF9299A6</textcolor>
@@ -59,7 +61,7 @@
                 <visible>String.IsEqual(Window.Property(CW.Empty),true)</visible>
             </control>
             <control type="list" id="100">
-                <left>50</left><top>146</top><width>440</width><height>532</height>
+                <left>50</left><top>110</top><width>440</width><height>608</height>
                 <orientation>vertical</orientation>
                 <scrolltime>0</scrolltime>
                 <pagecontrol>101</pagecontrol>
@@ -111,7 +113,7 @@
                 </focusedlayout>
             </control>
             <control type="scrollbar" id="101">
-                <left>500</left><top>146</top><width>6</width><height>522</height>
+                <left>500</left><top>110</top><width>6</width><height>598</height>
                 <orientation>vertical</orientation>
                 <showonepage>false</showonepage>
                 <texturesliderbackground colordiffuse="FF1C222C">crosswatch/white.png</texturesliderbackground>
@@ -123,7 +125,7 @@
             </control>
             <!-- The panel reads the highlighted row's properties, so Kodi redraws it as focus moves. -->
             <control type="label">
-                <left>530</left><top>146</top><width>660</width><height>50</height>
+                <left>530</left><top>110</top><width>660</width><height>50</height>
                 <aligny>center</aligny>
                 <font>font32_title</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -133,19 +135,19 @@
                  so a wrapping line would run into the next slot. Python fits the lines to the slots.
                  A line takes the full width unless it has a tag to make room for. -->
             <control type="label">
-                <left>530</left><top>206</top><width>660</width><height>36</height>
+                <left>530</left><top>210</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot1_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>208</top><width>32</width><height>32</height>
+                <left>530</left><top>212</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot1_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>206</top><width>620</width><height>36</height>
+                <left>570</left><top>210</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -153,7 +155,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot1_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>206</top><width>340</width><height>36</height>
+                <left>570</left><top>210</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -161,26 +163,26 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot1_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>206</top><width>270</width><height>36</height>
+                <left>920</left><top>210</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot1_tag)]</label>
             </control>
             <control type="label">
-                <left>530</left><top>242</top><width>660</width><height>36</height>
+                <left>530</left><top>246</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot2_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>244</top><width>32</width><height>32</height>
+                <left>530</left><top>248</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot2_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>242</top><width>620</width><height>36</height>
+                <left>570</left><top>246</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -188,7 +190,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot2_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>242</top><width>340</width><height>36</height>
+                <left>570</left><top>246</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -196,26 +198,26 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot2_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>242</top><width>270</width><height>36</height>
+                <left>920</left><top>246</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot2_tag)]</label>
             </control>
             <control type="label">
-                <left>530</left><top>278</top><width>660</width><height>36</height>
+                <left>530</left><top>282</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot3_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>280</top><width>32</width><height>32</height>
+                <left>530</left><top>284</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot3_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>278</top><width>620</width><height>36</height>
+                <left>570</left><top>282</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -223,7 +225,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot3_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>278</top><width>340</width><height>36</height>
+                <left>570</left><top>282</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -231,26 +233,26 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot3_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>278</top><width>270</width><height>36</height>
+                <left>920</left><top>282</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot3_tag)]</label>
             </control>
             <control type="label">
-                <left>530</left><top>314</top><width>660</width><height>36</height>
+                <left>530</left><top>318</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot4_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>316</top><width>32</width><height>32</height>
+                <left>530</left><top>320</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot4_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>314</top><width>620</width><height>36</height>
+                <left>570</left><top>318</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -258,7 +260,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot4_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>314</top><width>340</width><height>36</height>
+                <left>570</left><top>318</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -266,26 +268,26 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot4_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>314</top><width>270</width><height>36</height>
+                <left>920</left><top>318</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot4_tag)]</label>
             </control>
             <control type="label">
-                <left>530</left><top>350</top><width>660</width><height>36</height>
+                <left>530</left><top>354</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot5_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>352</top><width>32</width><height>32</height>
+                <left>530</left><top>356</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot5_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>350</top><width>620</width><height>36</height>
+                <left>570</left><top>354</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -293,7 +295,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot5_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>350</top><width>340</width><height>36</height>
+                <left>570</left><top>354</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -301,26 +303,26 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot5_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>350</top><width>270</width><height>36</height>
+                <left>920</left><top>354</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot5_tag)]</label>
             </control>
             <control type="label">
-                <left>530</left><top>386</top><width>660</width><height>36</height>
+                <left>530</left><top>390</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot6_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>388</top><width>32</width><height>32</height>
+                <left>530</left><top>392</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot6_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>386</top><width>620</width><height>36</height>
+                <left>570</left><top>390</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -328,7 +330,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot6_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>386</top><width>340</width><height>36</height>
+                <left>570</left><top>390</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -336,26 +338,26 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot6_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>386</top><width>270</width><height>36</height>
+                <left>920</left><top>390</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot6_tag)]</label>
             </control>
             <control type="label">
-                <left>530</left><top>422</top><width>660</width><height>36</height>
+                <left>530</left><top>426</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot7_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>424</top><width>32</width><height>32</height>
+                <left>530</left><top>428</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot7_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>422</top><width>620</width><height>36</height>
+                <left>570</left><top>426</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -363,7 +365,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot7_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>422</top><width>340</width><height>36</height>
+                <left>570</left><top>426</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -371,26 +373,26 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot7_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>422</top><width>270</width><height>36</height>
+                <left>920</left><top>426</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot7_tag)]</label>
             </control>
             <control type="label">
-                <left>530</left><top>458</top><width>660</width><height>36</height>
+                <left>530</left><top>462</top><width>660</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot8_head)]</label>
             </control>
             <control type="image">
-                <left>530</left><top>460</top><width>32</width><height>32</height>
+                <left>530</left><top>464</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(slot8_warn),true)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>458</top><width>620</width><height>36</height>
+                <left>570</left><top>462</top><width>620</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -398,7 +400,7 @@
                 <visible>String.IsEmpty(Container(100).ListItem.Property(slot8_tag))</visible>
             </control>
             <control type="label">
-                <left>570</left><top>458</top><width>340</width><height>36</height>
+                <left>570</left><top>462</top><width>340</width><height>36</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
@@ -406,93 +408,209 @@
                 <visible>!String.IsEmpty(Container(100).ListItem.Property(slot8_tag))</visible>
             </control>
             <control type="label">
-                <left>920</left><top>458</top><width>270</width><height>36</height>
+                <left>920</left><top>462</top><width>270</width><height>36</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(slot8_tag)]</label>
             </control>
+            <control type="label">
+                <left>530</left><top>498</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot9_head)]</label>
+            </control>
             <control type="image">
-                <left>530</left><top>508</top><width>32</width><height>32</height>
+                <left>530</left><top>500</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot9_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>498</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot9)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot9_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>498</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot9)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot9_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>498</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot9_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>534</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot10_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>536</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot10_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>534</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot10)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot10_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>534</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot10)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot10_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>534</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot10_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>570</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot11_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>572</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot11_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>570</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot11)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot11_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>570</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot11)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot11_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>570</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot11_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>606</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot12_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>608</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot12_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>606</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot12)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot12_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>606</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot12)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot12_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>606</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot12_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>642</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot13_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>644</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot13_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>642</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot13)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot13_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>642</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot13)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot13_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>642</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot13_tag)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>164</top><width>32</width><height>32</height>
                 <texture colordiffuse="FF57B58A">crosswatch/icons/check_circle.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(route),accepted)</visible>
             </control>
             <control type="image">
-                <left>530</left><top>508</top><width>32</width><height>32</height>
+                <left>530</left><top>164</top><width>32</width><height>32</height>
                 <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
                 <visible>String.IsEqual(Container(100).ListItem.Property(route),refused)</visible>
             </control>
             <control type="label">
-                <left>570</left><top>504</top><width>620</width><height>40</height>
+                <left>570</left><top>160</top><width>620</width><height>40</height>
                 <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FFF1F3F5</textcolor>
                 <label>$INFO[Container(100).ListItem.Property(route_text)]</label>
             </control>
-            <!-- Ids 10 to 13: never 2, 3 or 4, which WindowXML keeps for its own buttons. -->
-            <control type="button" id="10">
-                <left>530</left><top>556</top><width>322</width><height>72</height>
-                <align>center</align><aligny>center</aligny>
-                <font>font30_title</font>
-                <textcolor>FFF1F3F5</textcolor>
-                <focusedcolor>FFF1F3F5</focusedcolor>
-                <pulseonselect>false</pulseonselect>
-                <label>$ADDON[service.crosswatch 30107]</label>
-                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
-                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
-                <onleft>100</onleft>
-                <onright>11</onright>
-                <ondown>12</ondown>
-            </control>
-            <control type="button" id="11">
-                <left>868</left><top>556</top><width>322</width><height>72</height>
-                <align>center</align><aligny>center</aligny>
-                <font>font30_title</font>
-                <textcolor>FFF1F3F5</textcolor>
-                <focusedcolor>FFF1F3F5</focusedcolor>
-                <pulseonselect>false</pulseonselect>
-                <label>$ADDON[service.crosswatch 30108]</label>
-                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
-                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
-                <onleft>10</onleft>
-                <ondown>13</ondown>
-            </control>
-            <control type="button" id="12">
-                <left>530</left><top>644</top><width>322</width><height>72</height>
-                <align>center</align><aligny>center</aligny>
-                <font>font30_title</font>
-                <textcolor>FFF1F3F5</textcolor>
-                <focusedcolor>FFF1F3F5</focusedcolor>
-                <pulseonselect>false</pulseonselect>
-                <label>$ADDON[service.crosswatch 30109]</label>
-                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
-                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
-                <onleft>100</onleft>
-                <onup>10</onup>
-                <onright>13</onright>
-                <ondown>20</ondown>
-            </control>
-            <control type="button" id="13">
-                <left>868</left><top>644</top><width>322</width><height>72</height>
-                <align>center</align><aligny>center</aligny>
-                <font>font30_title</font>
-                <textcolor>FFF1F3F5</textcolor>
-                <focusedcolor>FFF1F3F5</focusedcolor>
-                <pulseonselect>false</pulseonselect>
-                <label>$ADDON[service.crosswatch 30110]</label>
-                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
-                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
-                <onleft>12</onleft>
-                <onup>11</onup>
-                <ondown>20</ondown>
-            </control>
             <control type="button" id="20">
-                <left>50</left><top>740</top><width>360</width><height>72</height>
+                <left>50</left><top>740</top><width>200</width><height>72</height>
                 <align>center</align><aligny>center</aligny>
+                <!-- Explicit: a skin's own default offset applies here otherwise, and can eat a narrow button's label. -->
+                <textoffsetx>10</textoffsetx>
                 <font>font30_title</font>
                 <textcolor>FFF1F3F5</textcolor>
                 <focusedcolor>FFF1F3F5</focusedcolor>
@@ -500,12 +618,85 @@
                 <label>$ADDON[service.crosswatch 30048]</label>
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <onup condition="!String.IsEqual(Window.Property(CW.Empty),true)">12</onup>
+                <onup condition="!String.IsEqual(Window.Property(CW.Empty),true)">100</onup>
+                <onright condition="!String.IsEqual(Window.Property(CW.Empty),true)">10</onright>
                 <onright>21</onright>
             </control>
+            <!-- The actions on the highlighted viewer, right-aligned; hidden with no viewers, which
+                 leaves Close in place. Ids 10 to 13: never 2, 3 or 4, which WindowXML keeps for itself. -->
+            <control type="grouplist">
+                <left>300</left><top>740</top><width>700</width><height>72</height>
+                <orientation>horizontal</orientation>
+                <align>center</align>
+                <itemgap>12</itemgap>
+                <onleft>20</onleft>
+                <onright>21</onright>
+                <control type="button" id="10">
+                    <width>150</width><height>72</height>
+                    <align>center</align><aligny>center</aligny>
+                    <!-- Explicit: a skin's own default offset applies here otherwise, and can eat a narrow button's label. -->
+                    <textoffsetx>10</textoffsetx>
+                    <font>font30_title</font>
+                    <textcolor>FFF1F3F5</textcolor>
+                    <focusedcolor>FFF1F3F5</focusedcolor>
+                    <pulseonselect>false</pulseonselect>
+                    <label>$ADDON[service.crosswatch 30107]</label>
+                    <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                    <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                    <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                    <onup>100</onup>
+                </control>
+                <control type="button" id="11">
+                    <width>150</width><height>72</height>
+                    <align>center</align><aligny>center</aligny>
+                    <!-- Explicit: a skin's own default offset applies here otherwise, and can eat a narrow button's label. -->
+                    <textoffsetx>10</textoffsetx>
+                    <font>font30_title</font>
+                    <textcolor>FFF1F3F5</textcolor>
+                    <focusedcolor>FFF1F3F5</focusedcolor>
+                    <pulseonselect>false</pulseonselect>
+                    <label>$ADDON[service.crosswatch 30108]</label>
+                    <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                    <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                    <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                    <onup>100</onup>
+                </control>
+                <control type="button" id="12">
+                    <width>150</width><height>72</height>
+                    <align>center</align><aligny>center</aligny>
+                    <!-- Explicit: a skin's own default offset applies here otherwise, and can eat a narrow button's label. -->
+                    <textoffsetx>10</textoffsetx>
+                    <font>font30_title</font>
+                    <textcolor>FFF1F3F5</textcolor>
+                    <focusedcolor>FFF1F3F5</focusedcolor>
+                    <pulseonselect>false</pulseonselect>
+                    <label>$ADDON[service.crosswatch 30109]</label>
+                    <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                    <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                    <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                    <onup>100</onup>
+                </control>
+                <control type="button" id="13">
+                    <width>150</width><height>72</height>
+                    <align>center</align><aligny>center</aligny>
+                    <!-- Explicit: a skin's own default offset applies here otherwise, and can eat a narrow button's label. -->
+                    <textoffsetx>10</textoffsetx>
+                    <font>font30_title</font>
+                    <textcolor>FFF1F3F5</textcolor>
+                    <focusedcolor>FFF1F3F5</focusedcolor>
+                    <pulseonselect>false</pulseonselect>
+                    <label>$ADDON[service.crosswatch 30110]</label>
+                    <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                    <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                    <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                    <onup>100</onup>
+                </control>
+            </control>
             <control type="button" id="21">
-                <left>1020</left><top>740</top><width>170</width><height>72</height>
+                <left>1040</left><top>740</top><width>150</width><height>72</height>
                 <align>center</align><aligny>center</aligny>
+                <!-- Explicit: a skin's own default offset applies here otherwise, and can eat a narrow button's label. -->
+                <textoffsetx>10</textoffsetx>
                 <font>font30_title</font>
                 <textcolor>FFF1F3F5</textcolor>
                 <focusedcolor>FFF1F3F5</focusedcolor>
@@ -513,7 +704,8 @@
                 <label>$ADDON[service.crosswatch 30096]</label>
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <onup condition="!String.IsEqual(Window.Property(CW.Empty),true)">13</onup>
+                <onup condition="!String.IsEqual(Window.Property(CW.Empty),true)">100</onup>
+                <onleft condition="!String.IsEqual(Window.Property(CW.Empty),true)">13</onleft>
                 <onleft>20</onleft>
             </control>
         </control>

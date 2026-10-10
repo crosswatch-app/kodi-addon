@@ -15,7 +15,7 @@ from resources.lib.ui.panel import PanelLine
 
 # Text slots between the viewer's name and the route line. The XML has one set of controls
 # per slot; tests/test_skin_xml.py checks the two agree.
-PANEL_SLOTS = 8
+PANEL_SLOTS = 13
 
 ROUTE_ACCEPTED = "accepted"
 ROUTE_REFUSED = "refused"
