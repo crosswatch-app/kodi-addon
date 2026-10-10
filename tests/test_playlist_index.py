@@ -240,3 +240,37 @@ def test_viewers_with_no_playlists_build_an_empty_index_immediately():
     assert builder.step() is True
     index = builder.result()
     assert index is not None and index.is_empty()
+
+
+# --- who covers a show (the Remembered answers screen) -------------------------------
+
+def test_owners_name_each_viewer_and_playlist_holding_a_show():
+    bob = Viewer(name="bob", playlists=("Shared",))
+    kodi = _kodi({"Anna TV": [{"id": 1, "type": "tvshow"}], "Shared": [{"id": 1, "type": "tvshow"}]})
+    index = _build(kodi, [ANNA, bob]).result()
+    assert index is not None
+    assert index.owners_for("tvshow", 1) == (("anna", "Anna TV"), ("bob", "Shared"))
+    assert index.viewers_for("tvshow", 1) == ("anna", "bob")
+
+
+def test_a_shared_playlist_names_each_viewer_holding_it_once():
+    shared = ("Household",)
+    kodi = _kodi({"Household": [{"id": 9, "type": "tvshow"}, {"id": 9, "type": "tvshow"}]})
+    index = _build(kodi, [Viewer(name="anna", playlists=shared), Viewer(name="bob", playlists=shared)]).result()
+    assert index is not None
+    assert index.owners_for("tvshow", 9) == (("anna", "Household"), ("bob", "Household"))
+
+
+def test_a_degraded_viewer_covers_nothing_and_playback_is_unchanged():
+    anna = Viewer(name="anna", playlists=("Anna TV", "Anna Films"))
+    members = {"Anna TV": [{"id": 42, "type": "tvshow"}], "Bob TV": [{"id": 42, "type": "tvshow"}]}
+    index = _build(_mixed_kodi({"Anna Films"}, members), [anna, BOB]).result()
+    assert index is not None
+    assert index.owners_for("tvshow", 42) == (("bob", "Bob TV"),)
+    assert index.viewers_for("tvshow", 42) == ("bob",)
+
+
+def test_no_owners_for_an_unknown_show_or_no_id():
+    index = _build(_kodi({"Anna TV": [{"id": 42, "type": "tvshow"}]}), [ANNA]).result()
+    assert index is not None
+    assert index.owners_for("tvshow", 7) == () and index.owners_for("tvshow", None) == ()

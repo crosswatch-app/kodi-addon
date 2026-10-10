@@ -55,11 +55,19 @@ class PlaylistIndex:
     # The playlists that could not be read. Held so the notification can name them, which
     # is the only channel allowed to: it goes to the household's own screen.
     unreadable: frozenset[str] = frozenset()
+    # (viewer, playlist) per show, for the Remembered answers screen to say why a show is
+    # covered. Playback reads by_key only.
+    owners: dict[tuple[str, int], tuple[tuple[str, str], ...]] = field(default_factory=dict)
 
     def viewers_for(self, media_type: str, library_id: int | None) -> tuple[str, ...]:
         if library_id is None:
             return ()
         return self.by_key.get((media_type, int(library_id)), ())
+
+    def owners_for(self, media_type: str, library_id: int | None) -> tuple[tuple[str, str], ...]:
+        if library_id is None:
+            return ()
+        return self.owners.get((media_type, int(library_id)), ())
 
     def is_empty(self) -> bool:
         return not self.by_key
@@ -90,6 +98,7 @@ class IndexBuilder:
         self._order = list(self._owners)
         self._pending = list(self._owners)
         self._by_key: dict[tuple[str, int], tuple[str, ...]] = {}
+        self._owners_by_key: dict[tuple[str, int], tuple[tuple[str, str], ...]] = {}
         self._result: PlaylistIndex | None = None
         self._degraded: set[str] = set()
         self._unreadable: set[str] = set()
@@ -124,10 +133,20 @@ class IndexBuilder:
             built_at=self._clock(),
             degraded=frozenset(self._degraded),
             unreadable=frozenset(self._unreadable),
+            owners=self._owners_without_degraded(),
         )
         if self._degraded:
             _log.warning("playlists.index_degraded", viewers=len(self._degraded), entries=len(by_key))
         _log.info("playlists.index_built", playlists=len(self._owners), entries=len(by_key))
+
+    def _owners_without_degraded(self) -> dict[tuple[str, int], tuple[tuple[str, str], ...]]:
+        # Stripped like by_key, so the screen never names a cover playback would not use.
+        out: dict[tuple[str, int], tuple[tuple[str, str], ...]] = {}
+        for key, pairs in self._owners_by_key.items():
+            kept = tuple(pair for pair in pairs if pair[0] not in self._degraded)
+            if kept:
+                out[key] = kept
+        return out
 
     def _without_degraded(self) -> dict[tuple[str, int], tuple[str, ...]]:
         """Strip degraded viewers from every entry, dropping entries left with nobody."""
@@ -185,6 +204,8 @@ class IndexBuilder:
             key = (kind, raw_id)
             existing = self._by_key.get(key, ())
             self._by_key[key] = existing + tuple(n for n in names if n not in existing)
+            pairs = self._owners_by_key.get(key, ())
+            self._owners_by_key[key] = pairs + tuple((n, playlist) for n in names if (n, playlist) not in pairs)
             indexed += 1
         if members and not indexed:
             _log.warning("playlists.no_indexable_members", index=self._index_of(playlist), members=len(members))
