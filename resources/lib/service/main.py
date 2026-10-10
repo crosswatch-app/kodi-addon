@@ -25,7 +25,7 @@ from resources.lib.service.controller import Controller
 from resources.lib.service.delivery import Delivery
 from resources.lib.service.playback_monitor import PlaybackMonitor
 from resources.lib.service.service_monitor import ServiceMonitor
-from resources.lib.storage import JsonViewerStore, PromptMemory
+from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 
 TICK_SECONDS = 1.0
 
@@ -66,7 +66,7 @@ def main() -> None:
     # Created here because both sides need it and neither may default it: the queue sets it
     # on stop, the reporter waits on it during a retry backoff.
     abort = threading.Event()
-    delivery = Delivery(kodi, paths.outbox_path(kodi), abort)
+    delivery = Delivery(kodi, paths.outbox_path(kodi), abort, routes=RouteStore(paths.routes_path(kodi)))
     sink, lane = delivery.build(settings)
     # device_identity owns identity, not versioning, and is used by tests that should not
     # need a Kodi handle just to produce a version string.

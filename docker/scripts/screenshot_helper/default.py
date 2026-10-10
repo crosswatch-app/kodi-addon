@@ -156,7 +156,7 @@ def _viewers(scene: dict, path: str) -> None:
         "Ben": text(30056).replace("%s", "3") + ", " + text(30105),
         "Chloe": text(30104),
     }
-    tags = {"Ben": text(30057).replace("%s", "1")}
+    tags = {"Ben": text(30057).replace("%s", "1"), "Chloe": text(30117)}
     rows = tuple(lw.ListRow(key=n, title=n, detail=details[n], tag=tags.get(n, "")) for n in ("Anna", "Ben", "Chloe"))
     add = text(30048)
     request = lw.ListRequest(

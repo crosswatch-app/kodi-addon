@@ -286,3 +286,22 @@ def test_the_viewer_summary_keeps_one_line_each_for_playlists_and_profiles():
     for line in lines:
         assert line.get("type") == "label" and line.findtext("wrapmultiline") in (None, "false")
         assert int(line.findtext("top") or 0) + int(line.findtext("height") or 0) <= int(row.findtext("top") or 0)
+
+
+def test_a_list_without_artwork_gives_its_tags_room():
+    """Viewer names are short and tags such as "1 missing, no CrossWatch route" are long."""
+    bare = f"!{PICK} + {NO_THUMBS}"
+    root = ET.parse(LIST).getroot()
+    for layout in ("itemlayout", "focusedlayout"):
+        found = root.find(f".//control[@id='100']/{layout}")
+        assert found is not None
+        spans = {}
+        for control in found.findall("control"):
+            if control.findtext("visible") == bare:
+                left, width = int(control.findtext("left") or 0), int(control.findtext("width") or 0)
+                spans[control.findtext("label")] = (left, left + width)
+        assert set(spans) == {"$INFO[ListItem.Label]", "$INFO[ListItem.Property(detail)]", "$INFO[ListItem.Property(tag)]"}
+        tag = spans["$INFO[ListItem.Property(tag)]"]
+        assert tag[1] - tag[0] >= 400
+        ordered = sorted(spans.values())
+        assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered

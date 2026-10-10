@@ -287,11 +287,17 @@ should describe what that person watches, not what they just happened to play.
 
 "Configure viewers and playlists" opens a CrossWatch window titled "Viewers" that lists every
 viewer. Each row shows the viewer's name and what is set up ("2 playlists, 1 profile", "1
-playlist" or "nothing set up"). When something needs fixing, the row also carries a tag such
-as "1 missing" or "1 unusable". A count shows how many viewers are listed ("3 viewers"), and a
-search box narrows the list by name. Below the list are "Add viewer", which is always
-available (also when a search finds nobody), and "Close". With no viewers configured yet, the
-screen starts straight at Add viewer.
+playlist" or "nothing set up"). When something needs fixing, the row also carries a tag such as
+"1 missing" or "1 unusable". A viewer is tagged "no CrossWatch route" when no CrossWatch route
+accepts their name. CrossWatch reports its routes for this Kodi, and the names each route
+accepts, when it answers the add-on's regular check-in (every five minutes, and straight away
+when the viewer names change). The tag only appears once CrossWatch has answered with its
+routes for the current pairing, and only for names it was asked about: when the add-on is not
+paired, or CrossWatch has never sent its routes, no viewer is tagged, and a viewer just added
+or renamed is not tagged until CrossWatch's next answer. A count shows how many viewers are
+listed ("3 viewers"), and a search box narrows the list by name. Below the list are "Add
+viewer", which is always available (also when a search finds nobody), and "Close". With no
+viewers configured yet, the screen starts straight at Add viewer.
 
 Every change is saved straight away, so there is no need to close the screen, and it applies
 from the next playback.
@@ -405,6 +411,22 @@ See "The question at the end" above for the cases where it is not asked.
 
 The playlist was renamed or deleted. Edit that viewer's playlists and point it at a playlist
 that still exists.
+
+**A viewer shows "no CrossWatch route"**
+
+No CrossWatch route accepts that viewer's name, so their playback has nowhere to go. Check, in
+order:
+
+1. The name in the route's username whitelist against the viewer's name. They must be the
+   same name; CrossWatch ignores upper and lower case and punctuation when comparing.
+2. That the person has a route in CrossWatch at all. If not, create one with their name in its
+   username whitelist.
+3. Whether the viewer was just renamed. The whitelist may still have the old name: change it
+   to the new one.
+
+A route with an empty whitelist accepts every viewer, unless a CrossWatch profile is set on
+that route. The tag can take a moment to clear: it updates when CrossWatch answers the add-on's
+next check-in (every five minutes, and straight away when the viewer names change).
 
 **A playlist shows as unusable**
 

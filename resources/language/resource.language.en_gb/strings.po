@@ -358,3 +358,7 @@ msgstr ""
 msgctxt "#30116"
 msgid "Kodi's profiles could not be read. Try again in a moment."
 msgstr ""
+
+msgctxt "#30117"
+msgid "no CrossWatch route"
+msgstr ""

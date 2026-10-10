@@ -15,6 +15,8 @@ from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger
 from resources.lib.outbox import Outbox, config_fingerprint
 from resources.lib.reporter import EventSink, HttpReporter, InvalidWebhookUrl, LogReporter, OutboxLane
+from resources.lib.routes import RouteFacts
+from resources.lib.storage import RouteStore
 
 _log = get_logger("service")
 
@@ -39,7 +41,9 @@ class Delivery:
     it into the status setting, because everything that talks to Kodi runs there.
     """
 
-    def __init__(self, kodi: KodiApi, outbox_path: str, abort: threading.Event) -> None:
+    def __init__(
+        self, kodi: KodiApi, outbox_path: str, abort: threading.Event, routes: RouteStore | None = None
+    ) -> None:
         self._kodi = kodi
         self._outbox_path = outbox_path
         self._abort = abort
@@ -47,6 +51,8 @@ class Delivery:
         self._outbox: Outbox | None = None
         self._lock = threading.Lock()
         self._instance: tuple[Endpoint, str] | None = None
+        self._routes = routes
+        self._route_facts: tuple[Endpoint, RouteFacts] | None = None
 
     def changed(self, settings: Settings) -> bool:
         return _endpoint(settings) != self._endpoint
@@ -64,6 +70,7 @@ class Delivery:
                 token=token,
                 abort=self._abort,
                 on_instance=lambda instance: self._note_instance(endpoint, instance),
+                on_routes=lambda facts: self._note_routes(endpoint, facts),
             )
         except InvalidWebhookUrl as exc:
             # Fall back to logging rather than posting somewhere unexpected.
@@ -81,6 +88,10 @@ class Delivery:
         with self._lock:
             self._instance = (endpoint, instance)
 
+    def _note_routes(self, endpoint: Endpoint, facts: RouteFacts) -> None:
+        with self._lock:
+            self._route_facts = (endpoint, facts)
+
     def publish_status(self) -> None:
         """Write the instance name a ping reply carried, if it is for the current endpoint.
 
@@ -88,6 +99,12 @@ class Delivery:
         """
         with self._lock:
             noted, self._instance = self._instance, None
+            routed, self._route_facts = self._route_facts, None
+        if routed is not None and self._routes is not None:
+            endpoint, facts = routed
+            if endpoint == self._endpoint and endpoint[0] is not None:
+                self._routes.save(config_fingerprint(endpoint[1]), facts)
+                _log.info("service.routes_noted", routes=facts.count, accepted=len(facts.accepted))
         if noted is None:
             return
         endpoint, instance = noted
