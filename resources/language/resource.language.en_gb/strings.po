@@ -364,11 +364,11 @@ msgid "%s's playlist '%s'"
 msgstr ""
 
 msgctxt "#30125"
-msgid "Kodi's library no longer has this show"
+msgid "gone from Kodi's library"
 msgstr ""
 
 msgctxt "#30126"
-msgid "the id now points at %s"
+msgid "now points at %s"
 msgstr ""
 
 msgctxt "#30127"

@@ -210,11 +210,60 @@ def _split(scene: dict, path: str) -> None:
         dialog.stop()
 
 
+class _Words:
+    """The add-on's own strings, for the screen's row builder."""
+
+    def localised(self, string_id: int) -> str:
+        return TARGET.getLocalizedString(string_id)
+
+
+def _remembered(scene: dict, path: str) -> None:
+    from resources.lib import remembered
+    from resources.lib.models import Viewer
+    from resources.lib.storage import RememberedAnswer
+    from resources.lib.ui import list_window as lw
+
+    with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
+        shows = json.load(handle)["shows"]
+    viewers = [Viewer(name=n) for n in ("Anna", "Ben", "Chloe")]
+    library = {
+        f"show:tvdb:{i}": remembered.Show(show["title"], show["year"], i, show["poster"]) for i, show in enumerate(shows)
+    }
+    entries = {
+        f"show:tvdb:{i}": RememberedAnswer(viewers=DEMO_WHO[i % 8] or ("Dora",), title=show["title"], year=show["year"])
+        for i, show in enumerate(shows)
+    }
+    # An answer stored against Kodi's database id, which now holds another show.
+    library["tvshow:900"] = remembered.Show(shows[5]["title"], shows[5]["year"], 900, shows[5]["poster"])
+    entries["tvshow:900"] = RememberedAnswer(viewers=("Ben",), title="Old Name", year=2015)
+    entries["show:tvdb:999"] = RememberedAnswer(viewers=("Chloe",), title="Gone Show", year=2001)
+    covers = {"show:tvdb:3": (("Anna", "Cartoons"), ("Ben", "Family evenings"))}
+    words = _Words()
+    rows = remembered.build_rows(entries, library, viewers, words, covers)
+    more = words.localised(30121)
+    request = lw.ListRequest(
+        heading=words.localised(30035),
+        rows=tuple(remembered._list_row(row, more) for row in rows),
+        count_one=words.localised(30097),
+        count_all=words.localised(30090),
+        filters=remembered.viewer_filters(words, viewers),
+        bulk_all=words.localised(30092),
+        bulk_shown=words.localised(30093),
+    )
+    dialog = window.RememberedDialog(window.REMEMBERED_XML, path, "Default", "1080i")
+    dialog.prepare(request, lw.ListState(search=scene["search"], key=scene["key"]), TARGET.getLocalizedString)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
 WINDOWS = {
     window.WHO_WATCHED_XML: _who_watched,
     window.LIST_XML: _list,
     window.CONFIRM_XML: _confirm,
     window.VIEWERS_XML: _split,
+    window.REMEMBERED_XML: _remembered,
 }
 
 

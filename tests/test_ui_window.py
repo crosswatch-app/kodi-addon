@@ -20,9 +20,11 @@ from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
     BUTTON_ADD,
     BUTTON_BULK,
+    BUTTON_CHANGE,
     BUTTON_CLOSE,
     BUTTON_DONE,
     BUTTON_FORGET,
+    BUTTON_FORGET_ONE,
     BUTTON_NO,
     BUTTON_PICK_DONE,
     BUTTON_PLAYLISTS,
@@ -40,6 +42,7 @@ from resources.lib.ui.window import (
     ConfirmDialog,
     ListDialog,
     PickListDialog,
+    RememberedDialog,
     ViewersDialog,
     WhoWatchedDialog,
 )
@@ -737,3 +740,74 @@ def test_the_list_reopens_on_the_key_and_reports_the_selected_one():
     assert rows.position == 2
     rows.position = 1
     assert dialog.state().key == "b"
+
+
+SPLIT_ROWS = (
+    ListRow(key="a", title="Alpha", names=("anna",), properties=(("changeable", "true"),)),
+    ListRow(key="b", title="Beta", names=("bob",), properties=(("changeable", ""), ("warn", "true"))),
+)
+
+
+def _remembered(state=START) -> tuple[Any, FakeRows]:
+    request = ListRequest(
+        heading="Remembered answers", rows=SPLIT_ROWS, count_one="1 show", count_all="%s shows",
+        filters=FILTERS, bulk_all="Forget all", bulk_shown="Forget %s shown",
+    )
+    dialog: Any = RememberedDialog("crosswatch-remembered.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, state, lambda i: LIST_TEXTS.get(i, ""))
+    rows = FakeRows()
+    dialog.set_control(LIST_ROWS, rows)
+    dialog.set_control(LIST_SEARCH, FakeEdit())
+    return dialog, rows
+
+
+def test_ok_on_a_changeable_show_moves_to_change_and_on_another_to_forget():
+    dialog, rows = _remembered()
+    dialog.onInit()
+    dialog.onClick(LIST_ROWS)
+    assert dialog.focused == BUTTON_CHANGE and dialog.closed == 0
+    rows.position = 1
+    dialog.onClick(LIST_ROWS)
+    assert dialog.focused == BUTTON_FORGET_ONE and dialog.closed == 0
+
+
+def test_change_returns_the_show_with_the_state():
+    dialog, rows = _remembered(ListState(key="a"))
+    dialog.onInit()
+    dialog.onClick(BUTTON_CHANGE)
+    assert dialog.result.action == "change" and dialog.result.key == "a" and dialog.result.state.key == "a"
+
+
+def test_change_on_a_show_that_cannot_change_does_nothing():
+    dialog, rows = _remembered(ListState(key="b"))
+    dialog.onInit()
+    assert rows.position == 1
+    dialog.onClick(BUTTON_CHANGE)  # hidden in the XML; a stray click must not change it
+    assert dialog.closed == 0
+
+
+def test_forget_returns_the_show_for_any_row():
+    dialog, rows = _remembered(ListState(key="b"))
+    dialog.onInit()
+    dialog.onClick(BUTTON_FORGET_ONE)
+    assert dialog.result.action == "forget" and dialog.result.key == "b"
+
+
+def test_bulk_close_and_back_still_work_in_the_split_window():
+    dialog, _ = _remembered()
+    dialog.onInit()
+    dialog.onClick(BUTTON_BULK)
+    assert dialog.result.action == "bulk" and dialog.result.keys == ("a", "b")
+    dialog, _ = _remembered()
+    dialog.onInit()
+    dialog.onAction(Action(92))
+    assert dialog.result is None and dialog.close_reason == "back"
+
+
+def test_nothing_shown_gives_forget_nothing_to_act_on():
+    dialog, rows = _remembered(ListState(search="zzz"))
+    dialog.onInit()
+    assert rows.items == [] and dialog.getProperty("CW.Empty") == "true"
+    dialog.onClick(BUTTON_FORGET_ONE)
+    dialog.onClick(LIST_ROWS)
+    assert dialog.closed == 0

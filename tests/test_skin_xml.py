@@ -387,3 +387,97 @@ def test_a_panel_line_takes_the_full_width_unless_it_has_a_tag():
         tag_label = next(c for c in root.iter("control") if c.findtext("label") == f"$INFO[{tag}]")
         assert int(narrow.findtext("left") or 0) + int(narrow.findtext("width") or 0) <= int(tag_label.findtext("left") or 0)
         assert int(wide.findtext("width") or 0) > int(narrow.findtext("width") or 0)
+
+
+REMEMBERED = SKIN / "1080i" / "crosswatch-remembered.xml"
+CHANGEABLE = "!String.IsEmpty(Container(100).ListItem.Property(changeable))"
+HAS_BULK = "!String.IsEmpty(Window.Property(CW.Bulk))"
+SHOWN = "!String.IsEqual(Window.Property(CW.Empty),true)"
+
+
+def _remembered_control(control_id: str) -> ET.Element:
+    found = ET.parse(REMEMBERED).getroot().find(f".//control[@id='{control_id}']")
+    assert found is not None, control_id
+    return found
+
+
+def test_the_remembered_window_has_one_set_of_controls_per_panel_slot():
+    from resources.lib.remembered import REMEMBERED_SLOTS
+
+    root = ET.parse(REMEMBERED).getroot()
+    labels = [c.findtext("label") or "" for c in root.iter("control")]
+    visible = [c.findtext("visible") or "" for c in root.iter("control")]
+    for n in range(1, REMEMBERED_SLOTS + 1):
+        for prop in (f"slot{n}", f"slot{n}_head"):
+            assert labels.count(f"$INFO[Container(100).ListItem.Property({prop})]") == 1, prop
+        assert visible.count(f"String.IsEqual(Container(100).ListItem.Property(slot{n}_warn),true)") == 1, n
+    assert not any(f"Property(slot{REMEMBERED_SLOTS + 1}" in text for text in labels + visible)
+    for control in root.iter("control"):
+        if "Property(slot" in (control.findtext("label") or ""):
+            assert control.findtext("wrapmultiline") in (None, "false")
+            assert int(control.findtext("top") or 0) + int(control.findtext("height") or 0) <= 206 + 390
+
+
+def _nav(control: ET.Element, key: str) -> list[tuple[str | None, str]]:
+    return [(n.get("condition"), (n.text or "").strip()) for n in control.findall(key)]
+
+
+def test_the_remembered_window_navigates_between_header_list_panel_and_buttons():
+    assert _nav(_remembered_control("30"), "ondown") == [(None, "31")]
+    assert _nav(_remembered_control("31"), "onup") == [(None, "30")]
+    assert _nav(_remembered_control("31"), "ondown") == [(None, "100")]
+    rows = _remembered_control("100")
+    assert _nav(rows, "onup") == [(None, "31")]
+    assert _nav(rows, "onright") == [(CHANGEABLE, "40"), (None, "41")]
+    assert _nav(rows, "ondown") == [(HAS_BULK, "20"), (None, "21")]
+    change = _remembered_control("40")
+    assert _nav(change, "onleft") == [(None, "100")] and _nav(change, "onright") == [(None, "41")]
+    assert _nav(change, "ondown") == [(HAS_BULK, "20"), (None, "21")]
+    forget = _remembered_control("41")
+    assert _nav(forget, "onleft") == [(CHANGEABLE, "40"), (None, "100")]
+    assert _nav(forget, "ondown") == [(None, "21")]
+    bulk = _remembered_control("20")
+    assert _nav(bulk, "onup") == [(None, "100")] and _nav(bulk, "onright") == [(None, "21")]
+    close = _remembered_control("21")
+    assert _nav(close, "onleft") == [(HAS_BULK, "20")]
+    assert _nav(close, "onup") == [(SHOWN, "41"), (None, "30")]
+
+
+def test_change_shows_only_for_a_changeable_answer_and_both_hide_with_nothing_shown():
+    from resources.lib.constants import REMEMBERED_CHANGE, REMEMBERED_FORGET
+
+    change, forget = _remembered_control("40"), _remembered_control("41")
+    assert change.findtext("label") == f"$ADDON[{ADDON_ID} {REMEMBERED_CHANGE}]"
+    assert forget.findtext("label") == f"$ADDON[{ADDON_ID} {REMEMBERED_FORGET}]"
+    assert change.findtext("visible") == CHANGEABLE
+    root = ET.parse(REMEMBERED).getroot()
+    panel = next(g for g in root.iter("control") if g.get("type") == "group" and g.findtext("visible") == SHOWN)
+    assert {c.get("id") for c in panel.iter("control")} >= {"40", "41"}
+    assert root.findtext("defaultcontrol") == "21"
+
+
+def test_the_remembered_poster_has_the_no_poster_placeholder():
+    root = ET.parse(REMEMBERED).getroot()
+    empty = "String.IsEmpty(Container(100).ListItem.Art(thumb))"
+    placeholders = [c for c in root.iter("control") if c.findtext("visible") == empty]
+    assert any(c.findtext("label") == f"$ADDON[{ADDON_ID} 30101]" for c in placeholders)
+    assert sum(1 for c in placeholders if "glow.png" in (c.findtext("texture") or "")) == 4
+    poster = [c for c in root.iter("control") if c.findtext("texture") == "$INFO[Container(100).ListItem.Art(thumb)]"]
+    assert len(poster) == 1 and (poster[0].findtext("width"), poster[0].findtext("height")) == ("200", "300")
+
+
+def test_the_remembered_icons_are_danger_warnings_and_ship():
+    from tests.test_window_style import PALETTE
+
+    root = ET.parse(REMEMBERED).getroot()
+    icons = [c for c in root.iter("control") if "icons/" in (c.findtext("texture") or "")]
+    assert icons
+    for image in icons:
+        texture = image.find("texture")
+        assert texture is not None and texture.text == "crosswatch/icons/warning.png"
+        assert texture.get("colordiffuse") == PALETTE["danger"]
+    for texture in root.iter("texture"):
+        name = texture.text or ""
+        if name.startswith("crosswatch/"):
+            assert (SKIN / "media" / name).is_file(), name
+            assert texture.get("diffuse") in (None, "crosswatch/mask_poster.png")

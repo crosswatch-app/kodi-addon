@@ -210,10 +210,10 @@ def _panel_lines(
         # replace rather than %: a translation that drops a placeholder must not raise.
         lines.extend(PanelLine(template.replace("%s", viewer, 1).replace("%s", playlist, 1)) for viewer, playlist in covered)
     if gone:
-        lines.append(PanelLine(kodi.localised(REMEMBERED_NOT_IN_LIBRARY_HEAD), heading=True, warn=True))
+        lines.append(PanelLine(kodi.localised(REMEMBERED_NOT_IN_LIBRARY_HEAD), heading=True))
         lines.append(PanelLine(kodi.localised(REMEMBERED_GONE), warn=True))
     if not changeable:
-        lines.append(PanelLine(kodi.localised(REMEMBERED_NOT_STABLE_HEAD), heading=True, warn=True))
+        lines.append(PanelLine(kodi.localised(REMEMBERED_NOT_STABLE_HEAD), heading=True))
         if answer.title is None or at_id is None:
             reason = kodi.localised(REMEMBERED_NO_TITLE)
         else:

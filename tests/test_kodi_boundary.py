@@ -81,3 +81,15 @@ def test_viewers_window_returns_scripted_results_then_close():
     assert kodi.viewers_window(request, "anna") == ViewersResult("add", "anna")
     assert kodi.viewers_window(request, "bob") == ViewersResult("close", "bob")
     assert kodi.viewers_window_calls == [(request, "anna"), (request, "bob")]
+
+
+def test_remembered_window_returns_scripted_results_then_close():
+    from resources.lib.ui.list_window import ListRequest, ListResult, ListState
+
+    request = ListRequest(heading="h", rows=(), count_one="1", count_all="%s")
+    forget = ListResult("forget", ListState(key="a"), key="a")
+    kodi = FakeKodi()
+    kodi.remembered_window_results = [forget]
+    assert kodi.remembered_window(request, ListState()) == forget
+    assert kodi.remembered_window(request, ListState(key="b")) == ListResult("close", ListState(key="b"))
+    assert kodi.remembered_window_calls == [(request, ListState()), (request, ListState(key="b"))]

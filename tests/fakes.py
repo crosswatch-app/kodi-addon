@@ -38,6 +38,8 @@ class FakeKodi:
         self.confirm_window_calls: list[tuple[str, str]] = []
         self.list_window_results: list[Any] = []
         self.list_window_calls: list[tuple[Any, Any]] = []
+        self.remembered_window_results: list[Any] = []
+        self.remembered_window_calls: list[tuple[Any, Any]] = []
         self.viewers_window_results: list[Any] = []
         self.viewers_window_calls: list[tuple[Any, str]] = []
         self.input_answer = input_answer
@@ -120,6 +122,14 @@ class FakeKodi:
         self.list_window_calls.append((request, state))
         if self.list_window_results:
             return self.list_window_results.pop(0)
+        return ListResult("close", state)
+
+    def remembered_window(self, request: Any, state: Any) -> Any:
+        from resources.lib.ui.list_window import ListResult
+
+        self.remembered_window_calls.append((request, state))
+        if self.remembered_window_results:
+            return self.remembered_window_results.pop(0)
         return ListResult("close", state)
 
     def viewers_window(self, request: Any, key: str) -> Any:

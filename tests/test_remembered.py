@@ -398,7 +398,7 @@ def test_an_answer_for_nobody_configured_reads_will_ask_again(memory):
 
 
 class Worded(ScriptedKodi):
-    TEXTS = {REMEMBERED_PLAYLIST_OF: "%s's playlist '%s'", REMEMBERED_POINTS_AT: "the id now points at %s"}
+    TEXTS = {REMEMBERED_PLAYLIST_OF: "%s's playlist '%s'", REMEMBERED_POINTS_AT: "now points at %s"}
 
     def localised(self, string_id: int) -> str:
         return self.TEXTS.get(string_id, super().localised(string_id))
@@ -428,7 +428,7 @@ def test_a_show_gone_from_the_library_says_so_and_warns(memory):
     memory.remember("show:tvdb:999", ("anna",), title="Gone Show", year=2001)
     row = _lines(memory)["show:tvdb:999"]
     assert row.lines[-2:] == (
-        PanelLine(f"#{REMEMBERED_NOT_IN_LIBRARY_HEAD}", heading=True, warn=True),
+        PanelLine(f"#{REMEMBERED_NOT_IN_LIBRARY_HEAD}", heading=True),
         PanelLine(f"#{REMEMBERED_GONE}", warn=True),
     )
     assert row.warn and row.lines[0] == PanelLine("2001", heading=True)
@@ -438,8 +438,8 @@ def test_a_not_stable_answer_names_the_show_its_id_now_points_at(memory):
     memory.remember("tvshow:42", ("anna",), title="Old Name", year=2019)
     row = _lines(memory, Worded())["tvshow:42"]
     assert row.lines[-2:] == (
-        PanelLine(f"#{REMEMBERED_NOT_STABLE_HEAD}", heading=True, warn=True),
-        PanelLine("the id now points at No Ids", warn=True),
+        PanelLine(f"#{REMEMBERED_NOT_STABLE_HEAD}", heading=True),
+        PanelLine("now points at No Ids", warn=True),
     )
     assert row.warn and row.lines[0] == PanelLine("2019", heading=True), "the answer's year, not the other show's"
 

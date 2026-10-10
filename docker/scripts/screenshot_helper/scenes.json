@@ -237,5 +237,47 @@
     "key": "Chloe",
     "keys": [],
     "group": "viewers"
+  },
+  "remembered-split": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:0",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-covered": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:3",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-not-stable": {
+    "window": "crosswatch-remembered.xml",
+    "key": "tvshow:900",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-not-in-library": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:999",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-will-ask": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:6",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-nothing-matches": {
+    "window": "crosswatch-remembered.xml",
+    "key": "",
+    "search": "zzzz",
+    "keys": [],
+    "group": "remembered"
   }
 }

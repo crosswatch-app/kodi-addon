@@ -458,3 +458,41 @@ class PickListDialog(ListDialog):
         rows: Any = self.getControl(LIST_ROWS)
         for index, row in enumerate(self._shown):
             rows.getListItem(index).setProperty("chosen", "true" if row.key in self._ticked else "")
+
+
+REMEMBERED_XML = "crosswatch-remembered.xml"
+BUTTON_CHANGE = 40
+BUTTON_FORGET_ONE = 41
+
+
+class RememberedDialog(ListDialog):
+    """The searchable list of shows, the highlighted one's panel, and Change and Forget.
+
+    Each row's panel is in its properties; "changeable" is empty for an answer that can
+    only be forgotten, which the XML reads to hide Change.
+    """
+
+    name = "remembered"
+
+    def onClick(self, controlId: int) -> None:
+        row = self._selected()
+        if controlId == LIST_ROWS:
+            # The row has no action of its own; OK there means "go to the actions".
+            if row is not None:
+                self.setFocusId(BUTTON_CHANGE if _changeable(row) else BUTTON_FORGET_ONE)
+        elif controlId == BUTTON_CHANGE:
+            if row is not None and _changeable(row):
+                self.finish("change", lw.ListResult("change", self.state(), key=row.key))
+        elif controlId == BUTTON_FORGET_ONE:
+            if row is not None:
+                self.finish("forget", lw.ListResult("forget", self.state(), key=row.key))
+        else:
+            super().onClick(controlId)
+
+    def _selected(self) -> lw.ListRow | None:
+        position = self.state().position
+        return self._shown[position] if 0 <= position < len(self._shown) else None
+
+
+def _changeable(row: lw.ListRow) -> bool:
+    return dict(row.properties).get("changeable") == "true"
