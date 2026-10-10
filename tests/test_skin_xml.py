@@ -139,3 +139,9 @@ def test_the_bulk_button_hides_and_down_reaches_close_when_nothing_is_shown():
     assert bulk.findtext("visible") == shown
     assert _navigation(rows, "ondown")[-2:] == [(shown, "20"), (None, "21")]
     assert _navigation(close, "onleft")[-1] == (shown, "20")
+
+
+def test_the_close_label_comes_from_a_property_so_a_pick_list_can_say_cancel():
+    root = ET.parse(LIST).getroot()
+    close = root.find(".//control[@id='21']")
+    assert close is not None and close.findtext("label") == "$INFO[Window.Property(CW.Close)]"

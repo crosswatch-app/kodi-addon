@@ -208,7 +208,7 @@
                 <textcolor>FFF1F3F5</textcolor>
                 <focusedcolor>FFF1F3F5</focusedcolor>
                 <pulseonselect>false</pulseonselect>
-                <label>$ADDON[service.crosswatch 30096]</label>
+                <label>$INFO[Window.Property(CW.Close)]</label>
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
                 <onup>100</onup>

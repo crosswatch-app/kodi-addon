@@ -42,6 +42,7 @@ def install_kodi_stubs() -> None:
     xbmc.getSkinDir = lambda: "skin.estuary"
 
     xbmcgui: Any = types.ModuleType("xbmcgui")
+    xbmcgui.INPUT_TYPE_TEXT = 0
 
     class _Dialog:
         def multiselect(self, heading, options, autoclose=0, preselect=None, useDetails=False): return None

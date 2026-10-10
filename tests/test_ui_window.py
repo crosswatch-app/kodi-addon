@@ -4,10 +4,11 @@ from typing import Any
 from resources.lib.constants import (
     PROMPT_EVERYONE,
     WHO_WATCHED_QUESTION,
+    WINDOW_CLOSE,
     WINDOW_CLOSES_IN,
-    WINDOW_COUNT_ALL,
     WINDOW_COUNT_SOME,
     WINDOW_NO,
+    WINDOW_SEARCH,
     WINDOW_VIEWER,
     WINDOW_YES,
 )
@@ -284,7 +285,7 @@ def test_confirm_yes_is_true_and_no_or_back_is_not():
     assert back.result is None
     assert back._thread is None  # no countdown, no playback watch
 
-LIST_TEXTS = {WINDOW_COUNT_ALL: "%s shows", WINDOW_COUNT_SOME: "%s of %s", WINDOW_VIEWER: "Viewer: %s"}
+LIST_TEXTS = {WINDOW_COUNT_SOME: "%s of %s", WINDOW_VIEWER: "Viewer: %s", WINDOW_SEARCH: "Search", WINDOW_CLOSE: "Close"}
 SHOWS = tuple(
     ListRow(key=k, title=t, detail=", ".join(n) or "will ask again", thumb=f"image://{k}/", names=n)
     for k, t, n in [("a", "Alpha", ("anna",)), ("b", "Beta", ("bob",)), ("c", "Gamma", ("anna", "bob")), ("d", "Delta", ())]
@@ -311,12 +312,16 @@ class FakeRows(FakeList):
 class FakeEdit:
     def __init__(self) -> None:
         self.text = ""
+        self.input_type: tuple[int, str] | None = None
 
     def getText(self) -> str:
         return self.text
 
     def setText(self, text: str) -> None:
         self.text = text
+
+    def setType(self, input_type: int, heading: str) -> None:
+        self.input_type = (input_type, heading)
 
 
 START = ListState()
@@ -502,3 +507,15 @@ def test_nothing_shown_empties_the_bulk_label_so_the_button_hides():
     edit.text = "zzz"
     dialog.onAction(Action(0))
     assert dialog.getProperty("CW.Bulk") == ""
+
+
+def test_the_search_keyboard_is_headed_search_not_kodis_enter_value():
+    dialog, _, edit = _list()
+    dialog.onInit()
+    assert edit.input_type == (0, "Search")  # xbmcgui.INPUT_TYPE_TEXT
+
+
+def test_the_close_button_reads_close_on_a_plain_list():
+    dialog, _, _ = _list()
+    dialog.onInit()
+    assert dialog.getProperty("CW.Close") == "Close"

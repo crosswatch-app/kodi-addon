@@ -15,7 +15,14 @@ from typing import Any
 
 import xbmcgui
 
-from resources.lib.constants import PROMPT_EVERYONE, WHO_WATCHED_QUESTION, WINDOW_CLOSES_IN, WINDOW_VIEWER
+from resources.lib.constants import (
+    PROMPT_EVERYONE,
+    WHO_WATCHED_QUESTION,
+    WINDOW_CLOSE,
+    WINDOW_CLOSES_IN,
+    WINDOW_SEARCH,
+    WINDOW_VIEWER,
+)
 from resources.lib.log import get_logger
 from resources.lib.ui import list_window as lw
 from resources.lib.ui import who_watched as ww
@@ -253,7 +260,7 @@ class ListDialog(CrossWatchDialog):
         self._shown: list[lw.ListRow] = []
         self.configure(
             localised,
-            {"CW.Heading": request.heading},
+            {"CW.Heading": request.heading, "CW.Close": localised(WINDOW_CLOSE)},
             autoclose_seconds=0,
             close_on_playback=False,
             is_playing=lambda: False,
@@ -266,6 +273,8 @@ class ListDialog(CrossWatchDialog):
 
     def fill(self) -> None:
         search: Any = self.getControl(LIST_SEARCH)
+        # Kodi heads its keyboard "Enter value" unless the edit control is told otherwise.
+        search.setType(xbmcgui.INPUT_TYPE_TEXT, self._localised(WINDOW_SEARCH))
         search.setText(self._search)
         self._show(self._position)
         if self._shown:
