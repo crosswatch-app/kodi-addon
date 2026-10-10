@@ -113,47 +113,6 @@
     "keys": [],
     "group": "remembered"
   },
-  "remembered-list": {
-    "window": "crosswatch-list.xml",
-    "rows": "library",
-    "search": "",
-    "filter": 0,
-    "keys": [],
-    "group": "remembered"
-  },
-  "remembered-list-filtered": {
-    "window": "crosswatch-list.xml",
-    "rows": "library",
-    "search": "e",
-    "filter": 1,
-    "keys": [],
-    "group": "remembered"
-  },
-  "remembered-list-nothing-matches": {
-    "window": "crosswatch-list.xml",
-    "rows": "library",
-    "search": "zzzz",
-    "filter": 0,
-    "keys": [],
-    "group": "remembered"
-  },
-  "remembered-change-forget": {
-    "window": "crosswatch-who.xml",
-    "library": "tvshow",
-    "subtitle": "{year}",
-    "names": [
-      "Anna",
-      "Ben",
-      "Chloe"
-    ],
-    "preselect": [
-      "Anna"
-    ],
-    "autoclose_seconds": 0,
-    "offer_forget": true,
-    "keys": [],
-    "group": "remembered"
-  },
   "playlist-picker": {
     "window": "crosswatch-list.xml",
     "rows": "playlists",
@@ -237,5 +196,47 @@
     "key": "Chloe",
     "keys": [],
     "group": "viewers"
+  },
+  "remembered-split": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:0",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-covered": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:3",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-not-stable": {
+    "window": "crosswatch-remembered.xml",
+    "key": "tvshow:900",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-not-in-library": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:999",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-will-ask": {
+    "window": "crosswatch-remembered.xml",
+    "key": "show:tvdb:2",
+    "search": "",
+    "keys": [],
+    "group": "remembered"
+  },
+  "remembered-split-nothing-matches": {
+    "window": "crosswatch-remembered.xml",
+    "key": "",
+    "search": "zzzz",
+    "keys": [],
+    "group": "remembered"
   }
 }

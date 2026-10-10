@@ -80,7 +80,7 @@ msgid "will ask again"
 msgstr ""
 
 msgctxt "#30042"
-msgid "not in library"
+msgid "Not in library"
 msgstr ""
 
 msgctxt "#30043"
@@ -96,7 +96,7 @@ msgid "No remembered answers yet."
 msgstr ""
 
 msgctxt "#30046"
-msgid "not stable"
+msgid "Not stable"
 msgstr ""
 
 msgctxt "#30047"
@@ -196,7 +196,7 @@ msgid "The Kodi add-on is switched off in CrossWatch. Turn it on there, then pai
 msgstr ""
 
 msgctxt "#30077"
-msgid "covered by playlist"
+msgid "Covered by"
 msgstr ""
 
 msgctxt "#30078"
@@ -353,4 +353,28 @@ msgstr ""
 
 msgctxt "#30122"
 msgid "unusable"
+msgstr ""
+
+msgctxt "#30123"
+msgid "Answer"
+msgstr ""
+
+msgctxt "#30124"
+msgid "%s's playlist '%s'"
+msgstr ""
+
+msgctxt "#30125"
+msgid "gone from Kodi's library"
+msgstr ""
+
+msgctxt "#30126"
+msgid "now points at %s"
+msgstr ""
+
+msgctxt "#30127"
+msgid "no title stored to check it"
+msgstr ""
+
+msgctxt "#30128"
+msgid "Change"
 msgstr ""

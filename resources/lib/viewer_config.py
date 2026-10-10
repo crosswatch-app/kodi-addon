@@ -52,10 +52,10 @@ from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
+from resources.lib.ui.panel import PanelLine
 from resources.lib.ui.viewers_window import (
     ROUTE_ACCEPTED,
     ROUTE_REFUSED,
-    PanelLine,
     ViewerRow,
     ViewersRequest,
     ViewersResult,
@@ -322,7 +322,6 @@ def _edit_playlists(
         rows=rows,
         count_one=_text(kodi, VIEWERS_ONE_PLAYLIST),
         count_all=_text(kodi, VIEWERS_PLAYLISTS),
-        pick=True,
         ticked=viewer.playlists,
     )
     result = kodi.list_window(request, ListState())
@@ -351,7 +350,6 @@ def _edit_profiles(
         rows=rows,
         count_one=_text(kodi, VIEWERS_ONE_PROFILE),
         count_all=_text(kodi, VIEWERS_PROFILES),
-        pick=True,
         ticked=ticked,
     )
     result = kodi.list_window(request, ListState())

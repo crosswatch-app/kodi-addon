@@ -14,14 +14,16 @@ from resources.lib.constants import (
     WINDOW_YES,
 )
 from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, ListState
-from resources.lib.ui.viewers_window import PanelLine, ViewerRow, ViewersRequest, ViewersResult
+from resources.lib.ui.panel import PanelLine
+from resources.lib.ui.viewers_window import ViewerRow, ViewersRequest, ViewersResult
 from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
     BUTTON_ADD,
     BUTTON_BULK,
+    BUTTON_CHANGE,
     BUTTON_CLOSE,
     BUTTON_DONE,
-    BUTTON_FORGET,
+    BUTTON_FORGET_ONE,
     BUTTON_NO,
     BUTTON_PICK_DONE,
     BUTTON_PLAYLISTS,
@@ -39,6 +41,7 @@ from resources.lib.ui.window import (
     ConfirmDialog,
     ListDialog,
     PickListDialog,
+    RememberedDialog,
     ViewersDialog,
     WhoWatchedDialog,
 )
@@ -70,7 +73,7 @@ class Action:
 
 
 def _dialog(
-    names=("anna", "bob"), preselect=(), autoclose=0, on_playback=False, playing=False, aborts=(), offer_forget=False
+    names=("anna", "bob"), preselect=(), autoclose=0, on_playback=False, playing=False, aborts=()
 ) -> tuple[Any, FakeList]:
     """The dialog is returned as Any: it is built on the stub window (tests/stubs.py), whose
     recording helpers the Kodistubs type the checker reads does not have.
@@ -79,7 +82,7 @@ def _dialog(
     so a started watch thread ticks fast without spinning."""
     request = WhoWatchedRequest(
         title="Example", subtitle="Season 2, episode 5", poster="image://p/", names=names,
-        preselect=preselect, autoclose_seconds=autoclose, close_on_playback=on_playback, offer_forget=offer_forget,
+        preselect=preselect, autoclose_seconds=autoclose, close_on_playback=on_playback,
     )
     abort_answers = list(aborts)
 
@@ -413,14 +416,12 @@ def test_nothing_matching_shows_the_empty_line():
     assert dialog.getProperty("CW.Count") == "0 of 4"
 
 
-def test_ok_on_a_row_returns_it_with_the_state():
+def test_the_state_carries_the_filter_and_the_selected_key():
     dialog, rows, _ = _list()
     dialog.onInit()
     dialog.onClick(LIST_FILTER)  # anna: Alpha, Gamma
     rows.position = 1
-    dialog.onClick(LIST_ROWS)
-    assert dialog.result.action == "open" and dialog.result.key == "c"
-    assert dialog.result.state == ListState(search="", filter_index=1, position=1)
+    assert dialog.state() == ListState(search="", filter_index=1, position=1, key="c")
 
 
 def test_the_bulk_button_returns_the_keys_shown():
@@ -469,28 +470,6 @@ def test_without_filters_the_viewer_button_is_hidden():
     dialog.onClick(LIST_FILTER)
     assert _titles(rows) == ["Alpha", "Beta", "Gamma", "Delta"]
 
-
-def test_forget_is_offered_only_when_asked():
-    plain, _ = _dialog()
-    plain.onInit()
-    assert plain.getProperty("CW.OfferForget") == ""
-    offered, _ = _dialog(offer_forget=True)
-    offered.onInit()
-    assert offered.getProperty("CW.OfferForget") == "true"
-
-
-def test_forget_returns_the_nobody_answer():
-    dialog, _ = _dialog(preselect=("anna",), offer_forget=True)
-    dialog.onInit()
-    dialog.onClick(BUTTON_FORGET)
-    assert dialog.result == () and dialog.close_reason == "forget"
-
-
-def test_forget_does_nothing_when_not_offered():
-    dialog, _ = _dialog(preselect=("anna",))
-    dialog.onInit()
-    dialog.onClick(BUTTON_FORGET)
-    assert dialog.closed == 0
 
 def test_a_list_that_opens_empty_focuses_the_search_so_the_household_is_not_stuck():
     """An empty list cannot take focus, and no direction leads out of nothing. The search box
@@ -551,7 +530,6 @@ def _pick(ticked=("Cartoons", "Eps"), state=START) -> tuple[Any, FakeRows, FakeE
         rows=PLAYLISTS,
         count_one="1 playlist",
         count_all="%s playlists",
-        pick=True,
         ticked=ticked,
     )
     dialog: Any = PickListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
@@ -566,7 +544,6 @@ def test_a_pick_list_opens_with_its_ticks_and_says_cancel():
     dialog, rows, _ = _pick()
     dialog.onInit()
     assert _chosen(rows) == ["", "true", "", "true"]
-    assert dialog.getProperty("CW.Pick") == "true"
     assert dialog.getProperty("CW.Close") == "Cancel"
     assert dialog.getProperty("CW.Bulk") == ""
     assert dialog.getProperty("CW.Filter") == ""
@@ -634,14 +611,6 @@ def test_the_bulk_button_does_nothing_on_a_pick_list():
     dialog.onInit()
     dialog.onClick(BUTTON_BULK)
     assert dialog.closed == 0
-
-
-def test_ok_on_a_row_of_a_plain_list_still_opens_it():
-    """The pick override must not leak into the list it extends."""
-    dialog, rows, _ = _list()
-    dialog.onInit()
-    dialog.onClick(LIST_ROWS)
-    assert dialog.result.action == "open" and dialog.getProperty("CW.Pick") == ""
 
 
 VIEWER_ROWS = (
@@ -716,3 +685,94 @@ def test_an_empty_viewers_window_starts_on_add_viewer_and_offers_no_actions():
     assert dialog.closed == 0
     dialog.onClick(BUTTON_ADD)
     assert dialog.result == ViewersResult("add", "")
+
+
+def test_a_rows_properties_reach_its_list_item():
+    rows = (ListRow(key="a", title="Alpha", properties=(("slot1", "Answer"), ("warn", "true"))),)
+    request = ListRequest(heading="h", rows=rows, count_one="1", count_all="%s")
+    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, START, lambda i: LIST_TEXTS.get(i, ""))
+    control, edit = FakeRows(), FakeEdit()
+    dialog.set_control(LIST_ROWS, control)
+    dialog.set_control(LIST_SEARCH, edit)
+    dialog.onInit()
+    assert control.items[0].getProperty("slot1") == "Answer" and control.items[0].getProperty("warn") == "true"
+
+
+def test_the_list_reopens_on_the_key_and_reports_the_selected_one():
+    dialog, rows, _ = _list(ListState(position=0, key="c"))
+    dialog.onInit()
+    assert rows.position == 2
+    rows.position = 1
+    assert dialog.state().key == "b"
+
+
+SPLIT_ROWS = (
+    ListRow(key="a", title="Alpha", names=("anna",), properties=(("changeable", "true"),)),
+    ListRow(key="b", title="Beta", names=("bob",), properties=(("changeable", ""), ("warn", "true"))),
+)
+
+
+def _remembered(state=START) -> tuple[Any, FakeRows]:
+    request = ListRequest(
+        heading="Remembered answers", rows=SPLIT_ROWS, count_one="1 show", count_all="%s shows",
+        filters=FILTERS, bulk_all="Forget all", bulk_shown="Forget %s shown",
+    )
+    dialog: Any = RememberedDialog("crosswatch-remembered.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, state, lambda i: LIST_TEXTS.get(i, ""))
+    rows = FakeRows()
+    dialog.set_control(LIST_ROWS, rows)
+    dialog.set_control(LIST_SEARCH, FakeEdit())
+    return dialog, rows
+
+
+def test_ok_on_a_changeable_show_moves_to_change_and_on_another_to_forget():
+    dialog, rows = _remembered()
+    dialog.onInit()
+    dialog.onClick(LIST_ROWS)
+    assert dialog.focused == BUTTON_CHANGE and dialog.closed == 0
+    rows.position = 1
+    dialog.onClick(LIST_ROWS)
+    assert dialog.focused == BUTTON_FORGET_ONE and dialog.closed == 0
+
+
+def test_change_returns_the_show_with_the_state():
+    dialog, rows = _remembered(ListState(key="a"))
+    dialog.onInit()
+    dialog.onClick(BUTTON_CHANGE)
+    assert dialog.result.action == "change" and dialog.result.key == "a" and dialog.result.state.key == "a"
+
+
+def test_change_on_a_show_that_cannot_change_does_nothing():
+    dialog, rows = _remembered(ListState(key="b"))
+    dialog.onInit()
+    assert rows.position == 1
+    dialog.onClick(BUTTON_CHANGE)  # hidden in the XML; a stray click must not change it
+    assert dialog.closed == 0
+
+
+def test_forget_returns_the_show_for_any_row():
+    dialog, rows = _remembered(ListState(key="b"))
+    dialog.onInit()
+    dialog.onClick(BUTTON_FORGET_ONE)
+    assert dialog.result.action == "forget" and dialog.result.key == "b"
+
+
+def test_bulk_close_and_back_still_work_in_the_split_window():
+    dialog, _ = _remembered()
+    dialog.onInit()
+    dialog.onClick(BUTTON_BULK)
+    assert dialog.result.action == "bulk" and dialog.result.keys == ("a", "b")
+    dialog, _ = _remembered()
+    dialog.onInit()
+    dialog.onAction(Action(92))
+    assert dialog.result is None and dialog.close_reason == "back"
+
+
+def test_nothing_shown_gives_forget_nothing_to_act_on():
+    dialog, rows = _remembered(ListState(search="zzz"))
+    dialog.onInit()
+    assert rows.items == [] and dialog.getProperty("CW.Empty") == "true"
+    dialog.onClick(BUTTON_FORGET_ONE)
+    dialog.onClick(LIST_ROWS)
+    assert dialog.closed == 0

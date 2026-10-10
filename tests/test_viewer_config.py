@@ -30,7 +30,8 @@ from resources.lib.playlist_index import PLAYLIST_DIR
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 from resources.lib.ui.list_window import ListResult, ListState
-from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, PanelLine, ViewersResult
+from resources.lib.ui.panel import PanelLine
+from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, ViewersResult
 from resources.lib.viewer_config import (
     PlaylistListing,
     apply_edit,
@@ -166,7 +167,7 @@ def test_the_picker_is_a_pick_list_with_the_viewers_playlists_ticked():
     viewer = Viewer(name="anna", playlists=("Anna TV",))
     viewer_config._edit_playlists(kodi, viewer, ["Anna TV", "Bob TV"], (), [viewer])
     request, state = kodi.list_window_calls[0]
-    assert request.pick and request.ticked == ("Anna TV",)
+    assert request.ticked == ("Anna TV",)
     assert request.heading == f"#{VIEWERS_PLAYLISTS_FOR}".replace("%s", "anna")
     assert request.filters == () and request.bulk_all == ""
     assert [row.key for row in request.rows] == ["Anna TV", "Bob TV"]
@@ -358,7 +359,6 @@ class ScriptedKodi(FakeKodi):
         return ViewersResult(action, chosen)
 
     def list_window(self, request, state):
-        assert request.pick, "only the pickers use the list window"
         self.pick_requests.append(request)
         keys = self._picks.pop(0) if self._picks else None
         return ListResult("close", state) if keys is None else ListResult("done", state, keys=tuple(keys))

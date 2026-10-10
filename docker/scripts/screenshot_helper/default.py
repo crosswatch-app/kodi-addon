@@ -39,7 +39,6 @@ def _who_watched(scene: dict, path: str) -> None:
         names=tuple(scene["names"]),
         preselect=tuple(scene["preselect"]),
         autoclose_seconds=scene["autoclose_seconds"],
-        offer_forget=scene.get("offer_forget", False),
     )
     monitor = xbmc.Monitor()
     dialog = window.WhoWatchedDialog(window.WHO_WATCHED_XML, path, "Default", "1080i")
@@ -53,47 +52,16 @@ def _who_watched(scene: dict, path: str) -> None:
 
 
 DEMO_WHO = [("Anna", "Ben"), ("Chloe",), (), ("Ben",), ("Anna",), ("Anna", "Chloe"), ("Ben",), ()]
-DEMO_TAG = ["", "", "", "covered by playlist", "", "not in library", "", ""]
 
 
 def _list(scene: dict, path: str) -> None:
-    from resources.lib.ui import list_window as lw
-
     if scene.get("rows") == "playlists":
         _pick(scene, path)
         return
     if scene.get("rows") == "profiles":
         _profiles(scene, path)
         return
-    with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
-        shows = json.load(handle)["shows"]
-    rows = tuple(
-        lw.ListRow(
-            key=str(i), title=show["title"], detail=", ".join(DEMO_WHO[i % 8]) or "will ask again",
-            tag=DEMO_TAG[i % 8], thumb=show["poster"], names=DEMO_WHO[i % 8],
-        )
-        for i, show in enumerate(shows)
-    )
-    filters = (
-        lw.ListFilter("All", lambda row: True),
-        *(lw.ListFilter(n, lambda row, n=n: n in row.names) for n in ("Anna", "Ben", "Chloe")),
-        lw.ListFilter("will ask again", lambda row: not row.names),
-    )
-    request = lw.ListRequest(
-        heading="Remembered answers",
-        rows=rows,
-        count_one=TARGET.getLocalizedString(30097),
-        count_all=TARGET.getLocalizedString(30090),
-        filters=filters,
-        bulk_all="Forget all",
-        bulk_shown="Forget %s shown",
-    )
-    dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
-    dialog.prepare(request, lw.ListState(search=scene["search"], filter_index=scene["filter"]), TARGET.getLocalizedString)
-    try:
-        dialog.doModal()
-    finally:
-        dialog.stop()
+    raise ValueError(f"unknown list scene rows: {scene.get('rows')}")
 
 
 # name, other viewers with it, flag (string id or 0), ticked
@@ -123,7 +91,6 @@ def _pick(scene: dict, path: str) -> None:
         rows=rows,
         count_one=text(30059),
         count_all=text(30056),
-        pick=True,
         ticked=tuple(name for name, _, _, ticked in DEMO_PLAYLISTS if ticked),
     )
     dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
@@ -155,7 +122,7 @@ def _profiles(scene: dict, path: str) -> None:
     )
     request = lw.ListRequest(
         heading=text(30114).replace("%s", "Anna"), rows=rows, count_one=text(30105), count_all=text(30106),
-        pick=True, ticked=("Kids", "Old profile"),
+        ticked=("Kids", "Old profile"),
     )
     dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
     dialog.prepare(request, lw.ListState(), text)
@@ -167,17 +134,18 @@ def _profiles(scene: dict, path: str) -> None:
 
 def _split(scene: dict, path: str) -> None:
     from resources.lib.ui import viewers_window as vw
+    from resources.lib.ui.panel import PanelLine
 
     text = TARGET.getLocalizedString
-    heads = (vw.PanelLine(text(30107), heading=True), vw.PanelLine(text(30108), heading=True))
-    missing, none = text(30058), vw.PanelLine(text(30113))
+    heads = (PanelLine(text(30107), heading=True), PanelLine(text(30108), heading=True))
+    missing, none = text(30058), PanelLine(text(30113))
 
     def row(name, playlists, profiles=(), route=""):
         lines = (heads[0], *(playlists or (none,)), heads[1], *(profiles or (none,)))
         return vw.ViewerRow(name, lines, route)
 
     def line(name, tag=""):
-        return vw.PanelLine(name, tag=tag, warn=bool(tag))
+        return PanelLine(name, tag=tag, warn=bool(tag))
 
     easytv = ("All Shows", "Continue Watching", "Season Premieres", "Show Premieres", "Start Fresh", "Cartoons for the weekend")
     households = {
@@ -209,11 +177,60 @@ def _split(scene: dict, path: str) -> None:
         dialog.stop()
 
 
+class _Words:
+    """The add-on's own strings, for the screen's row builder."""
+
+    def localised(self, string_id: int) -> str:
+        return TARGET.getLocalizedString(string_id)
+
+
+def _remembered(scene: dict, path: str) -> None:
+    from resources.lib import remembered
+    from resources.lib.models import Viewer
+    from resources.lib.storage import RememberedAnswer
+    from resources.lib.ui import list_window as lw
+
+    with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
+        shows = json.load(handle)["shows"]
+    viewers = [Viewer(name=n) for n in ("Anna", "Ben", "Chloe")]
+    library = {
+        f"show:tvdb:{i}": remembered.Show(show["title"], show["year"], i, show["poster"]) for i, show in enumerate(shows)
+    }
+    entries = {
+        f"show:tvdb:{i}": RememberedAnswer(viewers=DEMO_WHO[i % 8] or ("Dora",), title=show["title"], year=show["year"])
+        for i, show in enumerate(shows)
+    }
+    # An answer stored against Kodi's database id, which now holds another show.
+    library["tvshow:900"] = remembered.Show(shows[5]["title"], shows[5]["year"], 900, shows[5]["poster"])
+    entries["tvshow:900"] = RememberedAnswer(viewers=("Ben",), title="Old Name", year=2015)
+    entries["show:tvdb:999"] = RememberedAnswer(viewers=("Chloe",), title="Gone Show", year=2001)
+    covers = {"show:tvdb:3": (("Anna", "Cartoons"), ("Ben", "Family evenings"))}
+    words = _Words()
+    rows = remembered.build_rows(entries, library, viewers, words, covers)
+    more = words.localised(30121)
+    request = lw.ListRequest(
+        heading=words.localised(30035),
+        rows=tuple(remembered._list_row(row, more) for row in rows),
+        count_one=words.localised(30097),
+        count_all=words.localised(30090),
+        filters=remembered.viewer_filters(words, viewers),
+        bulk_all=words.localised(30092),
+        bulk_shown=words.localised(30093),
+    )
+    dialog = window.RememberedDialog(window.REMEMBERED_XML, path, "Default", "1080i")
+    dialog.prepare(request, lw.ListState(search=scene["search"], key=scene["key"]), TARGET.getLocalizedString)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
 WINDOWS = {
     window.WHO_WATCHED_XML: _who_watched,
     window.LIST_XML: _list,
     window.CONFIRM_XML: _confirm,
     window.VIEWERS_XML: _split,
+    window.REMEMBERED_XML: _remembered,
 }
 
 

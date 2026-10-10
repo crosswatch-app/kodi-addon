@@ -53,6 +53,7 @@
             <control type="button" id="10">
                 <left>50</left><top>300</top><width>170</width><height>72</height>
                 <align>center</align><aligny>center</aligny>
+                <textoffsetx>10</textoffsetx>
                 <font>font30_title</font>
                 <textcolor>FFF1F3F5</textcolor>
                 <focusedcolor>FFF1F3F5</focusedcolor>
@@ -65,6 +66,7 @@
             <control type="button" id="11">
                 <left>236</left><top>300</top><width>170</width><height>72</height>
                 <align>center</align><aligny>center</aligny>
+                <textoffsetx>10</textoffsetx>
                 <font>font30_title</font>
                 <textcolor>FFF1F3F5</textcolor>
                 <focusedcolor>FFF1F3F5</focusedcolor>

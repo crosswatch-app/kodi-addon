@@ -39,7 +39,6 @@ WHO_WATCHED_XML = "crosswatch-who.xml"
 LIST_VIEWERS = 200
 BUTTON_DONE = 20
 BUTTON_SKIP = 21
-BUTTON_FORGET = 22
 
 Localised = Callable[[int], str]
 
@@ -172,7 +171,6 @@ class WhoWatchedDialog(CrossWatchDialog):
                 "CW.Subtitle": request.subtitle,
                 "CW.Poster": request.poster,
                 "CW.Question": localised(WHO_WATCHED_QUESTION),
-                "CW.OfferForget": "true" if request.offer_forget else "",
             },
             request.autoclose_seconds,
             request.close_on_playback,
@@ -196,9 +194,6 @@ class WhoWatchedDialog(CrossWatchDialog):
             self._show_ticks()
         elif controlId == BUTTON_DONE:
             self.finish("done", ww.answer(names, self._ticked))
-        elif controlId == BUTTON_FORGET and self._request.offer_forget:
-            # The same answer as Done with nobody ticked, which the screen treats as forget.
-            self.finish("forget", ())
         elif controlId == BUTTON_SKIP:
             self.finish("skip")
 
@@ -335,7 +330,7 @@ class ListDialog(CrossWatchDialog):
         self._search = state.search
         in_range = 0 <= state.filter_index < len(request.filters)
         self._filter_index = state.filter_index if in_range else 0
-        self._position = state.position
+        self._start = state
         self._shown: list[lw.ListRow] = []
         self.configure(
             localised,
@@ -351,14 +346,16 @@ class ListDialog(CrossWatchDialog):
 
     def state(self) -> lw.ListState:
         rows: Any = self.getControl(LIST_ROWS)
-        return lw.ListState(self._search, self._filter_index, int(rows.getSelectedPosition()))
+        position = int(rows.getSelectedPosition())
+        key = self._shown[position].key if 0 <= position < len(self._shown) else ""
+        return lw.ListState(self._search, self._filter_index, position, key)
 
     def fill(self) -> None:
         search: Any = self.getControl(LIST_SEARCH)
         # Kodi heads its keyboard "Enter value" unless the edit control is told otherwise.
         search.setType(xbmcgui.INPUT_TYPE_TEXT, self._localised(WINDOW_SEARCH))
         search.setText(self._search)
-        self._show(self._position)
+        self._show(self._start)
         if self._shown:
             self.setFocusId(LIST_ROWS)
         else:
@@ -383,11 +380,7 @@ class ListDialog(CrossWatchDialog):
             self._read_search()  # after Kodi's keyboard closes
         elif controlId == LIST_FILTER and self._request.filters:
             self._filter_index = (self._filter_index + 1) % len(self._request.filters)
-            self._show(0)
-        elif controlId == LIST_ROWS:
-            position = self.state().position
-            if 0 <= position < len(self._shown):
-                self.finish("open", lw.ListResult("open", self.state(), key=self._shown[position].key))
+            self._show(lw.ListState())
         elif controlId == BUTTON_BULK and lw.bulk_label(self._request, len(self._shown)):
             keys = tuple(row.key for row in self._shown)
             self.finish("bulk", lw.ListResult("bulk", self.state(), keys=keys))
@@ -399,9 +392,9 @@ class ListDialog(CrossWatchDialog):
         text = str(search.getText())
         if text != self._search:
             self._search = text
-            self._show(0)
+            self._show(lw.ListState())
 
-    def _show(self, position: int) -> None:
+    def _show(self, start: lw.ListState) -> None:
         request = self._request
         row_filter = request.filters[self._filter_index] if request.filters else None
         self._shown = lw.visible(request.rows, self._search, row_filter)
@@ -412,9 +405,11 @@ class ListDialog(CrossWatchDialog):
             item.setArt({"thumb": row.thumb})
             item.setProperty("detail", row.detail)
             item.setProperty("tag", row.tag)
+            for key, value in row.properties:
+                item.setProperty(key, value)
             rows.addItem(item)
         if self._shown:
-            rows.selectItem(min(max(position, 0), len(self._shown) - 1))
+            rows.selectItem(lw.start_index(self._shown, start))
         label = self._localised(WINDOW_VIEWER).replace("%s", row_filter.label) if row_filter else ""
         self.setProperty("CW.Filter", label)
         self.setProperty("CW.Count", lw.count_text(request, self._localised, len(self._shown)))
@@ -431,7 +426,6 @@ class PickListDialog(ListDialog):
     def prepare(self, request: lw.ListRequest, state: lw.ListState, localised: Localised) -> None:
         super().prepare(request, state, localised)
         self._ticked = frozenset(request.ticked)
-        self._window_properties["CW.Pick"] = "true"
         self._window_properties["CW.Close"] = localised(WINDOW_CANCEL)
 
     def onClick(self, controlId: int) -> None:
@@ -449,8 +443,46 @@ class PickListDialog(ListDialog):
         else:
             super().onClick(controlId)
 
-    def _show(self, position: int) -> None:
-        super()._show(position)
+    def _show(self, start: lw.ListState) -> None:
+        super()._show(start)
         rows: Any = self.getControl(LIST_ROWS)
         for index, row in enumerate(self._shown):
             rows.getListItem(index).setProperty("chosen", "true" if row.key in self._ticked else "")
+
+
+REMEMBERED_XML = "crosswatch-remembered.xml"
+BUTTON_CHANGE = 40
+BUTTON_FORGET_ONE = 41
+
+
+class RememberedDialog(ListDialog):
+    """The searchable list of shows, the highlighted one's panel, and Change and Forget.
+
+    Each row's panel is in its properties; "changeable" is empty for an answer that can
+    only be forgotten, which the XML reads to hide Change.
+    """
+
+    name = "remembered"
+
+    def onClick(self, controlId: int) -> None:
+        row = self._selected()
+        if controlId == LIST_ROWS:
+            # The row has no action of its own; OK there means "go to the actions".
+            if row is not None:
+                self.setFocusId(BUTTON_CHANGE if _changeable(row) else BUTTON_FORGET_ONE)
+        elif controlId == BUTTON_CHANGE:
+            if row is not None and _changeable(row):
+                self.finish("change", lw.ListResult("change", self.state(), key=row.key))
+        elif controlId == BUTTON_FORGET_ONE:
+            if row is not None:
+                self.finish("forget", lw.ListResult("forget", self.state(), key=row.key))
+        else:
+            super().onClick(controlId)
+
+    def _selected(self) -> lw.ListRow | None:
+        position = self.state().position
+        return self._shown[position] if 0 <= position < len(self._shown) else None
+
+
+def _changeable(row: lw.ListRow) -> bool:
+    return dict(row.properties).get("changeable") == "true"

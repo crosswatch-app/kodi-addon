@@ -47,6 +47,7 @@ class KodiApi(Protocol):
     def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
     def confirm_window(self, heading: str, message: str) -> bool: ...
     def list_window(self, request: ListRequest, state: ListState) -> ListResult: ...
+    def remembered_window(self, request: ListRequest, state: ListState) -> ListResult: ...
     def viewers_window(self, request: ViewersRequest, key: str) -> ViewersResult: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
@@ -217,12 +218,27 @@ class KodiRuntime:
         def make(path: str) -> Any:
             from resources.lib.ui import window
 
-            kind = window.PickListDialog if request.pick else window.ListDialog
-            dialog = kind(window.LIST_XML, path, "Default", "1080i")
+            dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
             dialog.prepare(request, state, self.localised)
             return dialog
 
-        dialog = self._modal("pick_list" if request.pick else "list", make)
+        dialog = self._modal("pick_list", make)
+        if dialog is None or dialog.result is None:
+            return ListResult("close", state)
+        return dialog.result
+
+    def remembered_window(self, request: ListRequest, state: ListState) -> ListResult:
+        """What the household did; Back and a failed window both close, keeping the state."""
+        from resources.lib.ui.list_window import ListResult
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.RememberedDialog(window.REMEMBERED_XML, path, "Default", "1080i")
+            dialog.prepare(request, state, self.localised)
+            return dialog
+
+        dialog = self._modal("remembered", make)
         if dialog is None or dialog.result is None:
             return ListResult("close", state)
         return dialog.result

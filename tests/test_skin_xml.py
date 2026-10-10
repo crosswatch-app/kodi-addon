@@ -50,21 +50,13 @@ def test_the_window_opens_on_a_control_that_can_take_focus():
 
 
 def test_the_buttons_sit_in_one_row_below_the_list():
-    """A grouplist, so a hidden Forget leaves no gap and no dead end for left and right."""
+    """A grouplist, so the buttons sit together and left and right move between them."""
     row = _root().find(".//control[@type='grouplist']")
     assert row is not None and row.findtext("orientation") == "horizontal"
-    assert [c.get("id") for c in row.findall("control")] == ["20", "22", "21"]
+    assert [c.get("id") for c in row.findall("control")] == ["20", "21"]
     assert _control("200").findtext("ondown") == "20"
-    for button in ("20", "21", "22"):
+    for button in ("20", "21"):
         assert _control(button).findtext("onup") == "200"
-
-
-def test_forget_shows_only_when_offered_and_its_label_comes_from_strings_po():
-    from resources.lib.constants import REMEMBERED_FORGET
-
-    forget = _control("22")
-    assert forget.findtext("visible") == "String.IsEqual(Window.Property(CW.OfferForget),true)"
-    assert forget.findtext("label") == f"$ADDON[{ADDON_ID} {REMEMBERED_FORGET}]"
 
 
 def test_button_labels_come_from_strings_po():
@@ -155,9 +147,8 @@ def test_the_list_window_navigates_between_search_rows_and_buttons():
     assert root.findtext("defaultcontrol") == "21"
     assert control("100").findtext("onup") == "30"
     assert control("30").get("type") == "edit" and control("30").findtext("ondown") == "100"
-    assert control("30").findtext("onright") == "31" and control("31").findtext("onleft") == "30"
-    assert control("20").findtext("onright") == "21"
     assert control("100").findtext("pagecontrol") == "101"
+    assert control("30").findtext("top") == "110" and control("100").findtext("top") == "206"
     LIST.read_text(encoding="ascii")
 
 
@@ -165,18 +156,14 @@ def _navigation(control: ET.Element, key: str) -> list[tuple[str | None, str]]:
     return [(nav.get("condition"), (nav.text or "").strip()) for nav in control.findall(key)]
 
 
-def test_the_bulk_button_hides_and_down_reaches_close_when_nothing_is_shown():
-    """Kodi takes the first navigation whose condition holds, so the unconditioned Close
-    comes last; a hidden bulk button would otherwise swallow Down."""
+def test_the_list_window_is_the_picker_only():
+    """The Viewers and Remembered answers screens have their own split windows, so this one
+    has no filter, no bulk button and no thumbnails, and nothing is conditional on pick mode."""
     root = ET.parse(LIST).getroot()
-    rows = root.find(".//control[@id='100']")
-    bulk = root.find(".//control[@id='20']")
-    close = root.find(".//control[@id='21']")
-    assert rows is not None and bulk is not None and close is not None
-    shown = "!String.IsEmpty(Window.Property(CW.Bulk))"
-    assert bulk.findtext("visible") == shown
-    assert _navigation(rows, "ondown")[-2:] == [(shown, "20"), (None, "21")]
-    assert _navigation(close, "onleft")[-1] == (shown, "20")
+    assert {c.get("id") for c in root.iter("control") if c.get("id")} == {"30", "100", "101", "21", "22"}
+    text = LIST.read_text(encoding="ascii")
+    assert "CW.Pick" not in text and "CW.Bulk" not in text and "CW.Filter" not in text
+    assert "ListItem.Art(thumb)" not in text and "poster_empty" not in text
 
 
 def test_the_close_label_comes_from_a_property_so_a_pick_list_can_say_cancel():
@@ -185,32 +172,23 @@ def test_the_close_label_comes_from_a_property_so_a_pick_list_can_say_cancel():
     assert close is not None and close.findtext("label") == "$INFO[Window.Property(CW.Close)]"
 
 
-PICK = "String.IsEqual(Window.Property(CW.Pick),true)"
-
-
-def test_a_pick_list_has_an_accent_done_button_where_the_bulk_button_sits():
+def test_a_pick_list_has_an_accent_done_button_below_the_list():
     root = ET.parse(LIST).getroot()
     done = root.find(".//control[@id='22']")
-    bulk = root.find(".//control[@id='20']")
-    assert done is not None and bulk is not None
-    assert done.findtext("visible") == PICK
+    rows = root.find(".//control[@id='100']")
+    close = root.find(".//control[@id='21']")
+    assert done is not None and rows is not None and close is not None
+    assert done.findtext("visible") is None
     assert done.findtext("label") == f"$ADDON[{ADDON_ID} {WHO_WATCHED_DONE}]"
     assert done.findtext("texturenofocus") == "crosswatch/box_accent.png"
     assert done.findtext("texturefocus") == "crosswatch/box_accent_focus.png"
-    assert (done.findtext("left"), done.findtext("top")) == (bulk.findtext("left"), bulk.findtext("top"))
+    assert (done.findtext("left"), done.findtext("top")) == ("50", "740")
     assert done.findtext("onup") == "100" and done.findtext("onright") == "21"
+    assert _navigation(rows, "ondown") == [(None, "22")]
+    assert _navigation(close, "onleft") == [(None, "22")]
 
 
-def test_down_from_a_pick_list_reaches_done_first():
-    root = ET.parse(LIST).getroot()
-    rows = root.find(".//control[@id='100']")
-    close = root.find(".//control[@id='21']")
-    assert rows is not None and close is not None
-    assert _navigation(rows, "ondown")[0] == (PICK, "22")
-    assert _navigation(close, "onleft")[0] == (PICK, "22")
-
-
-def test_pick_rows_show_a_tick_and_hide_the_thumbnail():
+def test_pick_rows_show_a_tick():
     root = ET.parse(LIST).getroot()
     for layout in ("itemlayout", "focusedlayout"):
         found = root.find(f".//control[@id='100']/{layout}")
@@ -219,10 +197,7 @@ def test_pick_rows_show_a_tick_and_hide_the_thumbnail():
         ticks = [i for i in images if i.findtext("texture") == "crosswatch/tick.png"]
         assert len(ticks) == 1 and ticks[0].findtext("visible") == "String.IsEqual(ListItem.Property(chosen),true)"
         assert (ticks[0].findtext("width"), ticks[0].findtext("height")) == ("48", "48")
-        thumbs = [i for i in images if "thumb" in (i.findtext("texture") or "") or "poster_empty" in (i.findtext("texture") or "")]
-        assert thumbs and all(i.findtext("visible") == f"!{PICK}" for i in thumbs)
-        chosen = [i for i in images if (i.findtext("texture") or "").startswith("crosswatch/box_chosen")]
-        assert chosen
+        assert [i for i in images if (i.findtext("texture") or "").startswith("crosswatch/box_chosen")]
 
 
 def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping():
@@ -234,9 +209,8 @@ def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping
         assert found is not None
         spans = {}
         for control in found.findall("control"):
-            visible = control.findtext("visible") or ""
             label = control.findtext("label") or control.findtext("texture") or ""
-            if visible == PICK or "tick.png" in label:
+            if control.get("type") == "label" or "tick.png" in label:
                 left, width = int(control.findtext("left") or 0), int(control.findtext("width") or 0)
                 spans[label] = (left, left + width)
         title = spans["$INFO[ListItem.Label]"]
@@ -244,8 +218,6 @@ def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping
         ordered = sorted(spans.values())
         assert len(ordered) == 4  # title, detail, tag, tick
         assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered
-
-
 
 
 def test_the_icons_are_64_pixel_rgba_pngs():
@@ -261,6 +233,10 @@ def test_the_icons_are_64_pixel_rgba_pngs():
 
 VIEWERS = SKIN / "1080i" / "crosswatch-viewers.xml"
 NOT_EMPTY = "!String.IsEqual(Window.Property(CW.Empty),true)"
+
+
+def _nav(control: ET.Element, key: str) -> list[tuple[str | None, str]]:
+    return [(n.get("condition"), (n.text or "").strip()) for n in control.findall(key)]
 
 
 def _viewers_control(control_id: str) -> ET.Element:
@@ -282,37 +258,34 @@ def test_the_viewers_window_has_one_set_of_controls_per_panel_slot():
     assert not any(f"Property(slot{PANEL_SLOTS + 1}" in text for text in labels + visible)
 
 
-def test_the_viewers_panel_lines_never_wrap_and_end_above_the_route_line():
+def test_the_viewers_route_line_sits_under_the_name_and_the_lines_never_wrap():
     root = ET.parse(VIEWERS).getroot()
     route = next(
         c for c in root.iter("control") if c.findtext("label") == "$INFO[Container(100).ListItem.Property(route_text)]"
     )
-    route_top = int(route.findtext("top") or 0)
+    route_bottom = int(route.findtext("top") or 0) + int(route.findtext("height") or 0)
+    name = next(c for c in root.iter("control") if c.findtext("label") == "$INFO[Container(100).ListItem.Label]" and c.findtext("left") == "530")
+    assert int(name.findtext("top") or 0) + int(name.findtext("height") or 0) <= int(route.findtext("top") or 0)
     for control in root.iter("control"):
         label = control.findtext("label") or ""
         if "Property(slot" in label:
             assert control.findtext("wrapmultiline") in (None, "false"), label
-            assert int(control.findtext("top") or 0) + int(control.findtext("height") or 0) <= route_top, label
-    assert route_top + int(route.findtext("height") or 0) <= int(_viewers_control("10").findtext("top") or 0)
+            top = int(control.findtext("top") or 0)
+            assert route_bottom <= top and top + int(control.findtext("height") or 0) <= 740, label
 
 
 def test_the_viewers_window_navigates_between_list_actions_and_bottom_row():
-    expected = {
-        "100": {"onright": "10", "ondown": "20"},
-        "10": {"onleft": "100", "onright": "11", "ondown": "12"},
-        "11": {"onleft": "10", "ondown": "13"},
-        "12": {"onleft": "100", "onup": "10", "onright": "13", "ondown": "20"},
-        "13": {"onleft": "12", "onup": "11", "ondown": "20"},
-        "20": {"onright": "21"},
-        "21": {"onleft": "20"},
-    }
-    for control_id, moves in expected.items():
-        control = _viewers_control(control_id)
-        for key, target in moves.items():
-            assert control.findtext(key) == target, (control_id, key)
-    for control_id, target in (("20", "12"), ("21", "13")):
-        up = _viewers_control(control_id).find("onup")
-        assert up is not None and up.text == target and up.get("condition") == NOT_EMPTY
+    rows, add, close = _viewers_control("100"), _viewers_control("20"), _viewers_control("21")
+    assert _nav(rows, "onright") == [(None, "10")] and _nav(rows, "ondown") == [(None, "20")]
+    assert _nav(add, "onup") == [(NOT_EMPTY, "100")]
+    assert _nav(add, "onright") == [(NOT_EMPTY, "10"), (None, "21")]
+    assert _nav(close, "onup") == [(NOT_EMPTY, "100")]
+    assert _nav(close, "onleft") == [(NOT_EMPTY, "13"), (None, "20")]
+    actions = _bottom_group(VIEWERS)
+    assert [c.get("id") for c in actions.findall("control")] == ["10", "11", "12", "13"]
+    assert _nav(actions, "onleft") == [(None, "20")] and _nav(actions, "onright") == [(None, "21")]
+    for button in actions.findall("control"):
+        assert _nav(button, "onup") == [(None, "100")], button.get("id")
 
 
 def test_the_viewers_actions_hide_with_no_viewers_and_add_viewer_never_does():
@@ -387,3 +360,140 @@ def test_a_panel_line_takes_the_full_width_unless_it_has_a_tag():
         tag_label = next(c for c in root.iter("control") if c.findtext("label") == f"$INFO[{tag}]")
         assert int(narrow.findtext("left") or 0) + int(narrow.findtext("width") or 0) <= int(tag_label.findtext("left") or 0)
         assert int(wide.findtext("width") or 0) > int(narrow.findtext("width") or 0)
+
+
+REMEMBERED = SKIN / "1080i" / "crosswatch-remembered.xml"
+CHANGEABLE = "!String.IsEmpty(Container(100).ListItem.Property(changeable))"
+HAS_BULK = "!String.IsEmpty(Window.Property(CW.Bulk))"
+SHOWN = "!String.IsEqual(Window.Property(CW.Empty),true)"
+
+
+def _bottom_group(window: Path) -> ET.Element:
+    groups = [g for g in ET.parse(window).getroot().iter("control") if g.get("type") == "grouplist" and g.findtext("top") == "740"]
+    assert len(groups) == 1, window.name
+    return groups[0]
+
+
+def _remembered_control(control_id: str) -> ET.Element:
+    found = ET.parse(REMEMBERED).getroot().find(f".//control[@id='{control_id}']")
+    assert found is not None, control_id
+    return found
+
+
+def test_the_remembered_window_has_one_set_of_controls_per_panel_slot():
+    from resources.lib.remembered import REMEMBERED_SLOTS
+
+    root = ET.parse(REMEMBERED).getroot()
+    labels = [c.findtext("label") or "" for c in root.iter("control")]
+    visible = [c.findtext("visible") or "" for c in root.iter("control")]
+    for n in range(1, REMEMBERED_SLOTS + 1):
+        for prop in (f"slot{n}", f"slot{n}_head"):
+            assert labels.count(f"$INFO[Container(100).ListItem.Property({prop})]") == 1, prop
+        assert visible.count(f"String.IsEqual(Container(100).ListItem.Property(slot{n}_warn),true)") == 1, n
+    assert not any(f"Property(slot{REMEMBERED_SLOTS + 1}" in text for text in labels + visible)
+    for control in root.iter("control"):
+        if "Property(slot" in (control.findtext("label") or ""):
+            assert control.findtext("wrapmultiline") in (None, "false")
+            assert int(control.findtext("top") or 0) + int(control.findtext("height") or 0) <= 740
+
+
+def test_the_remembered_window_navigates_between_header_list_panel_and_buttons():
+    assert _nav(_remembered_control("30"), "ondown") == [(None, "31")]
+    assert _nav(_remembered_control("31"), "onup") == [(None, "30")]
+    assert _nav(_remembered_control("31"), "ondown") == [(None, "100")]
+    rows = _remembered_control("100")
+    assert _nav(rows, "onup") == [(None, "31")]
+    assert _nav(rows, "onright") == [(CHANGEABLE, "40"), (None, "41")]
+    assert _nav(rows, "ondown") == [(HAS_BULK, "20"), (None, "21")]
+    actions = _bottom_group(REMEMBERED)
+    assert [c.get("id") for c in actions.findall("control")] == ["40", "41"]
+    # The last entry unconditional: Kodi checks for one that holds while the window loads,
+    # before any property is set, and otherwise wires the first button's Left to the last.
+    assert _nav(actions, "onleft") == [(HAS_BULK, "20"), (None, "100")]
+    assert _nav(actions, "onright") == [(None, "21")]
+    for button in actions.findall("control"):
+        assert _nav(button, "onup") == [(None, "100")], button.get("id")
+    bulk = _remembered_control("20")
+    assert _nav(bulk, "onup") == [(None, "100")]
+    assert _nav(bulk, "onright") == [(CHANGEABLE, "40"), (SHOWN, "41"), (None, "21")]
+    close = _remembered_control("21")
+    assert _nav(close, "onleft") == [(SHOWN, "41"), (HAS_BULK, "20")]
+    assert _nav(close, "onup") == [(SHOWN, "100"), (None, "30")]
+
+
+def test_change_shows_only_for_a_changeable_answer_and_both_hide_with_nothing_shown():
+    from resources.lib.constants import REMEMBERED_CHANGE, REMEMBERED_FORGET
+
+    change, forget = _remembered_control("40"), _remembered_control("41")
+    assert change.findtext("label") == f"$ADDON[{ADDON_ID} {REMEMBERED_CHANGE}]"
+    assert forget.findtext("label") == f"$ADDON[{ADDON_ID} {REMEMBERED_FORGET}]"
+    assert change.findtext("visible") == f"{CHANGEABLE} + {SHOWN}"
+    assert forget.findtext("visible") == SHOWN
+    root = ET.parse(REMEMBERED).getroot()
+    assert root.findtext("defaultcontrol") == "21"
+
+
+def test_the_split_windows_keep_close_at_the_far_right_apart_from_the_actions():
+    """The same three groups on both: the left button, the actions on the highlighted row,
+    and Close alone in the corner, so Close is in one place on every screen."""
+    for window, close_left in ((VIEWERS, 1040), (REMEMBERED, 1000)):
+        root = ET.parse(window).getroot()
+        close = root.find(".//control[@id='21']")
+        actions = _bottom_group(window)
+        assert close is not None and int(close.findtext("left") or 0) == close_left
+        assert int(close.findtext("left") or 0) + int(close.findtext("width") or 0) == 1190
+        assert int(actions.findtext("left") or 0) + int(actions.findtext("width") or 0) <= close_left - 40, window.name
+        assert close.findtext("top") == "740" and actions.findtext("top") == "740"
+
+
+def test_the_remembered_poster_has_the_no_poster_placeholder():
+    root = ET.parse(REMEMBERED).getroot()
+    empty = "String.IsEmpty(Container(100).ListItem.Art(thumb))"
+    placeholders = [c for c in root.iter("control") if c.findtext("visible") == empty]
+    assert any(c.findtext("label") == f"$ADDON[{ADDON_ID} 30101]" for c in placeholders)
+    assert sum(1 for c in placeholders if "glow.png" in (c.findtext("texture") or "")) == 4
+    poster = [c for c in root.iter("control") if c.findtext("texture") == "$INFO[Container(100).ListItem.Art(thumb)]"]
+    assert len(poster) == 1 and (poster[0].findtext("width"), poster[0].findtext("height")) == ("240", "360")
+
+
+def test_the_remembered_icons_are_danger_warnings_and_ship():
+    from tests.test_window_style import PALETTE
+
+    root = ET.parse(REMEMBERED).getroot()
+    icons = [c for c in root.iter("control") if "icons/" in (c.findtext("texture") or "")]
+    assert icons
+    for image in icons:
+        texture = image.find("texture")
+        assert texture is not None and texture.text == "crosswatch/icons/warning.png"
+        assert texture.get("colordiffuse") == PALETTE["danger"]
+    for texture in root.iter("texture"):
+        name = texture.text or ""
+        if name.startswith("crosswatch/"):
+            assert (SKIN / "media" / name).is_file(), name
+            assert texture.get("diffuse") in (None, "crosswatch/mask_poster.png")
+
+
+SCREENS = (LIST, VIEWERS, REMEMBERED)
+
+
+def test_the_settings_screens_share_one_header_line():
+    """The brand fixed on the left, the heading centred on the panel, the count on the
+    right, all on one line: a separate heading line cost the lists a row."""
+    for window in SCREENS:
+        root = ET.parse(window).getroot()
+        by_label = {c.findtext("label"): c for c in root.iter("control") if c.get("type") == "label"}
+        brand, heading = by_label["CROSSWATCH"], by_label["$INFO[Window.Property(CW.Heading)]"]
+        count = by_label["$INFO[Window.Property(CW.Count)]"]
+        assert (brand.findtext("left"), brand.findtext("top"), brand.findtext("width")) == ("50", "40", "220"), window.name
+        assert (heading.findtext("left"), heading.findtext("width"), heading.findtext("align")) == ("270", "700", "center")
+        assert (count.findtext("left"), count.findtext("width"), count.findtext("align")) == ("990", "200", "right")
+        assert brand.findtext("top") == heading.findtext("top") == count.findtext("top") == "40"
+
+
+def test_every_button_sets_its_own_text_offset():
+    """A skin's default button offset applies to script windows (Arctic Zephyr Mod's is 30)
+    and cut the narrow labels; every button sets one so no skin can."""
+    for window in sorted((SKIN / "1080i").glob("*.xml")):
+        for control in ET.parse(window).getroot().iter("control"):
+            if control.get("type") == "button":
+                assert control.findtext("textoffsetx") == "10", (window.name, control.get("id"))
