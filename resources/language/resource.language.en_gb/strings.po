@@ -372,7 +372,7 @@ msgid "now points at %s"
 msgstr ""
 
 msgctxt "#30127"
-msgid "stored without a title to check it against"
+msgid "no title stored to check it"
 msgstr ""
 
 msgctxt "#30128"

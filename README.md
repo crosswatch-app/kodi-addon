@@ -251,37 +251,61 @@ username whitelist. The events then carry no viewer.
 ### Remembered answers
 
 The add-on settings have a Remembered answers entry under Viewers, next to Configure
-viewers and playlists. It opens a CrossWatch window listing every show with a remembered
-answer. Each row shows the show's poster and who the answer is for, or "will ask again" when
-none of its viewers is configured any more. A tag appears where one applies:
+viewers and playlists. It opens one CrossWatch window titled "Remembered answers", listing
+every show with a remembered answer. A count on the right shows how many ("12 shows", or "3 of
+12" when a search or viewer narrows the list).
 
-- "covered by playlist": a playlist decides this show, so the answer is not used for now.
-- "not in library": the show is no longer in your Kodi library.
-- "not stable": the answer was stored against Kodi's database id, and that id now points at a
-  different show.
+![Remembered answers](screenshots/remembered/remembered-split-covered.png)
 
-The search box at the top narrows the list: press OK on it, type with Kodi's keyboard and
-confirm. It matches show titles and viewer names. The Viewer button next to it cycles with
-OK through All, each configured viewer, and "will ask again" (shows nobody is remembered
-for). Search and viewer combine. A count shows how many shows are listed ("12 shows", or "3
-of 12" when the list is narrowed).
+On the left are the Search box, the Viewer button below it, and then the shows, each with a
+small poster and its title. A warning icon on a show means its answer needs a look: the show
+is not in your library any more, or the answer is not stable (see below). To search, press OK
+on the box, type with Kodi's keyboard and confirm. It matches show titles and viewer names.
+The Viewer button cycles with OK through All, each configured viewer, and "will ask again"
+(shows nobody is remembered for). Search and viewer combine. When nothing is listed the
+window says "Nothing matches".
 
-OK on a show opens the who-watched window with the current answer ticked and no countdown,
-plus a Forget button. Done saves the new answer. Forget, or Done with nobody ticked, forgets
-the answer so the show is asked about again after its next episode. Skip or Back leaves the
-answer unchanged. A show marked "not stable" can only be forgotten, so OK on it asks for
-confirmation instead.
+The right side shows the highlighted show, so moving up and down the list changes it. It has
+the show's title, its poster (or "No poster"), the year, and then:
 
-The button below the list reads "Forget all", or "Forget N shown" while a search or viewer
-narrows the list. When a search or viewer filter matches nothing, the button is hidden. It
-forgets exactly the shows listed, after a Yes/No confirmation (No is preselected). After each
-change the list comes back with the same search, viewer and position; when nothing is left the
-screen closes with a short notice. Changes apply from the next playback, no restart needed.
+- "Answer": the viewers the answer is for, or "will ask again" when none of its viewers is
+  configured any more.
+- "Covered by": shown when a playlist decides this show, with one line per playlist, such as
+  "Anna's playlist 'Cartoons'". The answer is kept, and used again if the show leaves the
+  playlist.
+- "Not in library": shown with "gone from Kodi's library" when the show is no longer in your
+  Kodi library.
+- "Not stable": shown when the answer was stored against Kodi's database id and that id can no
+  longer be trusted. It says either "now points at <other show>" (the id now holds a different
+  show) or "no title stored to check it" (the id cannot be checked).
+
+When there are more lines than fit, the last one says "and N more".
+
+Under the panel are two buttons:
+
+- Change opens the who-watched window with the current answer ticked and no countdown. Done
+  saves the new answer. Done with nobody ticked forgets the answer, so the show is asked about
+  again after its next episode. Skip or Back leaves the answer unchanged. Change is not shown
+  for a "Not stable" show, which can only be forgotten.
+- Forget asks "Forget who watched this show? It will be asked again." first, with No
+  preselected. Yes forgets the answer, so the show is asked about again after its next
+  episode.
+
+OK on a show moves to Change (or to Forget for a "Not stable" show).
+
+At the bottom left, "Forget all" becomes "Forget N shown" while a search or viewer narrows the
+list, and is hidden when nothing is listed. It forgets exactly the shows listed, after a
+Yes/No confirmation (No is preselected). Close, at the bottom right, leaves the screen; so
+does Back.
+
+After each change the window comes back with the same search and viewer, on the same show;
+after a forget, on the show that took its place. When nothing is left the screen closes with a
+short notice. Changes apply from the next playback, no restart needed.
 
 Playlist membership is checked first, so it overrides a remembered answer to the prompt. The
-Remembered answers screen marks such a show "covered by playlist": its answer is kept, and
-applies again if the show leaves the playlist. That makes the choice of playlist matter: it
-should describe what that person watches, not what they just happened to play.
+Remembered answers screen shows such a show as "Covered by" the playlist: its answer is kept,
+and applies again if the show leaves the playlist. That makes the choice of playlist matter:
+it should describe what that person watches, not what they just happened to play.
 
 ### Viewer list
 
@@ -416,7 +440,7 @@ back here.") and no list opens. The viewer's playlists stay as they were.
 - Check the viewer has a playlist or Kodi profile configured.
 - Check whether a playback-driven playlist (such as "Continue Watching") is attributing it to
   the wrong person; see "Smart playlists" above.
-- Check the Remembered answers screen for a show marked "covered by playlist".
+- Check the Remembered answers screen for a show shown as "Covered by" a playlist.
 
 **The who-watched question never appears**
 
