@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from resources.lib.advanced_settings import Thresholds
-from resources.lib.constants import PROMPT_EVERYONE, PROMPT_HEADING, PROMPT_HEADING_UNTITLED
+from resources.lib.constants import WHO_WATCHED_EPISODE
 from resources.lib.identity import UNRESOLVED, Identity
 from resources.lib.kodi import WINDOW_INVALID
 from resources.lib.models import MediaItem, MediaType, Viewer
@@ -147,59 +147,84 @@ def test_asks_for_a_movie_when_movie_prompts_are_on(tmp_path):
     assert _gate(tmp_path, media=_media("movie")).ask is True
 
 
-EVERYONE = 0  # the Everyone row sits above the viewer names
+def _poster_kodi(answer=None) -> FakeKodi:
+    return FakeKodi(
+        who_watched_answer=answer,
+        rpc_handlers={
+            "VideoLibrary.GetTVShowDetails": lambda p: {"tvshowdetails": {"art": {"poster": "image://show/"}}},
+            "VideoLibrary.GetMovieDetails": lambda p: {"moviedetails": {"art": {"poster": "image://film/"}}},
+        },
+    )
 
 
-def test_ask_offers_everyone_above_the_viewers_in_configuration_order():
-    kodi = FakeKodi(multiselect_answer=None)
+def test_ask_offers_the_viewers_in_configuration_order():
+    kodi = _poster_kodi()
     ask(kodi, [ANNA, BOB], _media(), autoclose=120)
-    assert kodi.multiselect_calls[0][1] == [f"#{PROMPT_EVERYONE}", "anna", "bob"]
+    assert kodi.who_watched_calls[0].names == ("anna", "bob")
 
 
-def test_ask_names_the_show_in_a_localised_heading():
-    kodi = FakeKodi(multiselect_answer=None)
+def test_ask_for_an_episode_shows_the_show_its_numbers_and_poster():
+    kodi = _poster_kodi()
     ask(kodi, [ANNA, BOB], _media(), autoclose=120)
-    assert kodi.multiselect_calls[0][0] == f"#{PROMPT_HEADING}"
+    request = kodi.who_watched_calls[0]
+    assert request.title == "Example"
+    assert request.subtitle == f"#{WHO_WATCHED_EPISODE}"  # FakeKodi.localised has no placeholders
+    assert request.poster == "image://show/"
+    assert kodi.calls[0] == ("VideoLibrary.GetTVShowDetails", {"tvshowid": 42, "properties": ["art"]})
 
 
-def test_ask_falls_back_to_a_heading_without_a_title():
-    kodi = FakeKodi(multiselect_answer=None)
-    ask(kodi, [ANNA, BOB], replace(_media(), title=""), autoclose=120)
-    assert kodi.multiselect_calls[0][0] == f"#{PROMPT_HEADING_UNTITLED}"
+def test_ask_for_a_film_shows_its_year_and_poster():
+    kodi = _poster_kodi()
+    ask(kodi, [ANNA, BOB], _media("movie"), autoclose=120)
+    request = kodi.who_watched_calls[0]
+    assert request.subtitle == "2026"
+    assert request.poster == "image://film/"
 
 
-def test_ask_returns_the_selected_viewers():
-    assert ask(FakeKodi(multiselect_answer=[2]), [ANNA, BOB], _media(), autoclose=120) == ("bob",)
+def test_ask_without_a_title_shows_an_empty_title():
+    kodi = _poster_kodi()
+    ask(kodi, [ANNA, BOB], replace(_media(), title=None), autoclose=120)
+    assert kodi.who_watched_calls[0].title == ""
+
+
+def test_ask_counts_down_and_closes_when_playback_starts():
+    kodi = _poster_kodi()
+    ask(kodi, [ANNA, BOB], _media(), autoclose=90)
+    request = kodi.who_watched_calls[0]
+    assert request.autoclose_seconds == 90
+    assert request.close_on_playback is True
+    assert request.preselect == ()
+
+
+def test_ask_returns_the_chosen_viewers():
+    assert ask(_poster_kodi(("bob",)), [ANNA, BOB], _media(), autoclose=120) == ("bob",)
 
 
 def test_ask_supports_two_people_watching_together():
-    assert ask(FakeKodi(multiselect_answer=[1, 2]), [ANNA, BOB], _media(), autoclose=120) == ("anna", "bob")
+    assert ask(_poster_kodi(("anna", "bob")), [ANNA, BOB], _media(), autoclose=120) == ("anna", "bob")
 
 
-def test_everyone_means_every_configured_viewer():
-    carol = Viewer(name="carol")
-    answer = ask(FakeKodi(multiselect_answer=[EVERYONE]), [ANNA, BOB, carol], _media(), autoclose=120)
-    assert answer == ("anna", "bob", "carol")
+def test_a_dismissed_window_returns_no_viewers():
+    assert ask(_poster_kodi(None), [ANNA, BOB], _media(), autoclose=120) == ()
 
 
-def test_everyone_wins_over_individual_ticks():
-    carol = Viewer(name="carol")
-    answer = ask(FakeKodi(multiselect_answer=[EVERYONE, 2]), [ANNA, BOB, carol], _media(), autoclose=120)
-    assert answer == ("anna", "bob", "carol")
+def test_done_with_nobody_ticked_returns_no_viewers():
+    assert ask(_poster_kodi(()), [ANNA, BOB], _media(), autoclose=120) == ()
 
 
-def test_ask_passes_the_autoclose_so_an_abandoned_dialog_cannot_park_the_thread():
-    kodi = FakeKodi(multiselect_answer=[1])
-    ask(kodi, [ANNA, BOB], _media(), autoclose=90)
-    assert kodi.multiselect_calls[0][3] == 90
+def test_choose_viewers_passes_preselect_and_no_countdown_by_default():
+    kodi = FakeKodi(who_watched_answer=None)
+    choose_viewers(kodi, [ANNA, BOB], title="Example", subtitle="2008", poster="", preselect=("bob",))
+    request = kodi.who_watched_calls[0]
+    assert request.preselect == ("bob",)
+    assert request.autoclose_seconds == 0
+    assert request.close_on_playback is False
 
 
-def test_a_dismissed_dialog_returns_no_viewers():
-    assert ask(FakeKodi(multiselect_answer=None), [ANNA, BOB], _media(), autoclose=120) == ()
-
-
-def test_confirming_with_nothing_ticked_returns_no_viewers():
-    assert ask(FakeKodi(multiselect_answer=[]), [ANNA, BOB], _media(), autoclose=120) == ()
+def test_choose_viewers_tells_cancel_apart_from_nobody_ticked():
+    """Cancel leaves an answer alone; Done with nobody ticked is a deliberate 'forget'."""
+    assert choose_viewers(FakeKodi(who_watched_answer=None), [ANNA, BOB], "t", "", "") is None
+    assert choose_viewers(FakeKodi(who_watched_answer=()), [ANNA, BOB], "t", "", "") == ()
 
 
 def test_remember_stores_under_the_stable_key_with_the_shows_title_and_year(tmp_path):
@@ -254,22 +279,6 @@ def test_remember_does_nothing_for_a_movie(tmp_path):
     memory = PromptMemory(str(tmp_path / "prompts.json"))
     remember(memory, _media("movie"), ("anna",))
     assert memory.recall("tvshow:42") is None
-
-
-def test_the_picker_preticks_the_given_viewers_below_the_everyone_row():
-    kodi = FakeKodi(multiselect_answer=None)
-    choose_viewers(kodi, "heading", [ANNA, BOB], preselect=("bob",))
-    assert kodi.multiselect_calls[0][2] == [2]
-
-
-def test_the_picker_tells_cancel_apart_from_nobody_ticked():
-    """Cancel leaves an answer alone; OK with nobody ticked is a deliberate 'forget'."""
-    assert choose_viewers(FakeKodi(multiselect_answer=None), "h", [ANNA, BOB]) is None
-    assert choose_viewers(FakeKodi(multiselect_answer=[]), "h", [ANNA, BOB]) == ()
-
-
-def test_the_picker_expands_everyone_like_the_prompt():
-    assert choose_viewers(FakeKodi(multiselect_answer=[EVERYONE]), "h", [ANNA, BOB]) == ("anna", "bob")
 
 
 def test_key_for_show_matches_show_key():

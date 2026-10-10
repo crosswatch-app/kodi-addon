@@ -465,7 +465,7 @@ def test_pause_state_does_not_survive_into_the_next_playback(tmp_path):
 def test_a_new_playback_flushes_a_parked_stop_without_prompting(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [0]
+    kodi.who_watched_answer = ("anna", "bob")
     viewers = [Viewer(name="anna"), Viewer(name="bob")]
     controller = _controller(tmp_path, kodi, viewers, collector)
     controller.on_av_started()
@@ -473,7 +473,7 @@ def test_a_new_playback_flushes_a_parked_stop_without_prompting(tmp_path):
     controller.on_stopped(completed=False)
     controller.on_av_started()
     assert collector.kinds() == ["start", "stop", "start"]
-    assert kodi.multiselect_calls == []
+    assert kodi.who_watched_calls == []
     assert collector.playback()[1].viewers == ()
 
 
@@ -490,14 +490,14 @@ def test_abort_emits_a_stop_for_an_open_session(tmp_path):
 def test_abort_flushes_a_parked_stop_without_prompting(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [0]
+    kodi.who_watched_answer = ("anna", "bob")
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
     controller.on_stopped(completed=False)
     controller.on_abort()
     assert collector.kinds() == ["start", "stop"]
-    assert kodi.multiselect_calls == []
+    assert kodi.who_watched_calls == []
 
 
 def test_abort_with_nothing_playing_emits_nothing(tmp_path):
@@ -512,7 +512,7 @@ def test_abort_with_nothing_playing_emits_nothing(tmp_path):
 def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [2]  # row 0 is Everyone
+    kodi.who_watched_answer = ("bob",)
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -527,7 +527,7 @@ def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(t
 def test_the_answer_is_remembered_under_a_stable_key(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [2]  # row 0 is Everyone
+    kodi.who_watched_answer = ("bob",)
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -540,7 +540,7 @@ def test_the_answer_is_remembered_under_a_stable_key(tmp_path):
 def test_a_dismissed_prompt_still_emits_the_stop_with_no_viewers(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = None
+    kodi.who_watched_answer = None
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -558,7 +558,7 @@ def test_a_raising_prompt_still_emits_the_stop(tmp_path):
     def boom(*args, **kwargs):
         raise RuntimeError("window is gone")
 
-    kodi.multiselect = boom  # type: ignore[method-assign]
+    kodi.who_watched = boom  # type: ignore[method-assign]
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -578,19 +578,19 @@ def test_a_remembered_answer_is_used_without_asking(tmp_path):
     controller.on_stopped(completed=False)
     controller.on_tick()
     assert collector.playback()[-1].viewers == ("anna",)
-    assert kodi.multiselect_calls == []
+    assert kodi.who_watched_calls == []
 
 
 def test_the_prompt_carries_an_autoclose(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [0]
+    kodi.who_watched_answer = ("anna", "bob")
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
     controller.on_stopped(completed=False)
     controller.on_tick()
-    assert kodi.multiselect_calls[0][3] > 0
+    assert kodi.who_watched_calls[0].autoclose_seconds > 0
 
 
 # --- cadence and resilience ------------------------------------------------
