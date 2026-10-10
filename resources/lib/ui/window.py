@@ -193,3 +193,32 @@ class WhoWatchedDialog(CrossWatchDialog):
         rows.getListItem(ww.EVERYONE_ROW).setProperty("chosen", "true" if ww.everyone(names, self._ticked) else "")
         for row, name in enumerate(names, start=1):
             rows.getListItem(row).setProperty("chosen", "true" if name in self._ticked else "")
+
+
+CONFIRM_XML = "crosswatch-confirm.xml"
+BUTTON_YES = 10
+BUTTON_NO = 11
+
+
+class ConfirmDialog(CrossWatchDialog):
+    name = "confirm"
+
+    def prepare(self, heading: str, message: str, localised: Localised) -> None:
+        self.configure(
+            localised,
+            {"CW.Heading": heading, "CW.Message": message},
+            autoclose_seconds=0,
+            close_on_playback=False,
+            is_playing=lambda: False,
+            wait_for_abort=lambda _: False,
+        )
+
+    def fill(self) -> None:
+        # No first: the question always guards something that cannot be undone.
+        self.setFocusId(BUTTON_NO)
+
+    def onClick(self, controlId: int) -> None:
+        if controlId == BUTTON_YES:
+            self.finish("yes", True)
+        elif controlId == BUTTON_NO:
+            self.finish("no", False)

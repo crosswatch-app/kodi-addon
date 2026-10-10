@@ -1,9 +1,17 @@
 import time
 from typing import Any
 
-from resources.lib.constants import PROMPT_EVERYONE, WHO_WATCHED_QUESTION, WINDOW_CLOSES_IN
+from resources.lib.constants import PROMPT_EVERYONE, WHO_WATCHED_QUESTION, WINDOW_CLOSES_IN, WINDOW_NO, WINDOW_YES
 from resources.lib.ui.who_watched import WhoWatchedRequest
-from resources.lib.ui.window import BUTTON_DONE, BUTTON_SKIP, LIST_VIEWERS, WhoWatchedDialog
+from resources.lib.ui.window import (
+    BUTTON_DONE,
+    BUTTON_NO,
+    BUTTON_SKIP,
+    BUTTON_YES,
+    LIST_VIEWERS,
+    ConfirmDialog,
+    WhoWatchedDialog,
+)
 
 TEXTS = {PROMPT_EVERYONE: "Everyone", WHO_WATCHED_QUESTION: "Who watched it?", WINDOW_CLOSES_IN: "Closes in %s s"}
 
@@ -228,3 +236,33 @@ def test_a_window_that_fails_to_fill_closes_as_a_logged_cancel():
     assert dialog.close_reason == "error" and dialog.result is None and dialog.closed == 1
     assert any("ui.window_failed" in line and "AttributeError" in line for line in captured)
     assert dialog._thread is None
+
+
+def _confirm() -> Any:
+    dialog: Any = ConfirmDialog("crosswatch-confirm.xml", "/addon", "Default", "1080i")
+    dialog.prepare("Remembered answers", "Forget who watched 3 shows?", lambda i: {WINDOW_YES: "Yes", WINDOW_NO: "No"}.get(i, ""))
+    return dialog
+
+
+def test_confirm_shows_its_heading_and_message_and_starts_on_no():
+    dialog = _confirm()
+    dialog.onInit()
+    assert dialog.getProperty("CW.Heading") == "Remembered answers"
+    assert dialog.getProperty("CW.Message") == "Forget who watched 3 shows?"
+    assert dialog.focused == BUTTON_NO
+
+
+def test_confirm_yes_is_true_and_no_or_back_is_not():
+    yes = _confirm()
+    yes.onInit()
+    yes.onClick(BUTTON_YES)
+    assert yes.result is True and yes.close_reason == "yes"
+    no = _confirm()
+    no.onInit()
+    no.onClick(BUTTON_NO)
+    assert no.result is False
+    back = _confirm()
+    back.onInit()
+    back.onAction(Action(92))
+    assert back.result is None
+    assert back._thread is None  # no countdown, no playback watch

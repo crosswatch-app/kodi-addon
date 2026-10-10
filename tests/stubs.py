@@ -56,7 +56,10 @@ def install_kodi_stubs() -> None:
         def __init__(self, label: str = "", *args, **kwargs) -> None:
             self._label = label
             self._properties: dict[str, str] = {}
+            self._art: dict[str, str] = {}
         def getLabel(self) -> str: return self._label
+        def setArt(self, art: dict[str, str]) -> None: self._art.update(art)
+        def getArt(self, key: str) -> str: return self._art.get(key, "")
         def setProperty(self, key: str, value: str) -> None: self._properties[key.lower()] = value
         def getProperty(self, key: str) -> str: return self._properties.get(key.lower(), "")
 
@@ -72,6 +75,10 @@ def install_kodi_stubs() -> None:
         def setProperty(self, key: str, value: str) -> None: self._properties[key.lower()] = value
         def getProperty(self, key: str) -> str: return self._properties.get(key.lower(), "")
         def setFocusId(self, control_id: int) -> None: self.focused = control_id
+        def getFocusId(self) -> int:
+            if self.focused is None:
+                raise RuntimeError("no control has focus")
+            return self.focused
         def close(self) -> None: self.closed += 1
         def doModal(self) -> None: ...
 

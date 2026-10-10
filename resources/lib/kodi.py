@@ -12,6 +12,7 @@ returns a raw id rather than a "busy" verdict for exactly that reason.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol
 
 from resources.lib.constants import ADDON_ID
@@ -45,6 +46,7 @@ class KodiApi(Protocol):
         self, heading: str, options: list[str], preselect: list[int] | None = None, autoclose: int = 0
     ) -> list[int] | None: ...
     def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
+    def confirm_window(self, heading: str, message: str) -> bool: ...
     def select(self, heading: str, options: list[str]) -> int: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
@@ -171,30 +173,53 @@ class KodiRuntime:
             heading, choices, autoclose=autoclose * 1000, preselect=preselect or []
         )
 
-    def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None:
-        """The ticked names, () for Done with nobody ticked, None for any cancel.
+    def _modal(self, name: str, make: Callable[[str], Any]) -> Any:
+        """Open a CrossWatch window modally; None when it could not be built or failed.
 
-        A window that cannot be built or fails while open counts as a cancel. There is no
-        fallback to a standard dialog: most CrossWatch windows have none, and for this one
-        a failure costs one unattributed watch, the same as an unanswered question.
+        One rule for every custom window: a failure is a cancel, logged once, with no
+        fallback to a standard dialog (most CrossWatch windows have none).
         """
         try:
-            # Imported here: the window classes subclass xbmcgui types, and nothing else
-            # that imports this module should pay for or depend on them.
-            from resources.lib.ui import skin_fonts, window
+            from resources.lib.ui import skin_fonts
 
             # KODI-FONT-WORKAROUND: see the deletion guide in skin_fonts.
-            path = skin_fonts.ensure_generated(ADDON_ID)
-            dialog = window.WhoWatchedDialog(window.WHO_WATCHED_XML, path, "Default", "1080i")
-            dialog.prepare(request, self.localised, self.is_playing, self._xbmc.Monitor().waitForAbort)
+            dialog = make(skin_fonts.ensure_generated(ADDON_ID))
             try:
                 dialog.doModal()
             finally:
                 dialog.stop()
-            return dialog.result
+            return dialog
         except Exception as exc:
-            _log.warning("ui.window_failed", window="who_watched", error_type=type(exc).__name__)
+            _log.warning("ui.window_failed", window=name, error_type=type(exc).__name__)
             return None
+
+    def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None:
+        """The ticked names, () for Done with nobody ticked or Forget, None for any cancel."""
+
+        def make(path: str) -> Any:
+            # Imported here so an import failure is a logged cancel like any other, and so
+            # nothing that imports this module pays for the window classes.
+            from resources.lib.ui import window
+
+            dialog = window.WhoWatchedDialog(window.WHO_WATCHED_XML, path, "Default", "1080i")
+            dialog.prepare(request, self.localised, self.is_playing, self._xbmc.Monitor().waitForAbort)
+            return dialog
+
+        dialog = self._modal("who_watched", make)
+        return dialog.result if dialog is not None else None
+
+    def confirm_window(self, heading: str, message: str) -> bool:
+        """True only for Yes; No, Back and a failed window all leave things as they are."""
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.ConfirmDialog(window.CONFIRM_XML, path, "Default", "1080i")
+            dialog.prepare(heading, message, self.localised)
+            return dialog
+
+        dialog = self._modal("confirm", make)
+        return dialog is not None and dialog.result is True
 
     def select(self, heading: str, options: list[str]) -> int:
         choices: list[Any] = list(options)  # widened for the same reason as multiselect

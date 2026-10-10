@@ -161,3 +161,28 @@ def test_who_watched_failure_logs_the_window_and_error_type_only(runtime, monkey
     runtime.who_watched(REQUEST)
     line = next(m for m in captured if "ui.window_failed" in m)
     assert "who_watched" in line and "RuntimeError" in line and "secret detail" not in line
+
+def test_confirm_window_returns_true_only_for_yes(runtime, monkeypatch):
+    class Dialog(window_mod.ConfirmDialog):
+        def doModal(self) -> None:
+            self.finish("yes", True)
+
+    monkeypatch.setattr(window_mod, "ConfirmDialog", Dialog)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.confirm_window("h", "m") is True
+
+
+def test_confirm_window_back_and_failure_are_no(runtime, monkeypatch):
+    class Back(window_mod.ConfirmDialog):
+        def doModal(self) -> None:
+            self.finish("back")
+
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    monkeypatch.setattr(window_mod, "ConfirmDialog", Back)
+    assert runtime.confirm_window("h", "m") is False
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no skin file")
+
+    monkeypatch.setattr(window_mod, "ConfirmDialog", broken)
+    assert runtime.confirm_window("h", "m") is False

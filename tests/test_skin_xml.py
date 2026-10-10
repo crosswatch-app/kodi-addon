@@ -71,3 +71,19 @@ def test_the_viewer_list_shows_when_there_are_more_rows():
     scrollbar = _control(page)
     assert scrollbar.get("type") == "scrollbar"
     assert scrollbar.findtext("showonepage") == "false"
+
+
+CONFIRM = SKIN / "1080i" / "crosswatch-confirm.xml"
+
+
+def test_confirm_starts_on_no_and_labels_come_from_strings_po():
+    from resources.lib.constants import WINDOW_NO, WINDOW_YES
+
+    root = ET.parse(CONFIRM).getroot()
+    assert root.findtext("defaultcontrol") == "11"
+    yes = root.find(".//control[@id='10']")
+    no = root.find(".//control[@id='11']")
+    assert yes is not None and no is not None
+    assert yes.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_YES}]"
+    assert no.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_NO}]"
+    CONFIRM.read_text(encoding="ascii")

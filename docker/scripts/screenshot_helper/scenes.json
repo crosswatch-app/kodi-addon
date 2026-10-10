@@ -99,5 +99,11 @@
     ],
     "autoclose_seconds": 0,
     "keys": []
+  },
+  "remembered-confirm": {
+    "window": "crosswatch-confirm.xml",
+    "heading": "Remembered answers",
+    "message": "Forget who watched 3 shows? Each will be asked again.",
+    "keys": []
   }
 }

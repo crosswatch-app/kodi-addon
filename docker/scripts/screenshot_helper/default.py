@@ -51,7 +51,16 @@ def _who_watched(scene: dict, path: str) -> None:
         dialog.stop()
 
 
-WINDOWS = {window.WHO_WATCHED_XML: _who_watched}
+def _confirm(scene: dict, path: str) -> None:
+    dialog = window.ConfirmDialog(window.CONFIRM_XML, path, "Default", "1080i")
+    dialog.prepare(scene["heading"], scene["message"], TARGET.getLocalizedString)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
+WINDOWS = {window.WHO_WATCHED_XML: _who_watched, window.CONFIRM_XML: _confirm}
 
 
 def main() -> None:
