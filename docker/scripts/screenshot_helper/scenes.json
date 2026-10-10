@@ -142,5 +142,27 @@
     "autoclose_seconds": 0,
     "offer_forget": true,
     "keys": []
+  },
+  "playlist-picker": {
+    "window": "crosswatch-list.xml",
+    "rows": "playlists",
+    "search": "",
+    "filter": 0,
+    "keys": []
+  },
+  "playlist-picker-search": {
+    "window": "crosswatch-list.xml",
+    "rows": "playlists",
+    "search": "an",
+    "filter": 0,
+    "keys": []
+  },
+  "playlist-picker-missing": {
+    "window": "crosswatch-list.xml",
+    "rows": "playlists",
+    "search": "",
+    "filter": 0,
+    "position": 6,
+    "keys": []
   }
 }

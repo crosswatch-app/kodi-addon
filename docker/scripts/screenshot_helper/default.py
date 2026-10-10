@@ -59,6 +59,9 @@ DEMO_TAG = ["", "", "", "covered by playlist", "", "not in library", "", ""]
 def _list(scene: dict, path: str) -> None:
     from resources.lib.ui import list_window as lw
 
+    if scene.get("rows") == "playlists":
+        _pick(scene, path)
+        return
     with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
         shows = json.load(handle)["shows"]
     rows = tuple(
@@ -84,6 +87,45 @@ def _list(scene: dict, path: str) -> None:
     )
     dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
     dialog.prepare(request, lw.ListState(search=scene["search"], filter_index=scene["filter"]), TARGET.getLocalizedString)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
+# name, other viewers with it, flag (string id or 0), ticked
+DEMO_PLAYLISTS = [
+    ("Anna's shows", "", 0, True),
+    ("Cartoons", "Ben", 0, True),
+    ("Documentaries", "", 0, False),
+    ("Family films", "Ben, Chloe", 0, False),
+    ("Sci-fi", "", 0, False),
+    ("Westerns", "", 0, False),
+    ("Old favourites", "", 30058, True),
+]
+
+
+def _pick(scene: dict, path: str) -> None:
+    from resources.lib.ui import list_window as lw
+
+    text = TARGET.getLocalizedString
+    rows = tuple(
+        lw.ListRow(
+            key=name, title=name, detail=text(30098).replace("%s", also) if also else "", tag=text(flag) if flag else ""
+        )
+        for name, also, flag, _ in DEMO_PLAYLISTS
+    )
+    request = lw.ListRequest(
+        heading=text(30052).replace("%s", "Anna"),
+        rows=rows,
+        count_one=text(30059),
+        count_all=text(30056),
+        pick=True,
+        ticked=tuple(name for name, _, _, ticked in DEMO_PLAYLISTS if ticked),
+    )
+    dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
+    state = lw.ListState(search=scene["search"], position=scene.get("position", 0))
+    dialog.prepare(request, state, text)
     try:
         dialog.doModal()
     finally:
