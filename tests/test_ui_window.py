@@ -667,7 +667,8 @@ def test_the_viewer_window_shows_the_name_and_summary_and_starts_on_playlists():
     dialog = _viewer()
     dialog.onInit()
     assert dialog.getProperty("CW.Heading") == "anna"
-    assert dialog.getProperty("CW.Message") == "Playlists: Anna TV[CR]Profiles: none"
+    assert dialog.getProperty("CW.Line1") == "Playlists: Anna TV"
+    assert dialog.getProperty("CW.Line2") == "Profiles: none"
     assert dialog.focused == BUTTON_PLAYLISTS
 
 

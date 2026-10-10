@@ -270,3 +270,19 @@ def test_a_list_without_artwork_starts_its_titles_at_the_left():
         titles = [c for c in found.findall("control") if c.findtext("label") == "$INFO[ListItem.Label]"]
         bare = [t for t in titles if t.findtext("visible") == f"!{PICK} + {NO_THUMBS}"]
         assert len(bare) == 1 and bare[0].findtext("left") == "28"
+
+
+def test_the_viewer_summary_keeps_one_line_each_for_playlists_and_profiles():
+    """Kodi does not clip a label to its height, and a wrapping summary pushed the profiles
+    out of sight: one unwrapped line each, cut at the width, keeps both visible."""
+    root = ET.parse(VIEWER).getroot()
+    lines = [
+        c for c in root.iter("control")
+        if c.findtext("label") in ("$INFO[Window.Property(CW.Line1)]", "$INFO[Window.Property(CW.Line2)]")
+    ]
+    assert len(lines) == 2
+    row = root.find(".//control[@type='grouplist']")
+    assert row is not None
+    for line in lines:
+        assert line.get("type") == "label" and line.findtext("wrapmultiline") in (None, "false")
+        assert int(line.findtext("top") or 0) + int(line.findtext("height") or 0) <= int(row.findtext("top") or 0)

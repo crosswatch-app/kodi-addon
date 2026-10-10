@@ -259,9 +259,11 @@ class ViewerDialog(CrossWatchDialog):
     name = "viewer"
 
     def prepare(self, heading: str, summary: str, localised: Localised) -> None:
+        # One label per line: a wrapping summary pushed the second line out of sight.
+        first, _, second = summary.partition("[CR]")
         self.configure(
             localised,
-            {"CW.Heading": heading, "CW.Message": summary},
+            {"CW.Heading": heading, "CW.Line1": first, "CW.Line2": second},
             autoclose_seconds=0,
             close_on_playback=False,
             is_playing=lambda: False,

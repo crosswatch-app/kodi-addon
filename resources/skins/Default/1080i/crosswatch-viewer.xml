@@ -42,13 +42,21 @@
                 <textcolor>FFF1F3F5</textcolor>
                 <label>$INFO[Window.Property(CW.Heading)]</label>
             </control>
+            <!-- One unwrapped line each, cut at the width: Kodi does not clip a label to its
+                 height, so a wrapping summary ran into the buttons or hid the second line. -->
             <control type="label">
-                <left>50</left><top>150</top><width>1140</width><height>120</height>
-                <aligny>top</aligny>
-                <wrapmultiline>true</wrapmultiline>
+                <left>50</left><top>150</top><width>1140</width><height>44</height>
+                <aligny>center</aligny>
                 <font>font13</font>
                 <textcolor>FF9299A6</textcolor>
-                <label>$INFO[Window.Property(CW.Message)]</label>
+                <label>$INFO[Window.Property(CW.Line1)]</label>
+            </control>
+            <control type="label">
+                <left>50</left><top>196</top><width>1140</width><height>44</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Window.Property(CW.Line2)]</label>
             </control>
             <!-- Ids 10 to 14: never 2, 3 or 4, which WindowXML keeps for its own buttons. -->
             <control type="grouplist" id="25">
