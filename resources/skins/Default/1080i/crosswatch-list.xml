@@ -128,7 +128,7 @@
                         <visible>!String.IsEqual(Window.Property(CW.Pick),true) + !String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
                     </control>
                     <control type="label">
-                        <left>28</left><top>0</top><width>532</width><height>66</height>
+                        <left>28</left><top>0</top><width>300</width><height>66</height>
                         <aligny>center</aligny>
                         <font>font30_title</font>
                         <textcolor>FFF1F3F5</textcolor>
@@ -149,7 +149,15 @@
                         <font>font13</font>
                         <textcolor>FF9299A6</textcolor>
                         <label>$INFO[ListItem.Property(detail)]</label>
-                        <visible>!String.IsEqual(Window.Property(CW.Pick),true)</visible>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + !String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
+                    </control>
+                    <control type="label">
+                        <left>344</left><top>0</top><width>300</width><height>66</height>
+                        <aligny>center</aligny>
+                        <font>font13</font>
+                        <textcolor>FF9299A6</textcolor>
+                        <label>$INFO[ListItem.Property(detail)]</label>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
                     </control>
                     <control type="label">
                         <left>684</left><top>0</top><width>240</width><height>66</height>
@@ -165,7 +173,15 @@
                         <font>font12</font>
                         <textcolor>FF9299A6</textcolor>
                         <label>$INFO[ListItem.Property(tag)]</label>
-                        <visible>!String.IsEqual(Window.Property(CW.Pick),true)</visible>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + !String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
+                    </control>
+                    <control type="label">
+                        <left>660</left><top>0</top><width>456</width><height>66</height>
+                        <align>right</align><aligny>center</aligny>
+                        <font>font12</font>
+                        <textcolor>FF9299A6</textcolor>
+                        <label>$INFO[ListItem.Property(tag)]</label>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
                     </control>
                     <control type="label">
                         <left>940</left><top>0</top><width>116</width><height>66</height>
@@ -221,7 +237,7 @@
                         <visible>!String.IsEqual(Window.Property(CW.Pick),true) + !String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
                     </control>
                     <control type="label">
-                        <left>28</left><top>0</top><width>532</width><height>66</height>
+                        <left>28</left><top>0</top><width>300</width><height>66</height>
                         <aligny>center</aligny>
                         <font>font30_title</font>
                         <textcolor>FFF1F3F5</textcolor>
@@ -242,7 +258,15 @@
                         <font>font13</font>
                         <textcolor>FF9299A6</textcolor>
                         <label>$INFO[ListItem.Property(detail)]</label>
-                        <visible>!String.IsEqual(Window.Property(CW.Pick),true)</visible>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + !String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
+                    </control>
+                    <control type="label">
+                        <left>344</left><top>0</top><width>300</width><height>66</height>
+                        <aligny>center</aligny>
+                        <font>font13</font>
+                        <textcolor>FF9299A6</textcolor>
+                        <label>$INFO[ListItem.Property(detail)]</label>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
                     </control>
                     <control type="label">
                         <left>684</left><top>0</top><width>240</width><height>66</height>
@@ -258,7 +282,15 @@
                         <font>font12</font>
                         <textcolor>FF9299A6</textcolor>
                         <label>$INFO[ListItem.Property(tag)]</label>
-                        <visible>!String.IsEqual(Window.Property(CW.Pick),true)</visible>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + !String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
+                    </control>
+                    <control type="label">
+                        <left>660</left><top>0</top><width>456</width><height>66</height>
+                        <align>right</align><aligny>center</aligny>
+                        <font>font12</font>
+                        <textcolor>FF9299A6</textcolor>
+                        <label>$INFO[ListItem.Property(tag)]</label>
+                        <visible>!String.IsEqual(Window.Property(CW.Pick),true) + String.IsEqual(Window.Property(CW.NoThumbs),true)</visible>
                     </control>
                     <control type="label">
                         <left>940</left><top>0</top><width>116</width><height>66</height>
