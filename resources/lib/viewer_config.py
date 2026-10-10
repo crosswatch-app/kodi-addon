@@ -36,7 +36,6 @@ from resources.lib.constants import (
     VIEWERS_PROFILES_FOR,
     VIEWERS_REMOVE,
     VIEWERS_REMOVE_CONFIRM,
-    VIEWERS_UNUSABLE,
     VIEWERS_UNUSABLE_COUNT,
 )
 from resources.lib.kodi import KodiApi, KodiRuntime
@@ -166,12 +165,12 @@ def viewer_labels(
 def playlist_rows(
     kodi: KodiApi, viewer: Viewer, playlists: Sequence[str], unusable: Sequence[str], viewers: Sequence[Viewer]
 ) -> tuple[ListRow, ...]:
-    """Every matchable playlist, then the viewer's own unusable and vanished ones.
+    """Every matchable playlist, then the viewer's own vanished ones.
 
-    The flagged ones are listed, under their real names, because without them they are
-    invisible here and Done would drop them silently: a removal the household never saw
-    would look like their own edit. An unusable playlist nobody has is not offered: picking
-    it would credit nobody.
+    A vanished playlist may come back (a share offline, a rename), so it is listed under its
+    real name: without it Done would drop it silently, and a removal the household never saw
+    would look like their own edit. An unusable one is not listed and Done drops it: it can
+    never credit anyone, so there is nothing to choose, and the viewer list already marks it.
     """
 
     def also(name: str) -> str:
@@ -179,13 +178,13 @@ def playlist_rows(
         others = [v.name for v in viewers if v.name.casefold() != viewer.name.casefold() and name in v.playlists]
         return _text(kodi, VIEWERS_ALSO, ", ".join(others)) if others else ""
 
-    flagged = [
-        *((name, _text(kodi, VIEWERS_UNUSABLE)) for name in unusable_playlists(viewer, unusable)),
-        *((name, _text(kodi, VIEWERS_MISSING)) for name in missing_playlists(viewer, list(playlists), unusable)),
-    ]
+    missing = _text(kodi, VIEWERS_MISSING)
     return (
         *(ListRow(key=name, title=name, detail=also(name)) for name in playlists),
-        *(ListRow(key=name, title=name, detail=also(name), tag=tag) for name, tag in flagged),
+        *(
+            ListRow(key=name, title=name, detail=also(name), tag=missing)
+            for name in missing_playlists(viewer, list(playlists), unusable)
+        ),
     )
 
 

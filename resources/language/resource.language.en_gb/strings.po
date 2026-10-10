@@ -231,10 +231,6 @@ msgctxt "#30079"
 msgid "%s unusable"
 msgstr ""
 
-msgctxt "#30080"
-msgid "not a TV show or film playlist"
-msgstr ""
-
 msgctxt "#30081"
 msgid "Who watched it?"
 msgstr ""

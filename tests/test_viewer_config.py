@@ -15,7 +15,6 @@ from resources.lib.constants import (
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
     VIEWERS_REMOVE,
-    VIEWERS_UNUSABLE,
     VIEWERS_UNUSABLE_COUNT,
 )
 from resources.lib.models import Viewer
@@ -336,20 +335,48 @@ def test_an_unusable_playlist_is_offered_only_to_the_viewer_who_has_it():
     assert [row.key for row in rows] == ["Anna TV"]
 
 
-def test_flagged_playlists_come_last_ticked_under_their_real_names_with_a_tag():
-    """Listing them makes a removal something the household chose; the real name keeps the
-    configuration matching the file if the playlist comes back or is fixed."""
-    kodi = _picking(["Anna TV", "Eps", "Gone"])
-    viewer = Viewer(name="anna", playlists=("Gone", "Eps", "Anna TV"))
-    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"], ["Eps"], [viewer])
+def test_missing_playlists_come_last_ticked_under_their_real_names_with_a_tag():
+    """Listed, because it may come back (a share offline, a rename): a removal is then
+    something the household chose. The real name keeps the configuration matching the file
+    when it returns."""
+    kodi = _picking(["Anna TV", "Gone"])
+    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
+    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"], [], [viewer])
     request, _ = kodi.list_window_calls[0]
     assert [(row.key, row.title, row.tag) for row in request.rows] == [
         ("Anna TV", "Anna TV", ""),
-        ("Eps", "Eps", f"#{VIEWERS_UNUSABLE}"),
         ("Gone", "Gone", f"#{VIEWERS_MISSING}"),
     ]
-    assert set(request.ticked) == {"Gone", "Eps", "Anna TV"}
-    assert kept == ("Anna TV", "Eps", "Gone")
+    assert kept == ("Anna TV", "Gone")
+
+
+def test_an_unusable_playlist_is_not_listed_and_done_drops_it():
+    """It can never credit anyone, so there is nothing to choose; the viewer list already
+    marks the viewer unusable before the picker opens."""
+    kodi = _picking(["Anna TV"])
+    viewer = Viewer(name="anna", playlists=("Eps", "Anna TV"))
+    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"], ["Eps"], [viewer])
+    request, _ = kodi.list_window_calls[0]
+    assert [row.key for row in request.rows] == ["Anna TV"]
+    assert kept == ("Anna TV",)
+
+
+def test_cancel_keeps_an_unusable_playlist():
+    viewer = Viewer(name="anna", playlists=("Eps", "Anna TV"))
+    assert viewer_config._edit_playlists(_picking(None), viewer, ["Anna TV"], ["Eps"]) is None
+
+
+def test_an_unusable_playlist_is_not_mistaken_for_a_missing_one():
+    viewer = Viewer(name="anna", playlists=("Eps",))
+    rows = viewer_config.playlist_rows(FakeKodi(), viewer, ["Anna TV"], ["Eps"], [viewer])
+    assert [row.key for row in rows] == ["Anna TV"]
+
+
+def test_a_viewer_with_only_missing_playlists_still_gets_the_window_to_untick_them():
+    kodi = _picking([])
+    viewer = Viewer(name="anna", playlists=("Gone",))
+    assert viewer_config._edit_playlists(kodi, viewer, [], ["Eps"]) == ()
+    assert kodi.ok_calls == [] and len(kodi.list_window_calls) == 1
 
 
 def test_unticking_a_missing_playlist_removes_it():
@@ -375,13 +402,6 @@ def test_no_playlists_at_all_shows_a_notice_and_no_window():
     assert viewer_config._edit_playlists(kodi, Viewer(name="anna"), []) is None
     assert kodi.list_window_calls == []
     assert kodi.ok_calls == [(f"#{VIEWERS_PLAYLISTS_FOR}".replace("%s", "anna"), f"#{VIEWERS_NO_PLAYLISTS}")]
-
-
-def test_a_viewer_with_only_flagged_playlists_still_gets_the_window_to_untick_them():
-    kodi = _picking([])
-    viewer = Viewer(name="anna", playlists=("Eps",))
-    assert viewer_config._edit_playlists(kodi, viewer, [], ["Eps"]) == ()
-    assert kodi.ok_calls == [] and len(kodi.list_window_calls) == 1
 
 
 def test_a_failed_listing_keeps_the_mapping():
