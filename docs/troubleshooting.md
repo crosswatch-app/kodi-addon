@@ -6,12 +6,15 @@ Problems listed by what you see, with what to check.
 
 - Check the Status line: "Not paired" means pair again. "Paired with ..." only means CrossWatch
   answered at some point (see [The Status line](connect.md#the-status-line)); check Kodi's log
-  for `reporter.failed` (CrossWatch could not be reached) or `reporter.rejected status=401`
+  for `reporter.failed` (CrossWatch could not be reached) or `reporter.rejected` with `status=401`
   (the token was refused: pair again).
 - Check CrossWatch is reachable at the paired address.
-- If the add-on is switched off in CrossWatch, pairing itself will say so. If it was switched
-  off after pairing, nothing shows in Kodi; the log shows `reporter.rejected` with a reason.
-  Turn it on in CrossWatch; no new pairing is needed.
+- Check the Kodi add-on is switched on for this Kodi in CrossWatch. While it is off,
+  CrossWatch offers no pairing code, and a code from before is refused as "Code wrong or
+  expired". Switching it off after pairing discards this Kodi's token: nothing shows in Kodi,
+  and the log shows `reporter.rejected` with `status=401`. Turn it on in CrossWatch and pair
+  again. Completed watches still waiting for delivery are then dropped, because the token
+  changed.
 - Only episodes and films that Kodi has in its library with an id are reported; see
   [What the add-on sends](what-is-sent.md).
 - When CrossWatch was down, only completed watches are sent later; everything else is dropped

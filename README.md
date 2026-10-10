@@ -4,10 +4,13 @@ A Kodi service add-on that reports what you watch to your own
 [CrossWatch](https://github.com/cenodude/CrossWatch), including **who** in the household
 watched it. CrossWatch then syncs each person's watch history to their own Trakt, Simkl,
 Plex, Emby or Jellyfin account, so a household sharing one Kodi profile does not end up
-sharing one watch history.
+sharing one watch history. See the [CrossWatch wiki](https://wiki.crosswatch.app) for how
+CrossWatch itself is set up.
 
 This is a beta (1.0.0~beta1), installable from a GitHub release. It needs CrossWatch v0.13.3
-or later, where Kodi add-on support is marked experimental.
+or later, where Kodi add-on support is marked experimental. Tested on Kodi 21.3 (Omega); the
+add-on's windows were checked in Estuary and Arctic Zephyr Mod. Kodi on Android and other skins
+have not been tested.
 
 ![The Viewers window](docs/screenshots/viewers/viewers-split.png)
 
@@ -16,6 +19,7 @@ or later, where Kodi add-on support is marked experimental.
 - Kodi 21 (Omega). Earlier versions are not supported; later versions have not been tested.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support.
 - Kodi able to reach CrossWatch over the network, for example both on the same home network.
+  CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority. Self-signed
   certificates are not supported.
 
@@ -29,6 +33,8 @@ This add-on has not reached the official Kodi add-on repository yet.
 3. Go to Add-ons, open the add-on browser (the open box icon at the top left), choose
    "Install from zip file" and pick the zip.
 4. Follow the [Quick start](https://crosswatch-app.github.io/kodi-addon/quick-start/).
+
+A zip install does not update itself: to update, install the next zip over it.
 
 ## Documentation
 

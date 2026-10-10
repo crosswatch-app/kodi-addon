@@ -10,7 +10,8 @@ have set up there:
   carries the names of all configured viewers.
 - Kodi's device name, a generated device id and the add-on's version.
 - Viewer names, and how they were found (playlist, profile, or the question, which includes
-  an answer remembered from it; nothing when there is only one viewer).
+  an answer remembered from it; nothing when the only viewer is
+  credited because they are the only one).
 - Title, year, season, episode and episode title; the ids Kodi's library has for it (such as
   TMDb, TVDb, IMDb); duration, playback position and progress; the file path, with any user
   name, password and query string removed; and the Plex rating key for

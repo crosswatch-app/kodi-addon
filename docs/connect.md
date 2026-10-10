@@ -37,8 +37,6 @@ What you see depends on what went wrong:
 - Too many tries: "Too many tries. Wait a minute and try again."
 - CrossWatch cannot be reached at that address: "Can't reach CrossWatch at `<address>`."
 - Some other failure on CrossWatch's side: "Pairing failed: CrossWatch answered HTTP `<code>`."
-- The Kodi add-on is switched off in CrossWatch: "The Kodi add-on is switched off in
-  CrossWatch. Turn it on there, then pair again."
 - An HTTPS certificate the add-on does not trust: "The certificate of `<address>` was not
   accepted. HTTPS needs a certificate from a public certificate authority; a self-signed one
   does not work."

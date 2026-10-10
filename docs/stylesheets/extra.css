@@ -1,5 +1,5 @@
-/* The add-on's window palette (resources/skins/Default/1080i): background, surface, text,
-   muted text and the accent its header gradient and focus use. */
+/* The add-on's window palette (resources/skins/Default/1080i): the accent in both schemes,
+   and its background, surface, text and muted text in the dark one. */
 :root {
   --cw-accent: #7c5cff;
   --md-primary-fg-color: #7c5cff;
