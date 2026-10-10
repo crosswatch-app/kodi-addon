@@ -166,7 +166,7 @@
                 <onup>200</onup><onleft>20</onleft>
             </control>
             <control type="label">
-                <left>890</left><top>636</top><width>310</width><height>40</height>
+                <left>890</left><top>636</top><width>300</width><height>40</height>
                 <align>right</align><aligny>center</aligny>
                 <font>font12</font>
                 <textcolor>FF9299A6</textcolor>
