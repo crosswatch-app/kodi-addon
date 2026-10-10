@@ -42,7 +42,7 @@
                 <textcolor>FFF1F3F5</textcolor>
                 <label>$INFO[Window.Property(CW.Heading)]</label>
             </control>
-            <control type="edit" id="2">
+            <control type="edit" id="30">
                 <left>50</left><top>146</top><width>640</width><height>72</height>
                 <aligny>center</aligny>
                 <textoffsetx>24</textoffsetx>
@@ -54,10 +54,10 @@
                 <hinttext>[COLOR FF9299A6]$ADDON[service.crosswatch 30086][/COLOR]</hinttext>
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <onright>3</onright>
+                <onright>31</onright>
                 <ondown>100</ondown>
             </control>
-            <control type="button" id="3">
+            <control type="button" id="31">
                 <left>706</left><top>146</top><width>300</width><height>72</height>
                 <align>center</align><aligny>center</aligny>
                 <font>font30_title</font>
@@ -68,7 +68,7 @@
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
                 <visible>!String.IsEmpty(Window.Property(CW.Filter))</visible>
-                <onleft>2</onleft>
+                <onleft>30</onleft>
                 <ondown>100</ondown>
             </control>
             <control type="label">
@@ -91,7 +91,7 @@
                 <orientation>vertical</orientation>
                 <scrolltime>0</scrolltime>
                 <pagecontrol>101</pagecontrol>
-                <onup>2</onup>
+                <onup>30</onup>
                 <ondown>20</ondown>
                 <itemlayout width="1140" height="76">
                     <control type="image">

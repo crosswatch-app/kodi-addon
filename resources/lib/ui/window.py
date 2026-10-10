@@ -231,8 +231,9 @@ class ConfirmDialog(CrossWatchDialog):
 
 
 LIST_XML = "crosswatch-list.xml"
-LIST_SEARCH = 2
-LIST_FILTER = 3
+# Not 2, 3 or 4: WindowXML keeps those ids for its own view and sort buttons.
+LIST_SEARCH = 30
+LIST_FILTER = 31
 LIST_ROWS = 100
 BUTTON_BULK = 20
 BUTTON_CLOSE = 21

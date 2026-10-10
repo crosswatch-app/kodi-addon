@@ -161,3 +161,10 @@ def test_every_button_can_be_reached(window):
     for control in root.iter("control"):
         if control.get("type") in ("button", "edit"):
             assert control.get("id") in targets, control.get("id")
+
+
+def test_no_control_uses_an_id_kodi_keeps_for_itself(window):
+    """WindowXML handles clicks on ids 2, 3 and 4 as its own view and sort buttons and never
+    passes them to the script (xbmc/interfaces/legacy/WindowXML.cpp, GUI_MSG_CLICKED)."""
+    for control in _root(window).iter("control"):
+        assert control.get("id") not in {"2", "3", "4"}, control.get("id")
