@@ -1,3 +1,4 @@
+import itertools
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -185,3 +186,24 @@ def test_pick_rows_show_a_tick_and_hide_the_thumbnail():
         assert thumbs and all(i.findtext("visible") == f"!{PICK}" for i in thumbs)
         chosen = [i for i in images if (i.findtext("texture") or "").startswith("crosswatch/box_chosen")]
         assert chosen
+
+
+def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping():
+    """Real playlist names run long ("EasyTV - TVShow - Season Premieres"), and a row also
+    carries the Also line, the tag and the tick."""
+    root = ET.parse(LIST).getroot()
+    for layout in ("itemlayout", "focusedlayout"):
+        found = root.find(f".//control[@id='100']/{layout}")
+        assert found is not None
+        spans = {}
+        for control in found.findall("control"):
+            visible = control.findtext("visible") or ""
+            label = control.findtext("label") or control.findtext("texture") or ""
+            if visible == PICK or "tick.png" in label:
+                left, width = int(control.findtext("left") or 0), int(control.findtext("width") or 0)
+                spans[label] = (left, left + width)
+        title = spans["$INFO[ListItem.Label]"]
+        assert title[1] - title[0] >= 600
+        ordered = sorted(spans.values())
+        assert len(ordered) == 4  # title, detail, tag, tick
+        assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered
