@@ -71,14 +71,6 @@ msgctxt "#30035"
 msgid "Remembered answers"
 msgstr ""
 
-msgctxt "#30036"
-msgid "Forget all remembered answers"
-msgstr ""
-
-msgctxt "#30038"
-msgid "Change"
-msgstr ""
-
 msgctxt "#30039"
 msgid "Forget"
 msgstr ""
