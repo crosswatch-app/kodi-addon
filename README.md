@@ -175,8 +175,8 @@ Playlists are video smart playlists from Kodi's playlists folder, of shows or of
 playlists of episodes or music videos are not used. The playlist picker only offers playlists
 of shows or films. If a viewer already had a playlist of another type, it is not listed in
 the picker, and it stays in their list until you press Done, which removes it from that
-viewer (Cancel or Back leaves it). Until it is removed, the viewer list still shows that
-viewer as "unusable". It never credits anyone and is simply ignored: the viewer's other
+viewer (Cancel or Back leaves it). Until it is removed, the Viewers window still shows that
+playlist tagged "unusable". It never credits anyone and is simply ignored: the viewer's other
 playlists still count. Playlists of the wrong type are never offered to anyone.
 
 - Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
@@ -285,30 +285,45 @@ should describe what that person watches, not what they just happened to play.
 
 ### Viewer list
 
-"Configure viewers and playlists" opens a CrossWatch window titled "Viewers" that lists every
-viewer. Each row shows the viewer's name and what is set up ("2 playlists, 1 profile", "1
-playlist" or "nothing set up"). When something needs fixing, the row also carries a tag such as
-"1 missing" or "1 unusable". A viewer is tagged "no CrossWatch route" when no CrossWatch route
-accepts their name. CrossWatch reports its routes for this Kodi, and the names each route
-accepts, when it answers the add-on's regular check-in (every five minutes, and straight away
-when the viewer names change). The tag only appears once CrossWatch has answered with its
-routes for the current pairing, and only for names it was asked about: when the add-on is not
-paired, or CrossWatch has never sent its routes, no viewer is tagged, and a viewer just added
-or renamed is not tagged until CrossWatch's next answer. A count shows how many viewers are
-listed ("3 viewers"), and a search box narrows the list by name. Below the list are "Add
-viewer", which is always available (also when a search finds nobody), and "Close". With no
-viewers configured yet, the screen starts straight at Add viewer.
+"Configure viewers and playlists" opens one CrossWatch window titled "Viewers", with a count
+("3 viewers"). The viewers are listed by name on the left. A warning icon on a row means
+something about that viewer needs fixing: a missing or unusable playlist, a profile Kodi no
+longer has, or no CrossWatch route.
+
+![The Viewers window](screenshots/viewers/viewers-split.png)
+
+The right side shows the highlighted viewer, so moving up and down the list changes it. It
+has the viewer's name, then "Playlists" with each playlist on its own line, then "Profiles"
+with each profile (a section reads "none" when it is empty). A playlist that was deleted or
+renamed, and a profile Kodi no longer has, are tagged "missing" with a warning icon; a profile
+is only tagged when Kodi's profiles could be read. A playlist that is not a TV show or film
+playlist is tagged "unusable". When there are more lines than fit, the last one says "and N
+more": the "Playlists" and "Profiles" buttons list them all. That line carries the warning
+icon when one of the lines it hides needs fixing.
+
+Below that is a CrossWatch line. A check icon and "CrossWatch route" mean a CrossWatch route
+accepts the viewer's name; a warning icon and "No CrossWatch route" mean none does. CrossWatch
+reports its routes for this Kodi, and the names each route accepts, when it answers the
+add-on's regular check-in (every five minutes, and straight away when the viewer names
+change). The line only appears once CrossWatch has answered with its routes for the current
+pairing, and only for names it was asked about: when the add-on is not paired, or CrossWatch
+has never sent its routes, nothing is shown, and a viewer just added or renamed shows nothing
+until CrossWatch's next answer.
+
+The buttons "Playlists", "Profiles", "Rename" and "Remove" act on the highlighted viewer. OK
+on a viewer moves to "Playlists". "Add viewer" and "Close" are along the bottom, and Back
+closes the window. After each action the window comes back on the same viewer: after "Rename"
+on the new name, after "Add viewer" on the new viewer, and after "Remove" on the viewer that
+took its place (the one before it, when the last viewer was removed). With no viewers configured yet, the screen starts straight at "Add viewer".
+If every viewer is removed, the window shows "No viewers yet" with only "Add viewer" and
+"Close".
 
 Every change is saved straight away, so there is no need to close the screen, and it applies
 from the next playback.
 
 "Add viewer" asks for the viewer's name ("Viewer name, as CrossWatch routes it"), then which
-playlists are theirs (the playlist window, described below), then opens that viewer's window.
-
-OK on a viewer opens their window. It shows the viewer's name, a summary line "Playlists: ..."
-and a line "Profiles: ..." (each reads "none" when empty), and the buttons "Playlists",
-"Profiles", "Rename", "Remove" and "Back". After each action the window comes back with the
-updated summary; Back returns to the list.
+playlists are theirs (the playlist window, described below), then the Viewers window comes
+back with the new viewer highlighted.
 
 "Profiles" opens a window titled "Profiles for <name>" that lists Kodi's profiles. The list
 comes from Kodi itself, so nothing is typed. Press OK on a profile to tick or untick it; the
@@ -412,7 +427,7 @@ See "The question at the end" above for the cases where it is not asked.
 The playlist was renamed or deleted. Edit that viewer's playlists and point it at a playlist
 that still exists.
 
-**A viewer shows "no CrossWatch route"**
+**A viewer shows "No CrossWatch route"**
 
 No CrossWatch route accepts that viewer's name, so their playback has nowhere to go. Check, in
 order:
@@ -425,7 +440,7 @@ order:
    to the new one.
 
 A route with an empty whitelist accepts every viewer, unless a CrossWatch profile is set on
-that route. The tag can take a moment to clear: it updates when CrossWatch answers the add-on's
+that route. The line can take a moment to change: it updates when CrossWatch answers the add-on's
 next check-in (every five minutes, and straight away when the viewer names change).
 
 **A playlist shows as unusable**
@@ -509,3 +524,6 @@ Developers: the payload contract is [docs/contract.md](docs/contract.md).
 ## Licence
 
 GPL-2.0-only. See [LICENSE](LICENSE).
+
+The status icons are Material Symbols by Google, under the Apache License 2.0
+([resources/licences/Apache-2.0.txt](resources/licences/Apache-2.0.txt)).

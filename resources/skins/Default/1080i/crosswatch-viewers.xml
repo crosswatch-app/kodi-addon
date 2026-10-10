@@ -1,0 +1,521 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Every control is inline: Kodi resolves includes and named colours from the active skin only, never from a script's own skin folder. Fonts are anchor names that skin_fonts.py maps onto the active skin. -->
+<window>
+    <zorder>1</zorder>
+    <!-- Not the viewer list: it is empty until onInit fills it, so Kodi cannot focus it when the window opens and logs an error. onInit moves focus to it. -->
+    <defaultcontrol always="true">21</defaultcontrol>
+    <controls>
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <texture colordiffuse="E6090A0D">crosswatch/white.png</texture>
+            <animation effect="fade" start="0" end="100" time="200">WindowOpen</animation>
+            <animation effect="fade" start="100" end="0" time="200">WindowClose</animation>
+        </control>
+        <control type="group">
+            <left>340</left><top>110</top><width>1240</width><height>860</height>
+            <animation type="WindowOpen" reversible="false">
+                <effect type="fade" start="0" end="100" time="300" delay="100"/>
+                <effect type="zoom" start="96" end="100" center="auto" tween="sine" easing="out" time="300" delay="100"/>
+            </animation>
+            <animation type="WindowClose" reversible="false">
+                <effect type="zoom" start="100" end="96" center="auto" tween="sine" easing="out" time="200"/>
+                <effect type="fade" start="100" end="0" tween="cubic" easing="out" time="200"/>
+            </animation>
+            <control type="image">
+                <left>0</left><top>0</top><width>1240</width><height>860</height>
+                <texture border="28">crosswatch/panel.png</texture>
+            </control>
+            <control type="image">
+                <left>0</left><top>0</top><width>1240</width><height>6</height>
+                <texture>crosswatch/gradient.png</texture>
+            </control>
+            <control type="label">
+                <left>50</left><top>40</top><width>1140</width><height>34</height>
+                <aligny>center</aligny>
+                <font>font25_title</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>CROSSWATCH</label>
+            </control>
+            <control type="label">
+                <left>50</left><top>80</top><width>900</width><height>50</height>
+                <aligny>center</aligny>
+                <font>font32_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Window.Property(CW.Heading)]</label>
+            </control>
+            <control type="label">
+                <left>1022</left><top>80</top><width>168</width><height>50</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Window.Property(CW.Count)]</label>
+            </control>
+            <control type="label">
+                <left>50</left><top>146</top><width>440</width><height>66</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$ADDON[service.crosswatch 30118]</label>
+                <visible>String.IsEqual(Window.Property(CW.Empty),true)</visible>
+            </control>
+            <control type="list" id="100">
+                <left>50</left><top>146</top><width>440</width><height>532</height>
+                <orientation>vertical</orientation>
+                <scrolltime>0</scrolltime>
+                <pagecontrol>101</pagecontrol>
+                <onright>10</onright>
+                <ondown>20</ondown>
+                <itemlayout width="440" height="76">
+                    <control type="image">
+                        <left>0</left><top>0</top><width>440</width><height>66</height>
+                        <texture border="16">crosswatch/box.png</texture>
+                    </control>
+                    <control type="label">
+                        <left>24</left><top>0</top><width>340</width><height>66</height>
+                        <aligny>center</aligny>
+                        <font>font30_title</font>
+                        <textcolor>FFF1F3F5</textcolor>
+                        <label>$INFO[ListItem.Label]</label>
+                    </control>
+                    <control type="image">
+                        <left>384</left><top>17</top><width>32</width><height>32</height>
+                        <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                        <visible>String.IsEqual(ListItem.Property(warn),true)</visible>
+                    </control>
+                </itemlayout>
+                <!-- Kodi draws the selected row with this layout also while focus is on the buttons,
+                     which act on that row: the chosen box marks it then. -->
+                <focusedlayout width="440" height="76">
+                    <control type="image">
+                        <left>0</left><top>0</top><width>440</width><height>66</height>
+                        <texture border="16">crosswatch/box_focus.png</texture>
+                        <visible>Control.HasFocus(100)</visible>
+                    </control>
+                    <control type="image">
+                        <left>0</left><top>0</top><width>440</width><height>66</height>
+                        <texture border="16">crosswatch/box_chosen.png</texture>
+                        <visible>!Control.HasFocus(100)</visible>
+                    </control>
+                    <control type="label">
+                        <left>24</left><top>0</top><width>340</width><height>66</height>
+                        <aligny>center</aligny>
+                        <font>font30_title</font>
+                        <textcolor>FFF1F3F5</textcolor>
+                        <label>$INFO[ListItem.Label]</label>
+                    </control>
+                    <control type="image">
+                        <left>384</left><top>17</top><width>32</width><height>32</height>
+                        <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                        <visible>String.IsEqual(ListItem.Property(warn),true)</visible>
+                    </control>
+                </focusedlayout>
+            </control>
+            <control type="scrollbar" id="101">
+                <left>500</left><top>146</top><width>6</width><height>522</height>
+                <orientation>vertical</orientation>
+                <showonepage>false</showonepage>
+                <texturesliderbackground colordiffuse="FF1C222C">crosswatch/white.png</texturesliderbackground>
+                <texturesliderbar colordiffuse="FF7C5CFF">crosswatch/white.png</texturesliderbar>
+                <texturesliderbarfocus colordiffuse="FF7C5CFF">crosswatch/white.png</texturesliderbarfocus>
+                <textureslidernib></textureslidernib>
+                <textureslidernibfocus></textureslidernibfocus>
+                <onleft>100</onleft>
+            </control>
+            <!-- The panel reads the highlighted row's properties, so Kodi redraws it as focus moves. -->
+            <control type="label">
+                <left>530</left><top>146</top><width>660</width><height>50</height>
+                <aligny>center</aligny>
+                <font>font32_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Label]</label>
+            </control>
+            <!-- One unwrapped label each, cut at the width: Kodi does not clip a label to its height,
+                 so a wrapping line would run into the next slot. Python fits the lines to the slots.
+                 A line takes the full width unless it has a tag to make room for. -->
+            <control type="label">
+                <left>530</left><top>206</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot1_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>208</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot1_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>206</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot1)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot1_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>206</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot1)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot1_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>206</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot1_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>242</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot2_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>244</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot2_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>242</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot2)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot2_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>242</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot2)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot2_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>242</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot2_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>278</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot3_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>280</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot3_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>278</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot3)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot3_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>278</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot3)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot3_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>278</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot3_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>314</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot4_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>316</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot4_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>314</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot4)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot4_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>314</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot4)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot4_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>314</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot4_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>350</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot5_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>352</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot5_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>350</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot5)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot5_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>350</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot5)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot5_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>350</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot5_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>386</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot6_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>388</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot6_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>386</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot6)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot6_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>386</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot6)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot6_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>386</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot6_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>422</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot7_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>424</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot7_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>422</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot7)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot7_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>422</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot7)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot7_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>422</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot7_tag)]</label>
+            </control>
+            <control type="label">
+                <left>530</left><top>458</top><width>660</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot8_head)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>460</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(slot8_warn),true)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>458</top><width>620</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot8)]</label>
+                <visible>String.IsEmpty(Container(100).ListItem.Property(slot8_tag))</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>458</top><width>340</width><height>36</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot8)]</label>
+                <visible>!String.IsEmpty(Container(100).ListItem.Property(slot8_tag))</visible>
+            </control>
+            <control type="label">
+                <left>920</left><top>458</top><width>270</width><height>36</height>
+                <align>right</align><aligny>center</aligny>
+                <font>font12</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(slot8_tag)]</label>
+            </control>
+            <control type="image">
+                <left>530</left><top>508</top><width>32</width><height>32</height>
+                <texture colordiffuse="FF57B58A">crosswatch/icons/check_circle.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(route),accepted)</visible>
+            </control>
+            <control type="image">
+                <left>530</left><top>508</top><width>32</width><height>32</height>
+                <texture colordiffuse="FFD86672">crosswatch/icons/warning.png</texture>
+                <visible>String.IsEqual(Container(100).ListItem.Property(route),refused)</visible>
+            </control>
+            <control type="label">
+                <left>570</left><top>504</top><width>620</width><height>40</height>
+                <aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <label>$INFO[Container(100).ListItem.Property(route_text)]</label>
+            </control>
+            <!-- Ids 10 to 13: never 2, 3 or 4, which WindowXML keeps for its own buttons. -->
+            <control type="button" id="10">
+                <left>530</left><top>556</top><width>322</width><height>72</height>
+                <align>center</align><aligny>center</aligny>
+                <font>font30_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <focusedcolor>FFF1F3F5</focusedcolor>
+                <pulseonselect>false</pulseonselect>
+                <label>$ADDON[service.crosswatch 30107]</label>
+                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                <onleft>100</onleft>
+                <onright>11</onright>
+                <ondown>12</ondown>
+            </control>
+            <control type="button" id="11">
+                <left>868</left><top>556</top><width>322</width><height>72</height>
+                <align>center</align><aligny>center</aligny>
+                <font>font30_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <focusedcolor>FFF1F3F5</focusedcolor>
+                <pulseonselect>false</pulseonselect>
+                <label>$ADDON[service.crosswatch 30108]</label>
+                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                <onleft>10</onleft>
+                <ondown>13</ondown>
+            </control>
+            <control type="button" id="12">
+                <left>530</left><top>644</top><width>322</width><height>72</height>
+                <align>center</align><aligny>center</aligny>
+                <font>font30_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <focusedcolor>FFF1F3F5</focusedcolor>
+                <pulseonselect>false</pulseonselect>
+                <label>$ADDON[service.crosswatch 30109]</label>
+                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                <onleft>100</onleft>
+                <onup>10</onup>
+                <onright>13</onright>
+                <ondown>20</ondown>
+            </control>
+            <control type="button" id="13">
+                <left>868</left><top>644</top><width>322</width><height>72</height>
+                <align>center</align><aligny>center</aligny>
+                <font>font30_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <focusedcolor>FFF1F3F5</focusedcolor>
+                <pulseonselect>false</pulseonselect>
+                <label>$ADDON[service.crosswatch 30110]</label>
+                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                <onleft>12</onleft>
+                <onup>11</onup>
+                <ondown>20</ondown>
+            </control>
+            <control type="button" id="20">
+                <left>50</left><top>740</top><width>360</width><height>72</height>
+                <align>center</align><aligny>center</aligny>
+                <font>font30_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <focusedcolor>FFF1F3F5</focusedcolor>
+                <pulseonselect>false</pulseonselect>
+                <label>$ADDON[service.crosswatch 30048]</label>
+                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <onup condition="!String.IsEqual(Window.Property(CW.Empty),true)">12</onup>
+                <onright>21</onright>
+            </control>
+            <control type="button" id="21">
+                <left>1020</left><top>740</top><width>170</width><height>72</height>
+                <align>center</align><aligny>center</aligny>
+                <font>font30_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <focusedcolor>FFF1F3F5</focusedcolor>
+                <pulseonselect>false</pulseonselect>
+                <label>$ADDON[service.crosswatch 30096]</label>
+                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <onup condition="!String.IsEqual(Window.Property(CW.Empty),true)">13</onup>
+                <onleft>20</onleft>
+            </control>
+        </control>
+    </controls>
+</window>

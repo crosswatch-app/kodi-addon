@@ -38,8 +38,8 @@ class FakeKodi:
         self.confirm_window_calls: list[tuple[str, str]] = []
         self.list_window_results: list[Any] = []
         self.list_window_calls: list[tuple[Any, Any]] = []
-        self.viewer_window_results: list[str] = []
-        self.viewer_window_calls: list[tuple[str, str]] = []
+        self.viewers_window_results: list[Any] = []
+        self.viewers_window_calls: list[tuple[Any, str]] = []
         self.input_answer = input_answer
         # Consumed in order, for a flow that asks more than one question.
         self.input_answers = list(input_answers or [])
@@ -122,9 +122,13 @@ class FakeKodi:
             return self.list_window_results.pop(0)
         return ListResult("close", state)
 
-    def viewer_window(self, heading: str, summary: str) -> str:
-        self.viewer_window_calls.append((heading, summary))
-        return self.viewer_window_results.pop(0) if self.viewer_window_results else "back"
+    def viewers_window(self, request: Any, key: str) -> Any:
+        from resources.lib.ui.viewers_window import ViewersResult
+
+        self.viewers_window_calls.append((request, key))
+        if self.viewers_window_results:
+            return self.viewers_window_results.pop(0)
+        return ViewersResult("close", key)
 
     def text_input(self, heading: str, default: str = "") -> str:
         self.input_calls.append((heading, default))

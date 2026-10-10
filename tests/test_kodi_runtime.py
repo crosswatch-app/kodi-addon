@@ -217,20 +217,28 @@ def test_a_failed_pick_window_is_a_logged_close(runtime, monkeypatch):
     assert "pick_list" in line and "RuntimeError" in line
 
 
-def test_viewer_window_returns_the_button_pressed(runtime, monkeypatch):
-    class Dialog(window_mod.ViewerDialog):
+def test_viewers_window_returns_what_the_household_did(runtime, monkeypatch):
+    from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
+
+    request = ViewersRequest(heading="Viewers", count="", rows=(), more="", route_ok="", route_missing="")
+
+    class Dialog(window_mod.ViewersDialog):
         def doModal(self) -> None:
-            self.finish("rename", "rename")
+            self.finish("add", ViewersResult("add", ""))
 
-    monkeypatch.setattr(window_mod, "ViewerDialog", Dialog)
+    monkeypatch.setattr(window_mod, "ViewersDialog", Dialog)
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
-    assert runtime.viewer_window("anna", "summary") == "rename"
+    assert runtime.viewers_window(request, "") == ViewersResult("add", "")
 
 
-def test_viewer_window_back_or_failure_is_back(runtime, monkeypatch):
+def test_viewers_window_back_or_failure_closes_on_the_key(runtime, monkeypatch):
+    from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
+
+    request = ViewersRequest(heading="Viewers", count="", rows=(), more="", route_ok="", route_missing="")
+
     def broken(*args, **kwargs):
         raise RuntimeError("no skin file")
 
-    monkeypatch.setattr(window_mod, "ViewerDialog", broken)
+    monkeypatch.setattr(window_mod, "ViewersDialog", broken)
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
-    assert runtime.viewer_window("anna", "summary") == "back"
+    assert runtime.viewers_window(request, "anna") == ViewersResult("close", "anna")
