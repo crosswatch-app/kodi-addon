@@ -4,22 +4,37 @@ Problems listed by what you see, with what to check.
 
 ## Nothing arrives in CrossWatch
 
-- Check the Status line: if it says "Not paired", pair again.
+- Check the Status line: "Not paired" means pair again. "Paired with ..." only means CrossWatch
+  answered at some point (see [The Status line](connect.md#the-status-line)); check Kodi's log
+  for `reporter.failed` (CrossWatch could not be reached) or `reporter.rejected status=401`
+  (the token was refused: pair again).
 - Check CrossWatch is reachable at the paired address.
-- If the add-on is switched off in CrossWatch, pairing itself will say so.
-- PlexKodiConnect playback is skipped by default; see "Skip PlexKodiConnect playback" in [Settings](settings.md#viewers).
+- If the add-on is switched off in CrossWatch, pairing itself will say so. If it was switched
+  off after pairing, nothing shows in Kodi; the log shows `reporter.rejected` with a reason.
+  Turn it on in CrossWatch; no new pairing is needed.
+- Only episodes and films that Kodi has in its library with an id are reported; see
+  [What the add-on sends](what-is-sent.md).
+- When CrossWatch was down, only completed watches are sent later; everything else is dropped
+  after two minutes (see [When CrossWatch cannot be
+  reached](what-is-sent.md#when-crosswatch-cannot-be-reached)).
+- PlexKodiConnect playback is skipped by default; see "Skip PlexKodiConnect playback" in
+  [Settings](settings.md#viewers).
 - Using `https://`: the certificate must come from a public certificate authority. A
-  certificate problem shows its own message when pairing; after pairing, the add-on's log
-  shows `CERTIFICATE_VERIFY_FAILED` on each failed send.
+  certificate problem shows its own message when pairing; after pairing, Kodi's log
+  shows `reporter.failed` with `CERTIFICATE_VERIFY_FAILED`, repeated while the add-on retries
+  for two minutes.
 
 ## Playback arrives under nobody, or under the wrong person
 
-- Check the viewer's name matches the name in that person's route "Username whitelist"
-  exactly.
-- Check the viewer has a playlist or Kodi profile configured.
+- Check the viewer's name is the same name as in that person's route "Username whitelist"
+  (CrossWatch ignores case and punctuation).
+- Check the viewer has a playlist or Kodi profile configured (or, with two or more viewers,
+  that the question at the end was answered).
 - Check whether a playback-driven playlist (such as "Continue Watching") is attributing it to
   the wrong person; see [Smart playlists](who-watched.md#smart-playlists).
-- Check the [Remembered answers](remembered-answers.md) screen for a show shown as "Covered by" a playlist.
+- Check the [Remembered answers](remembered-answers.md) screen for a show shown as "Covered by"
+  a playlist. Such a show is decided by that playlist and its remembered answer is not used, so
+  if the wrong person is credited, fix the playlist.
 
 ## The who-watched question never appears
 
@@ -28,8 +43,14 @@ not asked.
 
 ## A playlist shows as missing
 
-The playlist was renamed or deleted. Edit that viewer's playlists ([Viewers](viewers.md)) and point it at a playlist
-that still exists.
+The playlist was renamed or deleted, or the place it is stored is unavailable. Open that
+viewer's "Playlists" ([Viewers](viewers.md)), untick the one tagged "missing", tick its
+replacement and press Done.
+
+## A profile shows as missing
+
+The Kodi profile was renamed or deleted. Open that viewer's "Profiles", untick it, tick the
+right one and press Done.
 
 ## A viewer shows "No CrossWatch route"
 
@@ -44,7 +65,9 @@ order:
    to the new one.
 
 A route with an empty whitelist accepts every viewer, unless a CrossWatch profile is set on
-that route. The line can take a moment to change: it updates when CrossWatch answers the add-on's
+that route. Until CrossWatch has answered for that name (just after pairing, or right after
+adding or renaming a viewer), the line is left out entirely rather than showing "No CrossWatch
+route". The line can take a moment to change: it updates when CrossWatch answers the add-on's
 next check-in (every five minutes, and straight away when the viewer names change).
 
 ## A playlist shows as unusable
@@ -58,17 +81,25 @@ If Kodi has no TV show or film smart playlists at all, the viewer's "Playlists" 
 has no smart playlists of TV shows or films yet" message instead of the list, so Done is not
 available. In that case, make a TV show or film smart playlist ("Playlists" then opens, and
 Done removes the unusable one), change the unusable playlist's type in Kodi to shows or films,
-or remove the viewer and add them again.
+or remove the viewer and add them again. After making a TV show or film smart playlist, close
+the Viewers window and choose "Configure viewers and playlists" again, so it is listed.
 
 ## Logs
 
-The add-on writes its own log under
-`userdata/addon_data/service.crosswatch/logs/crosswatch.log`
-(see the [Kodi wiki](https://kodi.wiki/view/Userdata) for where `userdata` is on your system).
-Turn on "Enable debug logging" for more detail.
+Normal lines (failures, refusals, check-ins) go to Kodi's own log, `kodi.log` (see the
+[Kodi wiki](https://kodi.wiki/view/Log_file) for where it is).
 
-The log never contains the webhook token or a pairing code. Normal lines carry counts, not
-names. Debug lines carry titles and viewer names.
+The add-on's own file, `crosswatch.log`, is in the `logs` folder of the add-on's data folder
+(`userdata/addon_data/service.crosswatch/logs/`, or under `userdata/profiles/<profile>/`
+outside the master profile; see the [Kodi wiki](https://kodi.wiki/view/Userdata) for where
+`userdata` is). It is only written while "Enable debug logging (records viewing history to
+disk)" is on, and then holds every line including the detail. It is kept to 500 KB, with up to
+three older files (`crosswatch.1.log` to `crosswatch.3.log`). Times are in UTC.
+
+The add-on never logs the webhook token or a pairing code. Its normal lines carry counts and
+the CrossWatch address, never viewer names or titles; debug lines carry titles and viewer
+names. Kodi's own debug logging (not the add-on's) records the one-time code a Link hands over,
+which is already used or expired by then.
 
 ## Getting help
 

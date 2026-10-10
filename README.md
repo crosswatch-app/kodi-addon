@@ -13,7 +13,7 @@ or later, where Kodi add-on support is marked experimental.
 
 ## Requirements
 
-- Kodi 21 (Omega). Later versions have not been tested.
+- Kodi 21 (Omega). Earlier versions are not supported; later versions have not been tested.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support.
 - Kodi able to reach CrossWatch over the network, for example both on the same home network.
 - For an `https://` address: a certificate from a public certificate authority. Self-signed
@@ -26,7 +26,8 @@ This add-on has not reached the official Kodi add-on repository yet.
 1. Download `service.crosswatch-v1.0.0-beta1.zip` from the
    [releases page](https://github.com/crosswatch-app/kodi-addon/releases).
 2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources".
-3. Go to Add-ons > "Install from zip file" and pick the zip.
+3. Go to Add-ons, open the add-on browser (the open box icon at the top left), choose
+   "Install from zip file" and pick the zip.
 4. Follow the [Quick start](https://crosswatch-app.github.io/kodi-addon/quick-start/).
 
 ## Documentation

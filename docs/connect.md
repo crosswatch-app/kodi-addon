@@ -12,7 +12,11 @@ with CrossWatch".
 1. In CrossWatch, open the Kodi instance you want this device to use and ask it for a pairing
    code.
 2. Back in the add-on, type the CrossWatch address: `192.168.1.10:8787` is enough, `http://` is
-   assumed if you leave it off, and a trailing slash or a full webhook URL both work too.
+   assumed if you leave it off, and a trailing slash or the full webhook URL work too, but not
+   a URL with `?token=` in it (that is the manual option, see
+   [Manual setup](#manual-setup-advanced)). The prompt starts
+   with the current address filled in. Leaving the address or the code empty cancels without
+   changing anything.
 
    ![Address prompt](https://github.com/user-attachments/assets/c6b62c2d-ac0a-44a2-be2d-c9b3774cfbfd)
 
@@ -68,24 +72,39 @@ changes nothing.
 
 This line is read-only; it only ever reports what the add-on last did. It reads one of:
 
-- "Paired with `<instance>` at `<address>`", after pairing or a Link.
-- "Not paired", when nothing is connected.
+- "Paired with `<instance>` at `<address>`", after pairing or a Link, and also for a manual
+  setup once CrossWatch has answered the add-on's check-in.
+- "Not paired", when no webhook address or token is set.
+
+It shows the last time CrossWatch answered, not whether CrossWatch can be reached right now:
+it keeps saying "Paired with ..." when CrossWatch is down or later refuses the token. If it
+says "Paired with ..." and nothing arrives, see
+[Troubleshooting](troubleshooting.md#nothing-arrives-in-crosswatch).
 
 ## Unpair
 
-The "Unpair" button appears only while the add-on is connected. It asks for confirmation, then
-stops reporting. Any completed watches already kept on disk for delivery during an outage are
-not deleted: they are still sent if you pair again with the same CrossWatch instance. Moving to
-a different CrossWatch does not need Unpair first, just pair again.
+The "Unpair" button appears while a webhook token is set, whether by pairing or by manual
+setup. It asks for confirmation, then clears the webhook address and token, so the add-on
+stops reporting. Completed watches already kept on disk for delivery during an outage are not
+deleted by Unpair: they are still sent if you pair again with the same CrossWatch, as long as
+it hands out the same token. Moving to a different CrossWatch does not need Unpair first, just
+pair again; but completed watches still waiting for the old CrossWatch are then discarded,
+because they are tied to the old token.
 
 ## Manual setup (advanced)
 
 If you would rather not pair, "Webhook URL" and "Webhook token" are available at the Advanced
 settings level (use the settings level button on Kodi's settings screen to change the level).
 
+"Webhook URL" must be the full address of the add-on endpoint, for example
+`http://192.168.1.10:8787/webhook/kodiwatcher` (only `http://` and `https://`). Unlike the
+pairing prompt, it is used exactly as typed. Pairing fills both fields in, so changing them
+changes the paired connection.
+
 ![Settings at the Advanced level](https://github.com/user-attachments/assets/e9d8afce-11e0-44ae-ba1c-9ded5f327c1b)
 
 CrossWatch's instance page also offers a manual option: a full URL with `?token=` in it. You
 can paste that whole URL into "Webhook URL"; the add-on takes the token out of it and moves it
-into "Webhook token" for you. Whichever way the token gets there, it is only ever sent in a
+into "Webhook token" for you when you press OK on the settings screen. Whichever way the
+token gets there, it is only ever sent in a
 request header, never in the URL.

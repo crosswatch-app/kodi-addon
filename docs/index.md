@@ -16,6 +16,8 @@ three things in order, and the first match wins:
 2. The active Kodi profile.
 3. A question at the end of playback; for a show, the answer is remembered.
 
+With only one viewer configured, everything is credited to that viewer and nothing is asked.
+
 See [Who watched](who-watched.md) for the details.
 
 !!! warning "Beta"
@@ -26,11 +28,12 @@ See [Who watched](who-watched.md) for the details.
 
     It has been tested on Kodi 21.3 (Omega) against CrossWatch v0.13.3 and the development
     builds before it, including pairing, Link, routing playback by viewer, and replay after an
-    outage. Not yet tested: Kodi on Android, and skins other than Estuary.
+    outage. The add-on's windows were checked in Estuary and Arctic Zephyr Mod; Kodi on
+    Android and other skins have not been tested.
 
 ## Requirements
 
-- Kodi 21 (Omega). Later versions have not been tested; do not assume they work.
+- Kodi 21 (Omega). Earlier versions are not supported; later versions have not been tested.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support.
 - Kodi able to reach CrossWatch over the network, for example both on the same home
   network. CrossWatch does not need to reach Kodi, except for Link.

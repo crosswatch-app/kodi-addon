@@ -8,7 +8,7 @@ The add-on works out who was watching, first match wins:
 
 A show (for an episode) or a film is credited to every viewer whose playlist contains it.
 Playlists are video smart playlists from Kodi's playlists folder, of shows or of films;
-playlists of episodes or music videos are not used. The playlist picker only offers playlists
+only playlists of TV shows or films are used. The playlist picker only offers playlists
 of shows or films. If a viewer already had a playlist of another type, it is not listed in
 the picker, and it stays in their list until you press Done, which removes it from that
 viewer (Cancel or Back leaves it). Until it is removed, the Viewers window still shows that
@@ -24,6 +24,14 @@ playlists still count. Playlists of the wrong type are never offered to anyone.
 If a viewer's playlist cannot be read (it was deleted or renamed), the viewer list shows it
 as missing, Kodi shows a notification, and all of that viewer's playlists stop counting until
 it is fixed: that viewer falls through to profile matching and the end-of-playback question.
+Kodi shows the notification "Playlist could not be read, so viewer identification is reduced:
+`<playlist names>`".
+
+Playlist membership is read ahead of time, not at the moment of playback. It is re-read every
+"Playlist refresh interval" (hourly by default, see [Settings](settings.md#advanced)), after a
+video library scan or clean, and as soon as viewers or settings change; re-reading happens
+only while nothing is playing or playback is paused. A show added to a playlist counts from
+the next re-read.
 
 ## Kodi profile
 
@@ -31,15 +39,24 @@ If the active Kodi profile is one of a viewer's profiles (the name match ignores
 viewer is credited. Profiles are picked from Kodi's own list under the viewer's "Profiles"
 button (see [Viewers](viewers.md)).
 
+!!! note
+
+    The add-on keeps its connection, viewers and remembered answers per Kodi profile, as Kodi
+    keeps every add-on's data per profile. Each Kodi profile that should report playback needs
+    the add-on paired and its viewers set up in that profile.
+
 ## The question at the end
 
 When neither of the above answered, Kodi asks who watched when playback stops, never at the
 start, so it never delays playback.
 
-The question is a CrossWatch window, not the skin's standard dialog. It shows the title of the
-show or film with its poster (if there is none, a placeholder in the CrossWatch colours reading
-"No poster"), plus "Season N, episode M" for an episode or the year for a film. Below that is
-an "Everyone" row, then each configured viewer; focus starts on Everyone.
+The question is a CrossWatch window headed "Who watched it?", not the skin's standard dialog.
+It shows the title of the show or film with its poster (if there is none, a placeholder in the
+CrossWatch colours reading "No poster"), plus "Season N, episode M" for an episode or the year
+for a film. Below that is an "Everyone" row, then each configured viewer; focus starts on
+Everyone.
+
+![The who-watched window](screenshots/who-watched/who-watched-episode.png)
 
 - OK on a viewer ticks or unticks that viewer. You can tick more than one.
 - OK on Everyone ticks every viewer, or clears them all when all are already ticked.
@@ -49,14 +66,16 @@ an "Everyone" row, then each configured viewer; focus starts on Everyone.
 
 A countdown in the corner ("Closes in N s") runs from 120 seconds; at zero the window closes
 as if you had skipped. It also closes straight away, as if skipped, when playback starts
-again while it is open.
+again while it is open. The stop is sent to CrossWatch once the question is answered or closes.
 
 It is not asked:
 
 - with fewer than two viewers configured.
 - for a film, when "Ask who watched a film" is off.
-- when playback stopped within Kodi's "ignore at start" time (180 seconds unless changed in
-  Kodi's advanced settings).
+- when playback stopped before Kodi's "ignore at start" point (180 seconds into the item unless
+  changed in Kodi's advanced settings); this is the position where it stopped, not how long it
+  was watched.
+- while Kodi is shutting down.
 - while another dialog is already open.
 - when the next item starts playing right away (binge or autoplay); the one that just ended
   is then sent with no viewer.
@@ -69,7 +88,8 @@ shows, changes and forgets them.
 
 If no viewer is resolved by any of the above, the event is sent with no viewers. CrossWatch
 treats that as an unknown viewer. The exception is a household with exactly one viewer
-configured: that viewer is credited instead (see [One person in the household](#one-person-in-the-household)).
+configured: that viewer is credited instead (see [One person in the
+household](#one-person-in-the-household)).
 
 ## One person in the household
 
