@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from resources.lib.constants import WINDOW_COUNT_ALL, WINDOW_COUNT_SOME
+from resources.lib.constants import WINDOW_COUNT_ALL, WINDOW_COUNT_ONE, WINDOW_COUNT_SOME
 
 
 @dataclass(frozen=True)
@@ -67,6 +67,8 @@ def visible(rows: Sequence[ListRow], search: str, row_filter: ListFilter | None)
 
 def count_text(localised: Callable[[int], str], shown: int, total: int) -> str:
     # replace rather than %: a translation that drops a placeholder must not raise.
+    if shown == total == 1:
+        return localised(WINDOW_COUNT_ONE)
     if shown == total:
         return localised(WINDOW_COUNT_ALL).replace("%s", str(total), 1)
     return localised(WINDOW_COUNT_SOME).replace("%s", str(shown), 1).replace("%s", str(total), 1)

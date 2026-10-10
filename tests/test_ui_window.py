@@ -474,3 +474,14 @@ def test_a_list_that_opens_empty_focuses_the_search_so_the_household_is_not_stuc
     dialog, _, _ = _list(ListState(search="zzz"))
     dialog.onInit()
     assert dialog.focused == LIST_SEARCH
+
+
+def test_the_bulk_button_does_nothing_when_nothing_is_shown():
+    """It would read 'Forget 0 shown', close and reopen for nothing."""
+    dialog, rows, edit = _list()
+    dialog.onInit()
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "zzz"
+    dialog.onAction(Action(0))
+    dialog.onClick(BUTTON_BULK)
+    assert dialog.closed == 0 and dialog.result is None

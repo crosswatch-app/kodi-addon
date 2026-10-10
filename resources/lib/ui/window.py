@@ -297,7 +297,7 @@ class ListDialog(CrossWatchDialog):
             position = self.state().position
             if 0 <= position < len(self._shown):
                 self.finish("open", lw.ListResult("open", self.state(), key=self._shown[position].key))
-        elif controlId == BUTTON_BULK:
+        elif controlId == BUTTON_BULK and self._shown:
             keys = tuple(row.key for row in self._shown)
             self.finish("bulk", lw.ListResult("bulk", self.state(), keys=keys))
         elif controlId == BUTTON_CLOSE:

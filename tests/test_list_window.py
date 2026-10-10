@@ -1,4 +1,4 @@
-from resources.lib.constants import WINDOW_COUNT_ALL, WINDOW_COUNT_SOME
+from resources.lib.constants import WINDOW_COUNT_ALL, WINDOW_COUNT_ONE, WINDOW_COUNT_SOME
 from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, bulk_label, count_text, visible
 
 ALPHA = ListRow(key="a", title="Alpha", names=("anna",))
@@ -8,7 +8,7 @@ ROWS = [ALPHA, BETA, GAMMA]
 EVERYONE = ListFilter("All", lambda row: True)
 BOBS = ListFilter("bob", lambda row: "bob" in row.names)
 
-TEXTS = {WINDOW_COUNT_ALL: "%s shows", WINDOW_COUNT_SOME: "%s of %s"}
+TEXTS = {WINDOW_COUNT_ALL: "%s shows", WINDOW_COUNT_ONE: "1 show", WINDOW_COUNT_SOME: "%s of %s"}
 
 
 def test_no_search_and_no_filter_shows_everything_in_order():
@@ -48,3 +48,8 @@ def test_bulk_label_reads_all_until_the_rows_are_narrowed():
     request = ListRequest("Remembered", tuple(ROWS), (EVERYONE, BOBS), "Forget all", "Forget %s shown")
     assert bulk_label(request, 3) == "Forget all"
     assert bulk_label(request, 1) == "Forget 1 shown"
+
+
+def test_count_text_for_a_single_show_is_singular():
+    """'1 shows' reads wrongly; the same fix the forget confirmation needed on a real Kodi."""
+    assert count_text(lambda i: TEXTS[i], 1, 1) == "1 show"
