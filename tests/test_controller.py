@@ -807,6 +807,27 @@ def test_pings_are_not_sent_more_often_than_the_interval(tmp_path):
     assert len([e for e in collector.events if isinstance(e, PingEvent)]) == 1
 
 
+def test_a_change_of_viewer_names_pings_at_once(tmp_path):
+    """The ping reply is what marks a viewer no CrossWatch route takes; after a rename in the
+    settings screen it should not take five minutes to catch up."""
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_tick()
+    JsonViewerStore(str(tmp_path / "viewers.json")).save([Viewer(name="Anna")])
+    controller.on_tick()
+    pings = [e for e in collector.events if isinstance(e, PingEvent)]
+    assert [p.viewers for p in pings] == [("anna",), ("Anna",)]
+
+
+def test_unchanged_viewer_names_wait_for_the_interval(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)
+    controller.on_tick()
+    JsonViewerStore(str(tmp_path / "viewers.json")).save([Viewer(name="anna", playlists=("A",))])
+    controller.on_tick()
+    assert len([e for e in collector.events if isinstance(e, PingEvent)]) == 1
+
+
 def test_ping_now_sends_on_the_next_tick_inside_the_interval(tmp_path):
     collector = Collector()
     controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector)

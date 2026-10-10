@@ -80,6 +80,7 @@ class Controller:
         # Read by the ping, which is the only place it is reported.
         self.pkc_skipped = 0
         self._last_ping_at: float | None = None
+        self._pinged_names: tuple[str, ...] | None = None
         self._shutting_down = False
 
     # -- lifecycle ---------------------------------------------------------
@@ -391,9 +392,12 @@ class Controller:
         if self._shutting_down:
             return
         now = self._monotonic()
-        if self._last_ping_at is not None and (now - self._last_ping_at) < PING_INTERVAL_SECONDS:
-            return
         names = tuple(v.name for v in self._viewers())
+        # A changed set of names goes out at once: the reply is what marks a viewer no
+        # CrossWatch route takes, and after a rename that should not wait five minutes.
+        recent = self._last_ping_at is not None and (now - self._last_ping_at) < PING_INTERVAL_SECONDS
+        if recent and names == self._pinged_names:
+            return
         queued = self._queue.submit(
             PingEvent(
                 event_id=self._ids(),
@@ -408,6 +412,7 @@ class Controller:
             _log.warning("service.ping_not_queued")
             return
         self._last_ping_at = now
+        self._pinged_names = names
         _log.info("service.ping", viewers_count=len(names), pkc_skipped=self.pkc_skipped)
 
     @staticmethod
