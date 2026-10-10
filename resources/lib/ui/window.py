@@ -335,7 +335,7 @@ class ListDialog(CrossWatchDialog):
         self._search = state.search
         in_range = 0 <= state.filter_index < len(request.filters)
         self._filter_index = state.filter_index if in_range else 0
-        self._position = state.position
+        self._start = state
         self._shown: list[lw.ListRow] = []
         self.configure(
             localised,
@@ -351,14 +351,16 @@ class ListDialog(CrossWatchDialog):
 
     def state(self) -> lw.ListState:
         rows: Any = self.getControl(LIST_ROWS)
-        return lw.ListState(self._search, self._filter_index, int(rows.getSelectedPosition()))
+        position = int(rows.getSelectedPosition())
+        key = self._shown[position].key if 0 <= position < len(self._shown) else ""
+        return lw.ListState(self._search, self._filter_index, position, key)
 
     def fill(self) -> None:
         search: Any = self.getControl(LIST_SEARCH)
         # Kodi heads its keyboard "Enter value" unless the edit control is told otherwise.
         search.setType(xbmcgui.INPUT_TYPE_TEXT, self._localised(WINDOW_SEARCH))
         search.setText(self._search)
-        self._show(self._position)
+        self._show(self._start)
         if self._shown:
             self.setFocusId(LIST_ROWS)
         else:
@@ -383,7 +385,7 @@ class ListDialog(CrossWatchDialog):
             self._read_search()  # after Kodi's keyboard closes
         elif controlId == LIST_FILTER and self._request.filters:
             self._filter_index = (self._filter_index + 1) % len(self._request.filters)
-            self._show(0)
+            self._show(lw.ListState())
         elif controlId == LIST_ROWS:
             position = self.state().position
             if 0 <= position < len(self._shown):
@@ -399,9 +401,9 @@ class ListDialog(CrossWatchDialog):
         text = str(search.getText())
         if text != self._search:
             self._search = text
-            self._show(0)
+            self._show(lw.ListState())
 
-    def _show(self, position: int) -> None:
+    def _show(self, start: lw.ListState) -> None:
         request = self._request
         row_filter = request.filters[self._filter_index] if request.filters else None
         self._shown = lw.visible(request.rows, self._search, row_filter)
@@ -412,9 +414,11 @@ class ListDialog(CrossWatchDialog):
             item.setArt({"thumb": row.thumb})
             item.setProperty("detail", row.detail)
             item.setProperty("tag", row.tag)
+            for key, value in row.properties:
+                item.setProperty(key, value)
             rows.addItem(item)
         if self._shown:
-            rows.selectItem(min(max(position, 0), len(self._shown) - 1))
+            rows.selectItem(lw.start_index(self._shown, start))
         label = self._localised(WINDOW_VIEWER).replace("%s", row_filter.label) if row_filter else ""
         self.setProperty("CW.Filter", label)
         self.setProperty("CW.Count", lw.count_text(request, self._localised, len(self._shown)))
@@ -449,8 +453,8 @@ class PickListDialog(ListDialog):
         else:
             super().onClick(controlId)
 
-    def _show(self, position: int) -> None:
-        super()._show(position)
+    def _show(self, start: lw.ListState) -> None:
+        super()._show(start)
         rows: Any = self.getControl(LIST_ROWS)
         for index, row in enumerate(self._shown):
             rows.getListItem(index).setProperty("chosen", "true" if row.key in self._ticked else "")

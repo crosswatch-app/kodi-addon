@@ -23,6 +23,8 @@ class ListRow:
     thumb: str = ""
     # Matched by the search alongside the title, and by the screen's filters.
     names: tuple[str, ...] = ()
+    # Set on the row's list item as is, for a split window's panel to read.
+    properties: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,9 @@ class ListState:
     search: str = ""
     filter_index: int = 0
     position: int = 0
+    # The selected row's key: a reopened list finds its row by it, so a row that moved
+    # (a change re-sorted it, a forget removed the one above) is still the one selected.
+    key: str = ""
 
 
 # Keyword-only: the fields grew, and a positional call written for the old order would put
@@ -73,6 +78,15 @@ def visible(rows: Sequence[ListRow], search: str, row_filter: ListFilter | None)
         return not needle or any(needle in text.casefold() for text in (row.title, *row.names))
 
     return [row for row in rows if found(row) and (row_filter is None or row_filter.match(row))]
+
+
+def start_index(shown: Sequence[ListRow], state: ListState) -> int:
+    """The row to select on opening: the one with the state's key, else the position, which
+    after a forget is the row that took the forgotten one's place."""
+    for index, row in enumerate(shown):
+        if row.key == state.key:
+            return index
+    return min(max(state.position, 0), len(shown) - 1) if shown else 0
 
 
 def count_text(request: ListRequest, localised: Callable[[int], str], shown: int) -> str:

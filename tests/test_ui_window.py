@@ -421,7 +421,7 @@ def test_ok_on_a_row_returns_it_with_the_state():
     rows.position = 1
     dialog.onClick(LIST_ROWS)
     assert dialog.result.action == "open" and dialog.result.key == "c"
-    assert dialog.result.state == ListState(search="", filter_index=1, position=1)
+    assert dialog.result.state == ListState(search="", filter_index=1, position=1, key="c")
 
 
 def test_the_bulk_button_returns_the_keys_shown():
@@ -717,3 +717,23 @@ def test_an_empty_viewers_window_starts_on_add_viewer_and_offers_no_actions():
     assert dialog.closed == 0
     dialog.onClick(BUTTON_ADD)
     assert dialog.result == ViewersResult("add", "")
+
+
+def test_a_rows_properties_reach_its_list_item():
+    rows = (ListRow(key="a", title="Alpha", properties=(("slot1", "Answer"), ("warn", "true"))),)
+    request = ListRequest(heading="h", rows=rows, count_one="1", count_all="%s")
+    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, START, lambda i: LIST_TEXTS.get(i, ""))
+    control, edit = FakeRows(), FakeEdit()
+    dialog.set_control(LIST_ROWS, control)
+    dialog.set_control(LIST_SEARCH, edit)
+    dialog.onInit()
+    assert control.items[0].getProperty("slot1") == "Answer" and control.items[0].getProperty("warn") == "true"
+
+
+def test_the_list_reopens_on_the_key_and_reports_the_selected_one():
+    dialog, rows, _ = _list(ListState(position=0, key="c"))
+    dialog.onInit()
+    assert rows.position == 2
+    rows.position = 1
+    assert dialog.state().key == "b"

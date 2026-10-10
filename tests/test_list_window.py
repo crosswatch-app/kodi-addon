@@ -5,9 +5,11 @@ from resources.lib.ui.list_window import (
     ListFilter,
     ListRequest,
     ListRow,
+    ListState,
     bulk_label,
     count_text,
     picked,
+    start_index,
     toggle,
     visible,
 )
@@ -110,3 +112,15 @@ def test_picked_drops_a_ticked_key_with_no_row():
     assert picked(ROWS, {"a", "gone"}) == ("a",)
 
 
+
+
+def test_the_list_reopens_on_its_key():
+    assert start_index(ROWS, ListState(position=0, key="g")) == 2
+
+
+def test_a_missing_key_falls_back_to_the_position():
+    """A forgotten row's key is gone: its position is the row that took its place, or the
+    last row when it was the last one."""
+    assert start_index(ROWS, ListState(position=1, key="gone")) == 1
+    assert start_index(ROWS, ListState(position=3, key="gone")) == 2
+    assert start_index([], ListState(position=2, key="a")) == 0
