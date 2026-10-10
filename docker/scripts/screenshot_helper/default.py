@@ -39,6 +39,7 @@ def _who_watched(scene: dict, path: str) -> None:
         names=tuple(scene["names"]),
         preselect=tuple(scene["preselect"]),
         autoclose_seconds=scene["autoclose_seconds"],
+        offer_forget=scene.get("offer_forget", False),
     )
     monitor = xbmc.Monitor()
     dialog = window.WhoWatchedDialog(window.WHO_WATCHED_XML, path, "Default", "1080i")

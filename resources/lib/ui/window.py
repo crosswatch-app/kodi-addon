@@ -30,6 +30,7 @@ WHO_WATCHED_XML = "crosswatch-who.xml"
 LIST_VIEWERS = 200
 BUTTON_DONE = 20
 BUTTON_SKIP = 21
+BUTTON_FORGET = 22
 
 Localised = Callable[[int], str]
 
@@ -162,6 +163,7 @@ class WhoWatchedDialog(CrossWatchDialog):
                 "CW.Subtitle": request.subtitle,
                 "CW.Poster": request.poster,
                 "CW.Question": localised(WHO_WATCHED_QUESTION),
+                "CW.OfferForget": "true" if request.offer_forget else "",
             },
             request.autoclose_seconds,
             request.close_on_playback,
@@ -185,6 +187,9 @@ class WhoWatchedDialog(CrossWatchDialog):
             self._show_ticks()
         elif controlId == BUTTON_DONE:
             self.finish("done", ww.answer(names, self._ticked))
+        elif controlId == BUTTON_FORGET and self._request.offer_forget:
+            # The same answer as Done with nobody ticked, which the screen treats as forget.
+            self.finish("forget", ())
         elif controlId == BUTTON_SKIP:
             self.finish("skip")
 

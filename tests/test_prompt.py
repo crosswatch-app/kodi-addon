@@ -286,3 +286,15 @@ def test_key_for_show_matches_show_key():
     assert key_for_show({"tmdb": "1", "tvdb": "83462"}, 42) == show_key(_media()) == "show:tvdb:83462"
     assert key_for_show({}, 42) == show_key(_media(show_ids={})) == "tvshow:42"
     assert key_for_show({}, None) is None
+
+
+def test_the_question_at_the_end_never_offers_forget():
+    kodi = _poster_kodi()
+    ask(kodi, [ANNA, BOB], _media(), autoclose=120)
+    assert kodi.who_watched_calls[0].offer_forget is False
+
+
+def test_choose_viewers_passes_offer_forget():
+    kodi = FakeKodi(who_watched_answer=None)
+    choose_viewers(kodi, [ANNA, BOB], "t", "", "", offer_forget=True)
+    assert kodi.who_watched_calls[0].offer_forget is True

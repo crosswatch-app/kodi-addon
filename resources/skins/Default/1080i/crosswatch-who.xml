@@ -141,29 +141,48 @@
                 <textureslidernibfocus></textureslidernibfocus>
                 <onleft>200</onleft>
             </control>
-            <control type="button" id="20">
-                <left>400</left><top>620</top><width>170</width><height>72</height>
-                <align>center</align><aligny>center</aligny>
-                <font>font30_title</font>
-                <textcolor>FFF1F3F5</textcolor>
-                <focusedcolor>FFF1F3F5</focusedcolor>
-                <pulseonselect>false</pulseonselect>
-                <label>$ADDON[service.crosswatch 30082]</label>
-                <texturenofocus border="16">crosswatch/box_accent.png</texturenofocus>
-                <texturefocus border="16">crosswatch/box_accent_focus.png</texturefocus>
-                <onup>200</onup><onright>21</onright>
-            </control>
-            <control type="button" id="21">
-                <left>586</left><top>620</top><width>170</width><height>72</height>
-                <align>center</align><aligny>center</aligny>
-                <font>font30_title</font>
-                <textcolor>FFF1F3F5</textcolor>
-                <focusedcolor>FFF1F3F5</focusedcolor>
-                <pulseonselect>false</pulseonselect>
-                <label>$ADDON[service.crosswatch 30083]</label>
-                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
-                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                <onup>200</onup><onleft>20</onleft>
+            <control type="grouplist" id="25">
+                <left>400</left><top>620</top><width>542</width><height>72</height>
+                <orientation>horizontal</orientation>
+                <itemgap>16</itemgap>
+                <usecontrolcoords>false</usecontrolcoords>
+                <control type="button" id="20">
+                    <width>170</width><height>72</height>
+                    <align>center</align><aligny>center</aligny>
+                    <font>font30_title</font>
+                    <textcolor>FFF1F3F5</textcolor>
+                    <focusedcolor>FFF1F3F5</focusedcolor>
+                    <pulseonselect>false</pulseonselect>
+                    <label>$ADDON[service.crosswatch 30082]</label>
+                    <texturenofocus border="16">crosswatch/box_accent.png</texturenofocus>
+                    <texturefocus border="16">crosswatch/box_accent_focus.png</texturefocus>
+                    <onup>200</onup>
+                </control>
+                <control type="button" id="22">
+                    <width>170</width><height>72</height>
+                    <align>center</align><aligny>center</aligny>
+                    <font>font30_title</font>
+                    <textcolor>FFF1F3F5</textcolor>
+                    <focusedcolor>FFF1F3F5</focusedcolor>
+                    <pulseonselect>false</pulseonselect>
+                    <label>$ADDON[service.crosswatch 30039]</label>
+                    <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                    <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                    <visible>String.IsEqual(Window.Property(CW.OfferForget),true)</visible>
+                    <onup>200</onup>
+                </control>
+                <control type="button" id="21">
+                    <width>170</width><height>72</height>
+                    <align>center</align><aligny>center</aligny>
+                    <font>font30_title</font>
+                    <textcolor>FFF1F3F5</textcolor>
+                    <focusedcolor>FFF1F3F5</focusedcolor>
+                    <pulseonselect>false</pulseonselect>
+                    <label>$ADDON[service.crosswatch 30083]</label>
+                    <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                    <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                    <onup>200</onup>
+                </control>
             </control>
             <control type="label">
                 <left>890</left><top>636</top><width>300</width><height>40</height>

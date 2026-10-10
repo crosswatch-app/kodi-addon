@@ -126,5 +126,21 @@
     "search": "zzzz",
     "filter": 0,
     "keys": []
+  },
+  "remembered-change-forget": {
+    "window": "crosswatch-who.xml",
+    "library": "tvshow",
+    "subtitle": "{year}",
+    "names": [
+      "Anna",
+      "Ben",
+      "Chloe"
+    ],
+    "preselect": [
+      "Anna"
+    ],
+    "autoclose_seconds": 0,
+    "offer_forget": true,
+    "keys": []
   }
 }

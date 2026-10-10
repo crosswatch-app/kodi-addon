@@ -43,12 +43,22 @@ def test_focus_starts_on_the_viewer_list():
     assert default is not None and default.text == "200"
 
 
-def test_down_from_the_list_reaches_done_and_both_buttons_return():
+def test_the_buttons_sit_in_one_row_below_the_list():
+    """A grouplist, so a hidden Forget leaves no gap and no dead end for left and right."""
+    row = _root().find(".//control[@type='grouplist']")
+    assert row is not None and row.findtext("orientation") == "horizontal"
+    assert [c.get("id") for c in row.findall("control")] == ["20", "22", "21"]
     assert _control("200").findtext("ondown") == "20"
-    assert _control("20").findtext("onup") == "200"
-    assert _control("21").findtext("onup") == "200"
-    assert _control("20").findtext("onright") == "21"
-    assert _control("21").findtext("onleft") == "20"
+    for button in ("20", "21", "22"):
+        assert _control(button).findtext("onup") == "200"
+
+
+def test_forget_shows_only_when_offered_and_its_label_comes_from_strings_po():
+    from resources.lib.constants import REMEMBERED_FORGET
+
+    forget = _control("22")
+    assert forget.findtext("visible") == "String.IsEqual(Window.Property(CW.OfferForget),true)"
+    assert forget.findtext("label") == f"$ADDON[{ADDON_ID} {REMEMBERED_FORGET}]"
 
 
 def test_button_labels_come_from_strings_po():

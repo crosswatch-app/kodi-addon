@@ -17,6 +17,7 @@ from resources.lib.ui.window import (
     BUTTON_BULK,
     BUTTON_CLOSE,
     BUTTON_DONE,
+    BUTTON_FORGET,
     BUTTON_NO,
     BUTTON_SKIP,
     BUTTON_YES,
@@ -56,7 +57,7 @@ class Action:
 
 
 def _dialog(
-    names=("anna", "bob"), preselect=(), autoclose=0, on_playback=False, playing=False, aborts=()
+    names=("anna", "bob"), preselect=(), autoclose=0, on_playback=False, playing=False, aborts=(), offer_forget=False
 ) -> tuple[Any, FakeList]:
     """The dialog is returned as Any: it is built on the stub window (tests/stubs.py), whose
     recording helpers the Kodistubs type the checker reads does not have.
@@ -65,7 +66,7 @@ def _dialog(
     so a started watch thread ticks fast without spinning."""
     request = WhoWatchedRequest(
         title="Example", subtitle="Season 2, episode 5", poster="image://p/", names=names,
-        preselect=preselect, autoclose_seconds=autoclose, close_on_playback=on_playback,
+        preselect=preselect, autoclose_seconds=autoclose, close_on_playback=on_playback, offer_forget=offer_forget,
     )
     abort_answers = list(aborts)
 
@@ -442,3 +443,26 @@ def test_without_filters_the_viewer_button_is_hidden():
     assert dialog.getProperty("CW.Filter") == ""
     dialog.onClick(LIST_FILTER)
     assert _titles(rows) == ["Alpha", "Beta", "Gamma", "Delta"]
+
+
+def test_forget_is_offered_only_when_asked():
+    plain, _ = _dialog()
+    plain.onInit()
+    assert plain.getProperty("CW.OfferForget") == ""
+    offered, _ = _dialog(offer_forget=True)
+    offered.onInit()
+    assert offered.getProperty("CW.OfferForget") == "true"
+
+
+def test_forget_returns_the_nobody_answer():
+    dialog, _ = _dialog(preselect=("anna",), offer_forget=True)
+    dialog.onInit()
+    dialog.onClick(BUTTON_FORGET)
+    assert dialog.result == () and dialog.close_reason == "forget"
+
+
+def test_forget_does_nothing_when_not_offered():
+    dialog, _ = _dialog(preselect=("anna",))
+    dialog.onInit()
+    dialog.onClick(BUTTON_FORGET)
+    assert dialog.closed == 0
