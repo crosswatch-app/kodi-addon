@@ -217,25 +217,6 @@ def test_a_failed_pick_window_is_a_logged_close(runtime, monkeypatch):
     assert "pick_list" in line and "RuntimeError" in line
 
 
-def test_viewer_window_returns_the_button_pressed(runtime, monkeypatch):
-    class Dialog(window_mod.ViewerDialog):
-        def doModal(self) -> None:
-            self.finish("rename", "rename")
-
-    monkeypatch.setattr(window_mod, "ViewerDialog", Dialog)
-    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
-    assert runtime.viewer_window("anna", "summary") == "rename"
-
-
-def test_viewer_window_back_or_failure_is_back(runtime, monkeypatch):
-    def broken(*args, **kwargs):
-        raise RuntimeError("no skin file")
-
-    monkeypatch.setattr(window_mod, "ViewerDialog", broken)
-    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
-    assert runtime.viewer_window("anna", "summary") == "back"
-
-
 def test_viewers_window_returns_what_the_household_did(runtime, monkeypatch):
     from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
 

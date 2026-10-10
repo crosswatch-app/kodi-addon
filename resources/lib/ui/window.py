@@ -241,8 +241,19 @@ class ConfirmDialog(CrossWatchDialog):
 
 VIEWERS_XML = "crosswatch-viewers.xml"
 VIEWERS_ROWS = 100
+# Ids 10 to 13: never 2, 3 or 4, which WindowXML keeps for its own buttons.
+BUTTON_PLAYLISTS = 10
+BUTTON_PROFILES = 11
+BUTTON_RENAME = 12
+BUTTON_REMOVE = 13
 BUTTON_ADD = 20
 BUTTON_VIEWERS_CLOSE = 21
+_VIEWERS_ACTIONS = {
+    BUTTON_PLAYLISTS: "playlists",
+    BUTTON_PROFILES: "profiles",
+    BUTTON_RENAME: "rename",
+    BUTTON_REMOVE: "remove",
+}
 
 
 class ViewersDialog(CrossWatchDialog):
@@ -304,53 +315,6 @@ class ViewersDialog(CrossWatchDialog):
         return rows[min(max(int(control.getSelectedPosition()), 0), len(rows) - 1)].key
 
 
-VIEWER_XML = "crosswatch-viewer.xml"
-BUTTON_PLAYLISTS = 10
-BUTTON_PROFILES = 11
-BUTTON_RENAME = 12
-BUTTON_REMOVE = 13
-BUTTON_VIEWER_BACK = 14
-_VIEWER_ACTIONS = {
-    BUTTON_PLAYLISTS: "playlists",
-    BUTTON_PROFILES: "profiles",
-    BUTTON_RENAME: "rename",
-    BUTTON_REMOVE: "remove",
-    BUTTON_VIEWER_BACK: "back",
-}
-_VIEWERS_ACTIONS = {
-    BUTTON_PLAYLISTS: "playlists",
-    BUTTON_PROFILES: "profiles",
-    BUTTON_RENAME: "rename",
-    BUTTON_REMOVE: "remove",
-}
-
-
-class ViewerDialog(CrossWatchDialog):
-    """One viewer: what is set up, and what can be done about it."""
-
-    name = "viewer"
-
-    def prepare(self, heading: str, summary: str, localised: Localised) -> None:
-        # One label per line: a wrapping summary pushed the second line out of sight.
-        first, _, second = summary.partition("[CR]")
-        self.configure(
-            localised,
-            {"CW.Heading": heading, "CW.Line1": first, "CW.Line2": second},
-            autoclose_seconds=0,
-            close_on_playback=False,
-            is_playing=lambda: False,
-            wait_for_abort=lambda _: False,
-        )
-
-    def fill(self) -> None:
-        self.setFocusId(BUTTON_PLAYLISTS)
-
-    def onClick(self, controlId: int) -> None:
-        action = _VIEWER_ACTIONS.get(controlId)
-        if action:
-            self.finish(action, action)
-
-
 LIST_XML = "crosswatch-list.xml"
 # Not 2, 3 or 4: WindowXML keeps those ids for its own view and sort buttons.
 LIST_SEARCH = 30
@@ -378,7 +342,6 @@ class ListDialog(CrossWatchDialog):
             {
                 "CW.Heading": request.heading,
                 "CW.Close": localised(WINDOW_CLOSE),
-                "CW.NoThumbs": "" if request.thumbs else "true",
             },
             autoclose_seconds=0,
             close_on_playback=False,
@@ -400,7 +363,7 @@ class ListDialog(CrossWatchDialog):
             self.setFocusId(LIST_ROWS)
         else:
             # An empty list cannot take focus, and no direction leads out of it. Not the
-            # viewer button: its visibility follows a property set in this same call, and Kodi
+            # bulk button: its visibility follows a property set in this same call, and Kodi
             # only re-evaluates it on the next frame, so focusing it here fails.
             self.setFocusId(LIST_SEARCH)
 

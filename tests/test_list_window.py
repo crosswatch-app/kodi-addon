@@ -110,11 +110,3 @@ def test_picked_drops_a_ticked_key_with_no_row():
     assert picked(ROWS, {"a", "gone"}) == ("a",)
 
 
-def test_a_bulk_button_meant_for_the_screen_stays_with_nothing_shown():
-    """Add viewer is not about the rows shown: a search that finds nobody is when it is wanted."""
-    add = ListRequest(
-        heading="Viewers", rows=tuple(ROWS), count_one="1", count_all="%s",
-        bulk_all="Add viewer", bulk_shown="Add viewer", bulk_always=True,
-    )
-    assert bulk_label(add, 0) == "Add viewer"
-    assert bulk_label(add, 1) == "Add viewer"

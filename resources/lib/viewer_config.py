@@ -26,19 +26,13 @@ from resources.lib.constants import (
     VIEWER_PROFILES,
     VIEWER_ROUTE_MISSING,
     VIEWER_ROUTE_OK,
-    VIEWER_SUMMARY_PLAYLISTS,
-    VIEWER_SUMMARY_PROFILES,
     VIEWER_UNUSABLE,
-    VIEWERS_ADD,
     VIEWERS_ALSO,
     VIEWERS_COUNT,
     VIEWERS_HEADING,
     VIEWERS_MISSING,
-    VIEWERS_MISSING_COUNT,
     VIEWERS_NAME_PROMPT,
     VIEWERS_NO_PLAYLISTS,
-    VIEWERS_NO_ROUTE,
-    VIEWERS_NOTHING,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_ONE_PROFILE,
     VIEWERS_ONE_VIEWER,
@@ -49,7 +43,6 @@ from resources.lib.constants import (
     VIEWERS_PROFILES_FOR,
     VIEWERS_REMOVE_CONFIRM,
     VIEWERS_REMOVE_MESSAGE,
-    VIEWERS_UNUSABLE_COUNT,
 )
 from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.log import get_logger
@@ -59,7 +52,14 @@ from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
-from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, PanelLine, ViewerRow, ViewersRequest
+from resources.lib.ui.viewers_window import (
+    ROUTE_ACCEPTED,
+    ROUTE_REFUSED,
+    PanelLine,
+    ViewerRow,
+    ViewersRequest,
+    ViewersResult,
+)
 
 _log = get_logger("config")
 
@@ -173,40 +173,6 @@ def _count(kodi: KodiApi, n: int, one: int, many: int) -> str:
     return _text(kodi, one) if n == 1 else _text(kodi, many, n)
 
 
-def setup_text(kodi: KodiApi, viewer: Viewer) -> str:
-    parts = []
-    if viewer.playlists:
-        parts.append(_count(kodi, len(viewer.playlists), VIEWERS_ONE_PLAYLIST, VIEWERS_PLAYLISTS))
-    if viewer.profiles:
-        parts.append(_count(kodi, len(viewer.profiles), VIEWERS_ONE_PROFILE, VIEWERS_PROFILES))
-    return ", ".join(parts) or _text(kodi, VIEWERS_NOTHING)
-
-
-def flag_text(kodi: KodiApi, viewer: Viewer, listing: PlaylistListing, routes: RouteFacts | None = None) -> str:
-    """What needs fixing, shown where someone comes to fix it: the service cannot name a
-    playlist in Kodi's shared log, by design."""
-    parts = []
-    gone = missing_playlists(viewer, listing.matchable, listing.unusable)
-    if gone:
-        parts.append(_text(kodi, VIEWERS_MISSING_COUNT, len(gone)))
-    wrong = unusable_playlists(viewer, listing.unusable)
-    if wrong:
-        parts.append(_text(kodi, VIEWERS_UNUSABLE_COUNT, len(wrong)))
-    # Only what CrossWatch said about this pairing: without a reply there is no claim.
-    if routes is not None and viewer.name in routes.asked and viewer.name not in routes.accepted:
-        parts.append(_text(kodi, VIEWERS_NO_ROUTE))
-    return ", ".join(parts)
-
-
-def viewer_rows(
-    kodi: KodiApi, viewers: list[Viewer], listing: PlaylistListing, routes: RouteFacts | None = None
-) -> tuple[ListRow, ...]:
-    return tuple(
-        ListRow(key=v.name, title=v.name, detail=setup_text(kodi, v), tag=flag_text(kodi, v, listing, routes))
-        for v in viewers
-    )
-
-
 def current_routes(kodi: KodiApi) -> RouteFacts | None:
     """What CrossWatch last said about its routes, for the current pairing only."""
     settings = read_settings(kodi)
@@ -273,14 +239,6 @@ def viewers_request(
         route_ok=_text(kodi, VIEWER_ROUTE_OK),
         route_missing=_text(kodi, VIEWER_ROUTE_MISSING),
     )
-
-
-def summary_text(kodi: KodiApi, viewer: Viewer) -> str:
-    none = _text(kodi, VIEWER_NONE)
-    playlists = _text(kodi, VIEWER_SUMMARY_PLAYLISTS, ", ".join(viewer.playlists) or none)
-    profiles = _text(kodi, VIEWER_SUMMARY_PROFILES, ", ".join(viewer.profiles) or none)
-    # [CR] is Kodi's line break in a label.
-    return f"{playlists}[CR]{profiles}"
 
 
 def available_profiles(kodi: KodiApi) -> list[str] | None:
@@ -424,55 +382,54 @@ def _add_viewer(
     return viewers, name
 
 
-def _viewer_page(
+def _act(
     kodi: KodiApi,
     store: ViewerStore,
     memory: PromptMemory,
     viewers: list[Viewer],
-    name: str,
+    result: ViewersResult,
     listing: PlaylistListing,
     profiles: list[str] | None,
-) -> list[Viewer]:
-    """One viewer's window, reopened after each action until Back or Remove."""
-    while True:
-        viewer = next((v for v in viewers if v.name == name), None)
-        if viewer is None:
-            return viewers
-        action = kodi.viewer_window(viewer.name, summary_text(kodi, viewer))
-        if action == "playlists":
-            picked = _edit_playlists(kodi, viewer, listing.matchable, listing.unusable, viewers)
-            if picked is None:
-                _log.info("config.playlists_unchanged", reason="cancelled")
-                continue
-            viewers = apply_edit(viewers, viewer.name, picked, viewer.profiles)
-            _log.info("config.viewer_updated", playlists=len(picked))
-            _save(store, viewers)
-        elif action == "profiles":
-            chosen = _edit_profiles(kodi, viewer, profiles, viewers)
-            if chosen is None:
-                continue
-            viewers = apply_edit(viewers, viewer.name, viewer.playlists, chosen)
-            _log.info("config.viewer_updated", profiles=len(chosen))
-            _save(store, viewers)
-        elif action == "rename":
-            new = _ask_name(kodi, viewers, viewer.name)
-            if new is None or new == viewer.name:
-                continue
-            viewers = rename_viewer(viewers, viewer.name, new)
-            _save(store, viewers)
-            _log.info("config.viewer_renamed", answers=memory.rename_viewer(viewer.name, new))
-            name = new
-        elif action == "remove":
-            question = _text(kodi, VIEWERS_REMOVE_CONFIRM, viewer.name)
-            if not kodi.confirm_window(question, _text(kodi, VIEWERS_REMOVE_MESSAGE)):
-                continue
-            viewers = remove_viewer(viewers, viewer.name)
-            _save(store, viewers)
-            changed, forgotten = memory.drop_viewer(viewer.name)
-            _log.info("config.viewer_removed", answers=changed, forgotten=forgotten)
-            return viewers
-        else:
-            return viewers
+) -> tuple[list[Viewer], str]:
+    """One action on the highlighted viewer: the viewers after it, and the row to reopen on."""
+    viewer = next((v for v in viewers if v.name == result.key), None)
+    if viewer is None:
+        return viewers, ""
+    if result.action == "playlists":
+        picked = _edit_playlists(kodi, viewer, listing.matchable, listing.unusable, viewers)
+        if picked is None:
+            _log.info("config.playlists_unchanged", reason="cancelled")
+            return viewers, viewer.name
+        viewers = apply_edit(viewers, viewer.name, picked, viewer.profiles)
+        _log.info("config.viewer_updated", playlists=len(picked))
+        _save(store, viewers)
+    elif result.action == "profiles":
+        chosen = _edit_profiles(kodi, viewer, profiles, viewers)
+        if chosen is None:
+            return viewers, viewer.name
+        viewers = apply_edit(viewers, viewer.name, viewer.playlists, chosen)
+        _log.info("config.viewer_updated", profiles=len(chosen))
+        _save(store, viewers)
+    elif result.action == "rename":
+        new = _ask_name(kodi, viewers, viewer.name)
+        if new is None or new == viewer.name:
+            return viewers, viewer.name
+        viewers = rename_viewer(viewers, viewer.name, new)
+        _save(store, viewers)
+        _log.info("config.viewer_renamed", answers=memory.rename_viewer(viewer.name, new))
+        return viewers, new
+    elif result.action == "remove":
+        question = _text(kodi, VIEWERS_REMOVE_CONFIRM, viewer.name)
+        if not kodi.confirm_window(question, _text(kodi, VIEWERS_REMOVE_MESSAGE)):
+            return viewers, viewer.name
+        index = viewers.index(viewer)
+        viewers = remove_viewer(viewers, viewer.name)
+        _save(store, viewers)
+        changed, forgotten = memory.drop_viewer(viewer.name)
+        _log.info("config.viewer_removed", answers=changed, forgotten=forgotten)
+        # The row that takes its place: the next one, or the one before at the end.
+        return viewers, viewers[min(index, len(viewers) - 1)].name if viewers else ""
+    return viewers, viewer.name
 
 
 def run_dialog(
@@ -490,36 +447,23 @@ def run_dialog(
         _log.info("config.no_playlists_found", unusable=len(listing.unusable))
     profiles = available_profiles(kodi)
 
+    key = ""
     if not viewers:
         # An empty list has nothing to choose from: start where the household must.
         viewers, added = _add_viewer(kodi, store, viewers, listing.matchable)
         if added is None:
             return
-        viewers = _viewer_page(kodi, store, memory, viewers, added, listing, profiles)
+        key = added
 
-    state = ListState()
     while True:
-        add = _text(kodi, VIEWERS_ADD)
-        request = ListRequest(
-            heading=_text(kodi, VIEWERS_HEADING),
-            rows=viewer_rows(kodi, viewers, listing, routes()),
-            count_one=_text(kodi, VIEWERS_ONE_VIEWER),
-            count_all=_text(kodi, VIEWERS_COUNT),
-            bulk_all=add,
-            bulk_shown=add,
-            bulk_always=True,
-            thumbs=False,
-        )
-        result = kodi.list_window(request, state)
-        state = result.state
-        if result.action == "bulk":
-            viewers, added = _add_viewer(kodi, store, viewers, listing.matchable)
-            if added is not None:
-                viewers = _viewer_page(kodi, store, memory, viewers, added, listing, profiles)
-        elif result.action == "open":
-            viewers = _viewer_page(kodi, store, memory, viewers, result.key, listing, profiles)
-        else:
+        result = kodi.viewers_window(viewers_request(kodi, viewers, listing, profiles, routes()), key)
+        if result.action == "close":
             return
+        if result.action == "add":
+            viewers, added = _add_viewer(kodi, store, viewers, listing.matchable)
+            key = added or result.key
+        else:
+            viewers, key = _act(kodi, store, memory, viewers, result, listing, profiles)
 
 
 def main() -> None:

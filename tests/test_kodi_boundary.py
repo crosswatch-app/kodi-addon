@@ -72,9 +72,12 @@ def test_list_window_returns_scripted_results_then_close():
     assert kodi.list_window_calls == [(request, ListState()), (request, ListState(search="x"))]
 
 
-def test_viewer_window_returns_scripted_actions_then_back():
+def test_viewers_window_returns_scripted_results_then_close():
+    from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
+
+    request = ViewersRequest(heading="h", count="", rows=(), more="", route_ok="", route_missing="")
     kodi = FakeKodi()
-    kodi.viewer_window_results = ["profiles"]
-    assert kodi.viewer_window("anna", "s") == "profiles"
-    assert kodi.viewer_window("anna", "s") == "back"
-    assert kodi.viewer_window_calls == [("anna", "s"), ("anna", "s")]
+    kodi.viewers_window_results = [ViewersResult("add", "anna")]
+    assert kodi.viewers_window(request, "anna") == ViewersResult("add", "anna")
+    assert kodi.viewers_window(request, "bob") == ViewersResult("close", "bob")
+    assert kodi.viewers_window_calls == [(request, "anna"), (request, "bob")]

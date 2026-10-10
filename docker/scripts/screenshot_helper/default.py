@@ -62,9 +62,6 @@ def _list(scene: dict, path: str) -> None:
     if scene.get("rows") == "playlists":
         _pick(scene, path)
         return
-    if scene.get("rows") == "viewers":
-        _viewers(scene, path)
-        return
     if scene.get("rows") == "profiles":
         _profiles(scene, path)
         return
@@ -147,30 +144,6 @@ def _confirm(scene: dict, path: str) -> None:
         dialog.stop()
 
 
-def _viewers(scene: dict, path: str) -> None:
-    from resources.lib.ui import list_window as lw
-
-    text = TARGET.getLocalizedString
-    details = {
-        "Anna": text(30059),
-        "Ben": text(30056).replace("%s", "3") + ", " + text(30105),
-        "Chloe": text(30104),
-    }
-    tags = {"Ben": text(30057).replace("%s", "1"), "Chloe": text(30117)}
-    rows = tuple(lw.ListRow(key=n, title=n, detail=details[n], tag=tags.get(n, "")) for n in ("Anna", "Ben", "Chloe"))
-    add = text(30048)
-    request = lw.ListRequest(
-        heading=text(30010), rows=rows, count_one=text(30102), count_all=text(30103),
-        bulk_all=add, bulk_shown=add, bulk_always=True, thumbs=False,
-    )
-    dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
-    dialog.prepare(request, lw.ListState(search=scene["search"]), text)
-    try:
-        dialog.doModal()
-    finally:
-        dialog.stop()
-
-
 def _profiles(scene: dict, path: str) -> None:
     from resources.lib.ui import list_window as lw
 
@@ -186,15 +159,6 @@ def _profiles(scene: dict, path: str) -> None:
     )
     dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
     dialog.prepare(request, lw.ListState(), text)
-    try:
-        dialog.doModal()
-    finally:
-        dialog.stop()
-
-
-def _viewer(scene: dict, path: str) -> None:
-    dialog = window.ViewerDialog(window.VIEWER_XML, path, "Default", "1080i")
-    dialog.prepare(scene["heading"], scene["message"], TARGET.getLocalizedString)
     try:
         dialog.doModal()
     finally:
@@ -249,7 +213,6 @@ WINDOWS = {
     window.WHO_WATCHED_XML: _who_watched,
     window.LIST_XML: _list,
     window.CONFIRM_XML: _confirm,
-    window.VIEWER_XML: _viewer,
     window.VIEWERS_XML: _split,
 }
 

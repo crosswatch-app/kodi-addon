@@ -29,7 +29,6 @@ from resources.lib.ui.window import (
     BUTTON_REMOVE,
     BUTTON_RENAME,
     BUTTON_SKIP,
-    BUTTON_VIEWER_BACK,
     BUTTON_VIEWERS_CLOSE,
     BUTTON_YES,
     LIST_FILTER,
@@ -40,7 +39,6 @@ from resources.lib.ui.window import (
     ConfirmDialog,
     ListDialog,
     PickListDialog,
-    ViewerDialog,
     ViewersDialog,
     WhoWatchedDialog,
 )
@@ -644,71 +642,6 @@ def test_ok_on_a_row_of_a_plain_list_still_opens_it():
     dialog.onInit()
     dialog.onClick(LIST_ROWS)
     assert dialog.result.action == "open" and dialog.getProperty("CW.Pick") == ""
-
-
-def test_a_bulk_always_button_acts_with_nothing_shown():
-    request = ListRequest(
-        heading="Viewers", rows=SHOWS, count_one="1 viewer", count_all="%s viewers",
-        bulk_all="Add viewer", bulk_shown="Add viewer", bulk_always=True,
-    )
-    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
-    dialog.prepare(request, ListState(search="zzz"), lambda i: LIST_TEXTS.get(i, ""))
-    rows, edit = FakeRows(), FakeEdit()
-    dialog.set_control(LIST_ROWS, rows)
-    dialog.set_control(LIST_SEARCH, edit)
-    dialog.onInit()
-    assert rows.items == [] and dialog.getProperty("CW.Bulk") == "Add viewer"
-    dialog.onClick(BUTTON_BULK)
-    assert dialog.result.action == "bulk" and dialog.result.keys == ()
-
-
-def _viewer() -> Any:
-    dialog: Any = ViewerDialog("crosswatch-viewer.xml", "/addon", "Default", "1080i")
-    dialog.prepare("anna", "Playlists: Anna TV[CR]Profiles: none", lambda i: "")
-    return dialog
-
-
-def test_the_viewer_window_shows_the_name_and_summary_and_starts_on_playlists():
-    dialog = _viewer()
-    dialog.onInit()
-    assert dialog.getProperty("CW.Heading") == "anna"
-    assert dialog.getProperty("CW.Line1") == "Playlists: Anna TV"
-    assert dialog.getProperty("CW.Line2") == "Profiles: none"
-    assert dialog.focused == BUTTON_PLAYLISTS
-
-
-def test_each_viewer_button_returns_its_action():
-    for button, action in [
-        (BUTTON_PLAYLISTS, "playlists"), (BUTTON_PROFILES, "profiles"),
-        (BUTTON_RENAME, "rename"), (BUTTON_REMOVE, "remove"), (BUTTON_VIEWER_BACK, "back"),
-    ]:
-        dialog = _viewer()
-        dialog.onInit()
-        dialog.onClick(button)
-        assert dialog.result == action and dialog.close_reason == action
-
-
-def test_back_leaves_the_viewer_window_with_no_action():
-    dialog = _viewer()
-    dialog.onInit()
-    dialog.onAction(Action(92))
-    assert dialog.result is None and dialog.close_reason == "back"
-
-
-def test_a_list_without_artwork_hides_the_thumbnail_column():
-    request = ListRequest(heading="Viewers", rows=SHOWS, count_one="1", count_all="%s", thumbs=False)
-    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
-    dialog.prepare(request, START, lambda i: LIST_TEXTS.get(i, ""))
-    dialog.set_control(LIST_ROWS, FakeRows())
-    dialog.set_control(LIST_SEARCH, FakeEdit())
-    dialog.onInit()
-    assert dialog.getProperty("CW.NoThumbs") == "true"
-
-
-def test_a_list_with_artwork_keeps_the_thumbnail_column():
-    dialog, _, _ = _list()
-    dialog.onInit()
-    assert dialog.getProperty("CW.NoThumbs") == ""
 
 
 VIEWER_ROWS = (

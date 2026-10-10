@@ -47,7 +47,6 @@ class KodiApi(Protocol):
     def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
     def confirm_window(self, heading: str, message: str) -> bool: ...
     def list_window(self, request: ListRequest, state: ListState) -> ListResult: ...
-    def viewer_window(self, heading: str, summary: str) -> str: ...
     def viewers_window(self, request: ViewersRequest, key: str) -> ViewersResult: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
@@ -243,20 +242,6 @@ class KodiRuntime:
         if dialog is None or dialog.result is None:
             return ViewersResult("close", key)
         return dialog.result
-
-    def viewer_window(self, heading: str, summary: str) -> str:
-        """The button pressed; Back and a failed window are both "back"."""
-
-        def make(path: str) -> Any:
-            from resources.lib.ui import window
-
-            dialog = window.ViewerDialog(window.VIEWER_XML, path, "Default", "1080i")
-            dialog.prepare(heading, summary, self.localised)
-            return dialog
-
-        dialog = self._modal("viewer", make)
-        result = dialog.result if dialog is not None else None
-        return result if isinstance(result, str) else "back"
 
     def text_input(self, heading: str, default: str = "") -> str:
         return str(self._xbmcgui.Dialog().input(heading, default) or "")

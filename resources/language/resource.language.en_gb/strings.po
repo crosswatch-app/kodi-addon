@@ -75,10 +75,6 @@ msgctxt "#30039"
 msgid "Forget"
 msgstr ""
 
-msgctxt "#30040"
-msgid "Back"
-msgstr ""
-
 msgctxt "#30041"
 msgid "will ask again"
 msgstr ""
@@ -125,10 +121,6 @@ msgstr ""
 
 msgctxt "#30056"
 msgid "%s playlists"
-msgstr ""
-
-msgctxt "#30057"
-msgid "%s missing"
 msgstr ""
 
 msgctxt "#30058"
@@ -209,10 +201,6 @@ msgstr ""
 
 msgctxt "#30078"
 msgid "The certificate of %s was not accepted. HTTPS needs a certificate from a public certificate authority; a self-signed one does not work."
-msgstr ""
-
-msgctxt "#30079"
-msgid "%s unusable"
 msgstr ""
 
 msgctxt "#30081"
@@ -307,10 +295,6 @@ msgctxt "#30103"
 msgid "%s viewers"
 msgstr ""
 
-msgctxt "#30104"
-msgid "nothing set up"
-msgstr ""
-
 msgctxt "#30105"
 msgid "1 profile"
 msgstr ""
@@ -335,14 +319,6 @@ msgctxt "#30110"
 msgid "Remove"
 msgstr ""
 
-msgctxt "#30111"
-msgid "Playlists: %s"
-msgstr ""
-
-msgctxt "#30112"
-msgid "Profiles: %s"
-msgstr ""
-
 msgctxt "#30113"
 msgid "none"
 msgstr ""
@@ -357,10 +333,6 @@ msgstr ""
 
 msgctxt "#30116"
 msgid "Kodi's profiles could not be read. Try again in a moment."
-msgstr ""
-
-msgctxt "#30117"
-msgid "no CrossWatch route"
 msgstr ""
 
 msgctxt "#30118"
