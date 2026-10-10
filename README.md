@@ -67,6 +67,7 @@ repository and to the author's own repository, with automatic updates.
 4. In the add-on settings, Viewers category, select "Configure viewers and playlists" and
    add one viewer per person. Each viewer's name must match exactly the username you put in
    that person's route. Give each viewer one or more smart playlists, or one or more Kodi
+   profiles. A one-person household only needs the one viewer, with no playlists or
    profiles.
 
 Names have to match because CrossWatch sends a playback to the route whose username whitelist
@@ -230,12 +231,22 @@ of playback. For a film, nothing is remembered.
 ### Nobody resolved
 
 If no viewer is resolved by any of the above, the event is sent with no viewers. CrossWatch
-treats that as an unknown viewer.
+treats that as an unknown viewer. The exception is a household with exactly one viewer
+configured: that viewer is credited instead (see "One person in the household" below).
 
 ### One person in the household
 
-You do not need to configure any viewers. Use a CrossWatch route with an empty username
-whitelist.
+If you are the only person who watches, add yourself as the one viewer under "Configure viewers
+and playlists". The viewer's name must match the username in your CrossWatch route's whitelist.
+You do not need any playlists or Kodi profiles: with exactly one viewer configured, every
+playback (start, pause, progress and stop) is credited to you. The end-of-playback question is
+never asked when there is only one viewer. With two or more viewers nothing changes.
+
+The event carries your name, so a route with your name in its username whitelist receives it,
+and so does a route with an empty whitelist.
+
+Configuring no viewers at all also still works, with a CrossWatch route that has an empty
+username whitelist. The events then carry no viewer.
 
 ### Remembered answers
 

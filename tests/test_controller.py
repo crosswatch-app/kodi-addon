@@ -134,7 +134,7 @@ def _warm_index(controller, kodi):
 def test_the_index_is_built_from_the_idle_tick_not_from_playback_start(tmp_path):
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
-    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")], collector)
     controller.on_av_started()
     assert [c for c in kodi.calls if c[0] == "Files.GetDirectory"] == []
     assert collector.playback()[0].viewers == ()
@@ -212,7 +212,7 @@ def test_a_degraded_viewer_falls_through_rather_than_resolving_from_a_stale_inde
     """
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
-    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector)
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")], collector)
     _warm_index(controller, kodi)
     kodi.rpc_handlers["Files.GetDirectory"] = _boom
     controller.invalidate_index()
@@ -550,6 +550,22 @@ def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(t
     assert stop.kind == "stop"
     assert stop.viewers == ("bob",)
     assert stop.viewers_source == "prompt"
+
+
+def test_a_single_viewer_household_credits_every_event_without_asking(tmp_path):
+    """The one viewer gets start and stop alike, so a route whitelisting them receives the
+    watch; with nobody else to choose, the question is never asked."""
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], collector)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    controller.on_tick()
+    events = collector.playback()
+    assert [e.kind for e in events][0] == "start" and events[-1].kind == "stop"
+    assert all(e.viewers == ("anna",) and e.viewers_source is None for e in events)
+    assert kodi.who_watched_calls == []
 
 
 def test_the_answer_is_remembered_under_a_stable_key(tmp_path):

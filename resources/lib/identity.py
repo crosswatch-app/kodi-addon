@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Who watched this: a pure decision, playlist then profile.
+"""Who watched this: a pure decision, playlist then profile, and the one viewer when there is
+only one.
 
 No I/O. The caller supplies the index and the active profile label, so this module is a
 decision table its tests can exercise without any Kodi double at all. The prompt is the
@@ -56,7 +57,7 @@ def resolve(
     profile_label: str,
     remembered: tuple[str, ...] = (),
 ) -> Identity:
-    """Playlist, then profile, then a remembered answer.
+    """Playlist, then profile, then a remembered answer, then the only viewer.
 
     The memory is passed in rather than read here, so this stays a pure decision. It is
     consulted at start as well as at stop: a show answered once resolves its next episode
@@ -100,6 +101,18 @@ def resolve(
         )
         _log.debug("identity.viewers", source="remembered", viewers=",".join(remembered))
         return Identity(remembered, "prompt")
+
+    if len(viewers) == 1:
+        # One person in the household: whatever plays is theirs, and the question is never
+        # asked for one viewer. No mechanism decided it, so no viewers_source is claimed.
+        _log.info(
+            "identity.resolved",
+            source="single",
+            media_type=media.media_type,
+            library_id=media.library_id,
+            viewers_count=1,
+        )
+        return Identity((viewers[0].name,), None)
 
     _log.info(
         "identity.unresolved",

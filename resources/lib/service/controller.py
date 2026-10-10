@@ -284,8 +284,7 @@ class Controller:
             return None
         if len(viewers) < 2:
             # Retirement prevents misattribution between household members. With one viewer
-            # there is nobody to misattribute to, and prompt.py refuses to ask a single
-            # viewer, so retiring would cost attribution entirely and buy nothing.
+            # there is nobody to misattribute to, so retiring would buy nothing.
             return index
         age = self._monotonic() - index.built_at
         if age < self._settings.index_ttl_seconds * INDEX_MAX_AGE_MULTIPLIER:
