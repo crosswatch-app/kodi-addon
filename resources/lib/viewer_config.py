@@ -22,12 +22,14 @@ from resources.lib.config import read_settings
 from resources.lib.constants import (
     LABEL_BACK,
     VIEWERS_ADD,
+    VIEWERS_ALSO,
     VIEWERS_EDIT_PLAYLISTS,
     VIEWERS_EDIT_PROFILES,
     VIEWERS_HEADING,
     VIEWERS_MISSING,
     VIEWERS_MISSING_COUNT,
     VIEWERS_NAME_PROMPT,
+    VIEWERS_NO_PLAYLISTS,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
@@ -42,6 +44,7 @@ from resources.lib.log import get_logger
 from resources.lib.models import Viewer
 from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared_type
 from resources.lib.storage import JsonViewerStore, ViewerStore
+from resources.lib.ui.list_window import ListRequest, ListRow, ListState
 
 _log = get_logger("config")
 
@@ -160,29 +163,58 @@ def viewer_labels(
     return labels
 
 
-def _edit_playlists(
-    kodi: KodiApi, viewer: Viewer, playlists: list[str], unusable: Sequence[str] = ()
-) -> tuple[str, ...] | None:
-    """None means cancelled, so the existing mapping is kept."""
-    # The viewer's vanished and unusable playlists are listed too, ticked. Without them the
-    # name is invisible here and confirming silently drops it, so a removal the user never
-    # saw looks like their own edit. Shown, unticking it is a choice. An unusable playlist
-    # nobody has is not offered: picking it would credit nobody.
+def playlist_rows(
+    kodi: KodiApi, viewer: Viewer, playlists: Sequence[str], unusable: Sequence[str], viewers: Sequence[Viewer]
+) -> tuple[ListRow, ...]:
+    """Every matchable playlist, then the viewer's own unusable and vanished ones.
+
+    The flagged ones are listed, under their real names, because without them they are
+    invisible here and Done would drop them silently: a removal the household never saw
+    would look like their own edit. An unusable playlist nobody has is not offered: picking
+    it would credit nobody.
+    """
+
+    def also(name: str) -> str:
+        # A shared playlist credits everyone who has it, which is easy to miss when picking.
+        others = [v.name for v in viewers if v.name.casefold() != viewer.name.casefold() and name in v.playlists]
+        return _text(kodi, VIEWERS_ALSO, ", ".join(others)) if others else ""
+
     flagged = [
         *((name, _text(kodi, VIEWERS_UNUSABLE)) for name in unusable_playlists(viewer, unusable)),
-        *((name, _text(kodi, VIEWERS_MISSING)) for name in missing_playlists(viewer, playlists, unusable)),
+        *((name, _text(kodi, VIEWERS_MISSING)) for name in missing_playlists(viewer, list(playlists), unusable)),
     ]
-    options = [*playlists, *(f"{name} ({MISSING_MARK} {reason})" for name, reason in flagged)]
-    preselect = [i for i, name in enumerate(playlists) if name in viewer.playlists]
-    preselect += [len(playlists) + i for i in range(len(flagged))]
-    chosen = kodi.multiselect(_text(kodi, VIEWERS_PLAYLISTS_FOR, viewer.name), options, preselect=preselect)
-    if chosen is None:
+    return (
+        *(ListRow(key=name, title=name, detail=also(name)) for name in playlists),
+        *(ListRow(key=name, title=name, detail=also(name), tag=tag) for name, tag in flagged),
+    )
+
+
+def _edit_playlists(
+    kodi: KodiApi,
+    viewer: Viewer,
+    playlists: list[str],
+    unusable: Sequence[str] = (),
+    viewers: Sequence[Viewer] = (),
+) -> tuple[str, ...] | None:
+    """None means cancelled, so the existing mapping is kept."""
+    heading = _text(kodi, VIEWERS_PLAYLISTS_FOR, viewer.name)
+    rows = playlist_rows(kodi, viewer, playlists, unusable, viewers)
+    if not rows:
+        # Also what a failed listing looks like, and an empty window would then drop every
+        # playlist the viewer has on Done.
+        _log.info("config.no_playlists_to_pick", unusable=len(unusable))
+        kodi.ok(heading, _text(kodi, VIEWERS_NO_PLAYLISTS))
         return None
-    kept = [playlists[i] for i in chosen if 0 <= i < len(playlists)]
-    # A ticked flagged playlist is kept under its real name, not the decorated label, so
-    # the configuration still matches the file if the playlist comes back or is fixed.
-    kept += [flagged[i - len(playlists)][0] for i in chosen if len(playlists) <= i < len(options)]
-    return tuple(kept)
+    request = ListRequest(
+        heading=heading,
+        rows=rows,
+        count_one=_text(kodi, VIEWERS_ONE_PLAYLIST),
+        count_all=_text(kodi, VIEWERS_PLAYLISTS),
+        pick=True,
+        ticked=viewer.playlists,
+    )
+    result = kodi.list_window(request, ListState())
+    return result.keys if result.action == "done" else None
 
 
 def _edit_profiles(kodi: KodiApi, viewer: Viewer) -> tuple[str, ...]:
@@ -198,7 +230,7 @@ def _add_viewer(kodi: KodiApi, viewers: list[Viewer], playlists: list[str]) -> l
         _log.info("config.add_rejected", reason=str(exc))
         return viewers
     viewers = apply_edit(viewers, name, (), ())
-    selected = _edit_playlists(kodi, Viewer(name=name), playlists)
+    selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers)
     if selected is not None:
         viewers = apply_edit(viewers, name, selected, ())
     _log.info("config.viewer_added", playlists=len(selected or ()))
@@ -209,7 +241,7 @@ def _edit_viewer(kodi: KodiApi, viewers: list[Viewer], viewer: Viewer, listing: 
     actions = [VIEWERS_EDIT_PLAYLISTS, VIEWERS_EDIT_PROFILES, VIEWERS_REMOVE, LABEL_BACK]
     choice = kodi.select(viewer.name, [_text(kodi, a) for a in actions])
     if choice == 0:
-        selected = _edit_playlists(kodi, viewer, listing.matchable, listing.unusable)
+        selected = _edit_playlists(kodi, viewer, listing.matchable, listing.unusable, viewers)
         if selected is None:
             _log.info("config.playlists_unchanged", reason="cancelled")
             return viewers

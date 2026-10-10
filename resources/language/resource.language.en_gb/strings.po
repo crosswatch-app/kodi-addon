@@ -303,6 +303,14 @@ msgctxt "#30097"
 msgid "1 show"
 msgstr ""
 
+msgctxt "#30098"
+msgid "Also %s"
+msgstr ""
+
 msgctxt "#30099"
 msgid "Cancel"
+msgstr ""
+
+msgctxt "#30100"
+msgid "Kodi has no smart playlists of TV shows or films yet. Make one under Videos, Playlists, then come back here."
 msgstr ""

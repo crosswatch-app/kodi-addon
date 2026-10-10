@@ -43,9 +43,6 @@ class KodiApi(Protocol):
     def is_playing(self) -> bool: ...
     def player_times(self) -> tuple[int | None, int | None]: ...
     def topmost_dialog_id(self) -> int: ...
-    def multiselect(
-        self, heading: str, options: list[str], preselect: list[int] | None = None, autoclose: int = 0
-    ) -> list[int] | None: ...
     def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
     def confirm_window(self, heading: str, message: str) -> bool: ...
     def list_window(self, request: ListRequest, state: ListState) -> ListResult: ...
@@ -164,17 +161,6 @@ class KodiRuntime:
     def topmost_dialog_id(self) -> int:
         return int(self._xbmcgui.getCurrentWindowDialogId())
 
-    def multiselect(
-        self, heading: str, options: list[str], preselect: list[int] | None = None, autoclose: int = 0
-    ) -> list[int] | None:
-        # Kodi declares the options list as List[str | ListItem], and list is invariant, so
-        # a list[str] is rejected although Kodi accepts it. Widen at the call rather than in
-        # the protocol: ListItem is a Kodi type and must not leak past this boundary.
-        choices: list[Any] = list(options)
-        return self._xbmcgui.Dialog().multiselect(
-            heading, choices, autoclose=autoclose * 1000, preselect=preselect or []
-        )
-
     def _modal(self, name: str, make: Callable[[str], Any]) -> Any:
         """Open a CrossWatch window modally; None when it could not be built or failed.
 
@@ -241,7 +227,10 @@ class KodiRuntime:
         return dialog.result
 
     def select(self, heading: str, options: list[str]) -> int:
-        choices: list[Any] = list(options)  # widened for the same reason as multiselect
+        # Kodi declares the options list as List[str | ListItem], and list is invariant, so
+        # a list[str] is rejected although Kodi accepts it. Widen at the call rather than in
+        # the protocol: ListItem is a Kodi type and must not leak past this boundary.
+        choices: list[Any] = list(options)
         return int(self._xbmcgui.Dialog().select(heading, choices))
 
     def text_input(self, heading: str, default: str = "") -> str:

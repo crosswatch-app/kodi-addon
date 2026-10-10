@@ -58,33 +58,6 @@ def test_a_failed_position_read_still_reports_the_duration():
     assert got == (None, 120_000)
 
 
-def test_multiselect_converts_the_autoclose_to_milliseconds(runtime, monkeypatch):
-    seen = {}
-
-    class Dialog:
-        def multiselect(self, heading, options, autoclose=0, preselect=None, useDetails=False):
-            seen.update(heading=heading, autoclose=autoclose, preselect=preselect)
-            return [0]
-
-    monkeypatch.setattr(runtime._xbmcgui, "Dialog", Dialog)
-    runtime.multiselect("Who watched?", ["anna"], preselect=[0], autoclose=90)
-    assert seen["autoclose"] == 90_000
-    assert seen["preselect"] == [0]
-
-
-def test_multiselect_passes_an_empty_preselect_rather_than_none(runtime, monkeypatch):
-    seen = {}
-
-    class Dialog:
-        def multiselect(self, heading, options, autoclose=0, preselect=None, useDetails=False):
-            seen["preselect"] = preselect
-            return None
-
-    monkeypatch.setattr(runtime._xbmcgui, "Dialog", Dialog)
-    runtime.multiselect("Who watched?", ["anna"])
-    assert seen["preselect"] == []
-
-
 def test_jsonrpc_raises_on_an_error_body(runtime, monkeypatch):
     monkeypatch.setattr(
         runtime._xbmc, "executeJSONRPC", lambda request: '{"error": {"code": -32601}}'
