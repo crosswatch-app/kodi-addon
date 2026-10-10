@@ -380,5 +380,5 @@ msgid "and %s more"
 msgstr ""
 
 msgctxt "#30122"
-msgid "not a TV show or film playlist"
+msgid "unusable"
 msgstr ""

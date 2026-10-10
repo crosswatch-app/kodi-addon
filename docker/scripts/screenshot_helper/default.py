@@ -201,11 +201,56 @@ def _viewer(scene: dict, path: str) -> None:
         dialog.stop()
 
 
+def _split(scene: dict, path: str) -> None:
+    from resources.lib.ui import viewers_window as vw
+
+    text = TARGET.getLocalizedString
+    heads = (vw.PanelLine(text(30107), heading=True), vw.PanelLine(text(30108), heading=True))
+    missing, none = text(30058), vw.PanelLine(text(30113))
+
+    def row(name, playlists, profiles=(), route=""):
+        lines = (heads[0], *(playlists or (none,)), heads[1], *(profiles or (none,)))
+        return vw.ViewerRow(name, lines, route)
+
+    def line(name, tag=""):
+        return vw.PanelLine(name, tag=tag, warn=bool(tag))
+
+    easytv = ("All Shows", "Continue Watching", "Season Premieres", "Show Premieres", "Start Fresh", "Cartoons for the weekend")
+    households = {
+        "household": (
+            row("Anna", (line("Anna's shows"), line("Cartoons")), (line("Master user"),), vw.ROUTE_ACCEPTED),
+            row("Ben", (line("Ben TV"), line("Old list", missing)), (), vw.ROUTE_REFUSED),
+            row("Chloe", (line("Episodes", text(30122)),), (line("Kids"),)),
+        ),
+        "long": (
+            row("Anna", tuple(line(f"EasyTV - TVShow - {n}") for n in easytv), (line("Master user"), line("Kids")), vw.ROUTE_ACCEPTED),
+            row("Ben", (line("Ben TV"),), (), vw.ROUTE_ACCEPTED),
+        ),
+        "many": tuple(
+            row(n, (line(f"{n}'s shows"),), (), vw.ROUTE_ACCEPTED)
+            for n in ("Anna", "Ben", "Chloe", "David", "Emma", "Finn", "Gina", "Hugo", "Ivy")
+        ),
+        "none": (),
+    }
+    rows = households[scene["viewers"]]
+    count = (text(30102) if len(rows) == 1 else text(30103).replace("%s", str(len(rows)))) if rows else ""
+    request = vw.ViewersRequest(
+        heading=text(30010), count=count, rows=rows, more=text(30121), route_ok=text(30119), route_missing=text(30120),
+    )
+    dialog = window.ViewersDialog(window.VIEWERS_XML, path, "Default", "1080i")
+    dialog.prepare(request, scene["key"], text)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
 WINDOWS = {
     window.WHO_WATCHED_XML: _who_watched,
     window.LIST_XML: _list,
     window.CONFIRM_XML: _confirm,
     window.VIEWER_XML: _viewer,
+    window.VIEWERS_XML: _split,
 }
 
 

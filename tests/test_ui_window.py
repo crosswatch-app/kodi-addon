@@ -14,8 +14,10 @@ from resources.lib.constants import (
     WINDOW_YES,
 )
 from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, ListState
+from resources.lib.ui.viewers_window import PanelLine, ViewerRow, ViewersRequest, ViewersResult
 from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
+    BUTTON_ADD,
     BUTTON_BULK,
     BUTTON_CLOSE,
     BUTTON_DONE,
@@ -28,15 +30,18 @@ from resources.lib.ui.window import (
     BUTTON_RENAME,
     BUTTON_SKIP,
     BUTTON_VIEWER_BACK,
+    BUTTON_VIEWERS_CLOSE,
     BUTTON_YES,
     LIST_FILTER,
     LIST_ROWS,
     LIST_SEARCH,
     LIST_VIEWERS,
+    VIEWERS_ROWS,
     ConfirmDialog,
     ListDialog,
     PickListDialog,
     ViewerDialog,
+    ViewersDialog,
     WhoWatchedDialog,
 )
 
@@ -704,3 +709,77 @@ def test_a_list_with_artwork_keeps_the_thumbnail_column():
     dialog, _, _ = _list()
     dialog.onInit()
     assert dialog.getProperty("CW.NoThumbs") == ""
+
+
+VIEWER_ROWS = (
+    ViewerRow("anna", (PanelLine("Playlists", heading=True), PanelLine("Anna TV"))),
+    ViewerRow("bob", (PanelLine("Gone", tag="missing", warn=True),)),
+)
+
+
+def _viewers(rows=VIEWER_ROWS, key="") -> tuple[Any, FakeRows]:
+    request = ViewersRequest(
+        heading="Viewers", count="2 viewers", rows=rows, more="and %s more",
+        route_ok="CrossWatch route", route_missing="No CrossWatch route",
+    )
+    dialog: Any = ViewersDialog("crosswatch-viewers.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, key, lambda i: "")
+    rows_control = FakeRows()
+    dialog.set_control(VIEWERS_ROWS, rows_control)
+    return dialog, rows_control
+
+
+def test_the_viewers_window_lists_every_viewer_with_its_panel():
+    dialog, rows = _viewers()
+    dialog.onInit()
+    assert [item.getLabel() for item in rows.items] == ["anna", "bob"]
+    assert rows.items[0].getProperty("slot1_head") == "Playlists"
+    assert rows.items[0].getProperty("slot2") == "Anna TV"
+    assert rows.items[1].getProperty("warn") == "true"
+    assert dialog.getProperty("CW.Heading") == "Viewers" and dialog.getProperty("CW.Count") == "2 viewers"
+    assert dialog.getProperty("CW.Empty") == ""
+    assert dialog.focused == VIEWERS_ROWS and rows.position == 0
+
+
+def test_the_viewers_window_reopens_on_the_given_viewer():
+    dialog, rows = _viewers(key="bob")
+    dialog.onInit()
+    assert rows.position == 1
+
+
+def test_ok_on_a_viewer_moves_to_the_actions():
+    dialog, _ = _viewers()
+    dialog.onInit()
+    dialog.onClick(VIEWERS_ROWS)
+    assert dialog.focused == BUTTON_PLAYLISTS and dialog.closed == 0
+
+
+def test_each_action_returns_the_highlighted_viewer():
+    for button, action in [
+        (BUTTON_PLAYLISTS, "playlists"), (BUTTON_PROFILES, "profiles"),
+        (BUTTON_RENAME, "rename"), (BUTTON_REMOVE, "remove"),
+        (BUTTON_ADD, "add"), (BUTTON_VIEWERS_CLOSE, "close"),
+    ]:
+        dialog, rows = _viewers()
+        dialog.onInit()
+        rows.position = 1
+        dialog.onClick(button)
+        assert dialog.result == ViewersResult(action, "bob") and dialog.close_reason == action
+
+
+def test_back_closes_the_viewers_window_with_no_result():
+    dialog, _ = _viewers()
+    dialog.onInit()
+    dialog.onAction(Action(92))
+    assert dialog.result is None and dialog.close_reason == "back"
+
+
+def test_an_empty_viewers_window_starts_on_add_viewer_and_offers_no_actions():
+    dialog, rows = _viewers(rows=())
+    dialog.onInit()
+    assert rows.items == [] and dialog.getProperty("CW.Empty") == "true"
+    assert dialog.focused == BUTTON_ADD
+    dialog.onClick(BUTTON_REMOVE)  # hidden, but a stray click must act on nobody
+    assert dialog.closed == 0
+    dialog.onClick(BUTTON_ADD)
+    assert dialog.result == ViewersResult("add", "")

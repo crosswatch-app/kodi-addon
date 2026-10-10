@@ -290,7 +290,7 @@ class Worded(FakeKodi):
         VIEWERS_UNUSABLE_COUNT: "%s unusable", VIEWERS_MISSING: "missing", VIEWERS_ALSO: "Also %s",
         VIEWERS_NO_ROUTE: "no CrossWatch route",
         VIEWER_SUMMARY_PLAYLISTS: "Playlists: %s", VIEWER_SUMMARY_PROFILES: "Profiles: %s", VIEWER_NONE: "none",
-        VIEWER_PLAYLISTS: "Playlists", VIEWER_PROFILES: "Profiles", VIEWER_UNUSABLE: "not a TV show or film playlist",
+        VIEWER_PLAYLISTS: "Playlists", VIEWER_PROFILES: "Profiles", VIEWER_UNUSABLE: "unusable",
         VIEWER_MORE: "and %s more", VIEWER_ROUTE_OK: "CrossWatch route", VIEWER_ROUTE_MISSING: "No CrossWatch route",
         VIEWERS_ONE_VIEWER: "1 viewer", VIEWERS_COUNT: "%s viewers",
     }
@@ -677,7 +677,7 @@ def test_panel_lines_list_playlists_then_profiles_with_their_tags():
         PanelLine("Playlists", heading=True),
         PanelLine("Anna TV"),
         PanelLine("Gone", tag="missing", warn=True),
-        PanelLine("Eps", tag="not a TV show or film playlist", warn=True),
+        PanelLine("Eps", tag="unusable", warn=True),
         PanelLine("Profiles", heading=True),
         PanelLine("Kids"),  # matched without case, as playback matches the profile
         PanelLine("Old", tag="missing", warn=True),

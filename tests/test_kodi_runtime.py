@@ -234,3 +234,30 @@ def test_viewer_window_back_or_failure_is_back(runtime, monkeypatch):
     monkeypatch.setattr(window_mod, "ViewerDialog", broken)
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
     assert runtime.viewer_window("anna", "summary") == "back"
+
+
+def test_viewers_window_returns_what_the_household_did(runtime, monkeypatch):
+    from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
+
+    request = ViewersRequest(heading="Viewers", count="", rows=(), more="", route_ok="", route_missing="")
+
+    class Dialog(window_mod.ViewersDialog):
+        def doModal(self) -> None:
+            self.finish("add", ViewersResult("add", ""))
+
+    monkeypatch.setattr(window_mod, "ViewersDialog", Dialog)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.viewers_window(request, "") == ViewersResult("add", "")
+
+
+def test_viewers_window_back_or_failure_closes_on_the_key(runtime, monkeypatch):
+    from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
+
+    request = ViewersRequest(heading="Viewers", count="", rows=(), more="", route_ok="", route_missing="")
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no skin file")
+
+    monkeypatch.setattr(window_mod, "ViewersDialog", broken)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.viewers_window(request, "anna") == ViewersResult("close", "anna")

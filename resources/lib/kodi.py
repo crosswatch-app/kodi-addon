@@ -20,6 +20,7 @@ from resources.lib.log import get_logger
 
 if TYPE_CHECKING:
     from resources.lib.ui.list_window import ListRequest, ListResult, ListState
+    from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
     from resources.lib.ui.who_watched import WhoWatchedRequest
 
 _log = get_logger("ui")
@@ -47,6 +48,7 @@ class KodiApi(Protocol):
     def confirm_window(self, heading: str, message: str) -> bool: ...
     def list_window(self, request: ListRequest, state: ListState) -> ListResult: ...
     def viewer_window(self, heading: str, summary: str) -> str: ...
+    def viewers_window(self, request: ViewersRequest, key: str) -> ViewersResult: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
     def notify(self, heading: str, message: str) -> None: ...
@@ -224,6 +226,22 @@ class KodiRuntime:
         dialog = self._modal("pick_list" if request.pick else "list", make)
         if dialog is None or dialog.result is None:
             return ListResult("close", state)
+        return dialog.result
+
+    def viewers_window(self, request: ViewersRequest, key: str) -> ViewersResult:
+        """What the household did; Back and a failed window both close, on the same viewer."""
+        from resources.lib.ui.viewers_window import ViewersResult
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.ViewersDialog(window.VIEWERS_XML, path, "Default", "1080i")
+            dialog.prepare(request, key, self.localised)
+            return dialog
+
+        dialog = self._modal("viewers", make)
+        if dialog is None or dialog.result is None:
+            return ViewersResult("close", key)
         return dialog.result
 
     def viewer_window(self, heading: str, summary: str) -> str:

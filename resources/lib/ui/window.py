@@ -26,6 +26,7 @@ from resources.lib.constants import (
 )
 from resources.lib.log import get_logger
 from resources.lib.ui import list_window as lw
+from resources.lib.ui import viewers_window as vw
 from resources.lib.ui import who_watched as ww
 
 _log = get_logger("ui")
@@ -238,6 +239,71 @@ class ConfirmDialog(CrossWatchDialog):
             self.finish("no", False)
 
 
+VIEWERS_XML = "crosswatch-viewers.xml"
+VIEWERS_ROWS = 100
+BUTTON_ADD = 20
+BUTTON_VIEWERS_CLOSE = 21
+
+
+class ViewersDialog(CrossWatchDialog):
+    """The viewers on the left, the highlighted one's setup and actions on the right.
+
+    The panel reads the highlighted row's properties, so Kodi redraws it on a focus move
+    without calling in here; the buttons act on whichever row is highlighted.
+    """
+
+    name = "viewers"
+
+    def prepare(self, request: vw.ViewersRequest, key: str, localised: Localised) -> None:
+        self._request = request
+        self._position = vw.start_position(request.rows, key)
+        self.configure(
+            localised,
+            {
+                "CW.Heading": request.heading,
+                "CW.Count": request.count,
+                "CW.Empty": "" if request.rows else "true",
+            },
+            autoclose_seconds=0,
+            close_on_playback=False,
+            is_playing=lambda: False,
+            wait_for_abort=lambda _: False,
+        )
+
+    def fill(self) -> None:
+        rows: Any = self.getControl(VIEWERS_ROWS)
+        for row in self._request.rows:
+            item = xbmcgui.ListItem(row.key)
+            for key, value in vw.properties(row, self._request).items():
+                item.setProperty(key, value)
+            rows.addItem(item)
+        if self._request.rows:
+            rows.selectItem(self._position)
+            self.setFocusId(VIEWERS_ROWS)
+        else:
+            # Always visible, unlike the actions, so it can take focus in this same call.
+            self.setFocusId(BUTTON_ADD)
+
+    def onClick(self, controlId: int) -> None:
+        action = _VIEWERS_ACTIONS.get(controlId)
+        if controlId == VIEWERS_ROWS:
+            # The row has no action of its own; OK there means "go to the actions".
+            self.setFocusId(BUTTON_PLAYLISTS)
+        elif action and self._request.rows:
+            self.finish(action, vw.ViewersResult(action, self._selected()))
+        elif controlId == BUTTON_ADD:
+            self.finish("add", vw.ViewersResult("add", self._selected()))
+        elif controlId == BUTTON_VIEWERS_CLOSE:
+            self.finish("close", vw.ViewersResult("close", self._selected()))
+
+    def _selected(self) -> str:
+        rows = self._request.rows
+        if not rows:
+            return ""
+        control: Any = self.getControl(VIEWERS_ROWS)
+        return rows[min(max(int(control.getSelectedPosition()), 0), len(rows) - 1)].key
+
+
 VIEWER_XML = "crosswatch-viewer.xml"
 BUTTON_PLAYLISTS = 10
 BUTTON_PROFILES = 11
@@ -250,6 +316,12 @@ _VIEWER_ACTIONS = {
     BUTTON_RENAME: "rename",
     BUTTON_REMOVE: "remove",
     BUTTON_VIEWER_BACK: "back",
+}
+_VIEWERS_ACTIONS = {
+    BUTTON_PLAYLISTS: "playlists",
+    BUTTON_PROFILES: "profiles",
+    BUTTON_RENAME: "rename",
+    BUTTON_REMOVE: "remove",
 }
 
 

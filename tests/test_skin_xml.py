@@ -318,3 +318,133 @@ def test_the_icons_are_64_pixel_rgba_pngs():
         assert head[:8] == b"\x89PNG\r\n\x1a\n"
         width, height, depth, colour = struct.unpack(">IIBB", head[16:26])
         assert (width, height, depth, colour) == (64, 64, 8, 6), name  # 6: RGBA
+
+
+VIEWERS = SKIN / "1080i" / "crosswatch-viewers.xml"
+NOT_EMPTY = "!String.IsEqual(Window.Property(CW.Empty),true)"
+
+
+def _viewers_control(control_id: str) -> ET.Element:
+    found = ET.parse(VIEWERS).getroot().find(f".//control[@id='{control_id}']")
+    assert found is not None, control_id
+    return found
+
+
+def test_the_viewers_window_has_one_set_of_controls_per_panel_slot():
+    from resources.lib.ui.viewers_window import PANEL_SLOTS
+
+    root = ET.parse(VIEWERS).getroot()
+    labels = [c.findtext("label") or "" for c in root.iter("control")]
+    visible = [c.findtext("visible") or "" for c in root.iter("control")]
+    for n in range(1, PANEL_SLOTS + 1):
+        for prop in (f"slot{n}_head", f"slot{n}_tag"):
+            assert labels.count(f"$INFO[Container(100).ListItem.Property({prop})]") == 1, prop
+        assert visible.count(f"String.IsEqual(Container(100).ListItem.Property(slot{n}_warn),true)") == 1, n
+    assert not any(f"Property(slot{PANEL_SLOTS + 1}" in text for text in labels + visible)
+
+
+def test_the_viewers_panel_lines_never_wrap_and_end_above_the_route_line():
+    root = ET.parse(VIEWERS).getroot()
+    route = next(
+        c for c in root.iter("control") if c.findtext("label") == "$INFO[Container(100).ListItem.Property(route_text)]"
+    )
+    route_top = int(route.findtext("top") or 0)
+    for control in root.iter("control"):
+        label = control.findtext("label") or ""
+        if "Property(slot" in label:
+            assert control.findtext("wrapmultiline") in (None, "false"), label
+            assert int(control.findtext("top") or 0) + int(control.findtext("height") or 0) <= route_top, label
+    assert route_top + int(route.findtext("height") or 0) <= int(_viewers_control("10").findtext("top") or 0)
+
+
+def test_the_viewers_window_navigates_between_list_actions_and_bottom_row():
+    expected = {
+        "100": {"onright": "10", "ondown": "20"},
+        "10": {"onleft": "100", "onright": "11", "ondown": "12"},
+        "11": {"onleft": "10", "ondown": "13"},
+        "12": {"onleft": "100", "onup": "10", "onright": "13", "ondown": "20"},
+        "13": {"onleft": "12", "onup": "11", "ondown": "20"},
+        "20": {"onright": "21"},
+        "21": {"onleft": "20"},
+    }
+    for control_id, moves in expected.items():
+        control = _viewers_control(control_id)
+        for key, target in moves.items():
+            assert control.findtext(key) == target, (control_id, key)
+    for control_id, target in (("20", "12"), ("21", "13")):
+        up = _viewers_control(control_id).find("onup")
+        assert up is not None and up.text == target and up.get("condition") == NOT_EMPTY
+
+
+def test_the_viewers_actions_hide_with_no_viewers_and_add_viewer_never_does():
+    from resources.lib.constants import (
+        VIEWER_PLAYLISTS,
+        VIEWER_PROFILES,
+        VIEWER_REMOVE,
+        VIEWER_RENAME,
+        VIEWERS_ADD,
+        WINDOW_CLOSE,
+    )
+
+    labels = {
+        "10": VIEWER_PLAYLISTS, "11": VIEWER_PROFILES, "12": VIEWER_RENAME, "13": VIEWER_REMOVE,
+        "20": VIEWERS_ADD, "21": WINDOW_CLOSE,
+    }
+    for control_id, string_id in labels.items():
+        control = _viewers_control(control_id)
+        assert control.findtext("label") == f"$ADDON[{ADDON_ID} {string_id}]"
+        assert control.findtext("visible") == (NOT_EMPTY if control_id in ("10", "11", "12", "13") else None)
+    assert ET.parse(VIEWERS).getroot().findtext("defaultcontrol") == "21"
+
+
+def test_the_empty_viewers_list_says_so_in_translatable_text():
+    from resources.lib.constants import VIEWERS_EMPTY
+
+    root = ET.parse(VIEWERS).getroot()
+    empty = [c for c in root.iter("control") if c.findtext("label") == f"$ADDON[{ADDON_ID} {VIEWERS_EMPTY}]"]
+    assert len(empty) == 1 and empty[0].findtext("visible") == "String.IsEqual(Window.Property(CW.Empty),true)"
+
+
+def test_the_viewers_icons_ship_and_are_tinted_by_meaning():
+    from tests.test_window_style import PALETTE
+
+    root = ET.parse(VIEWERS).getroot()
+    icons = [i for i in root.iter("control") if i.get("type") == "image" and "icons/" in (i.findtext("texture") or "")]
+    assert icons
+    for image in icons:
+        texture = image.find("texture")
+        assert texture is not None
+        name = texture.text or ""
+        tint = PALETTE["positive"] if name.endswith("check_circle.png") else PALETTE["danger"]
+        assert texture.get("colordiffuse") == tint, name
+        assert (image.findtext("width"), image.findtext("height")) == ("32", "32")
+    for texture in root.iter("texture"):
+        if (texture.text or "").startswith("crosswatch/"):
+            assert (SKIN / "media" / (texture.text or "")).is_file(), texture.text
+
+
+def test_the_highlighted_viewer_stays_marked_while_the_buttons_have_focus():
+    layout = ET.parse(VIEWERS).getroot().find(".//control[@id='100']/focusedlayout")
+    assert layout is not None
+    boxes = {i.findtext("texture"): i.findtext("visible") for i in layout.findall("control[@type='image']")}
+    assert boxes.get("crosswatch/box_focus.png") == "Control.HasFocus(100)"
+    assert boxes.get("crosswatch/box_chosen.png") == "!Control.HasFocus(100)"
+
+
+def test_a_panel_line_takes_the_full_width_unless_it_has_a_tag():
+    """Playlist names run long ("EasyTV - TVShow - Season Premieres"); only a tagged line
+    gives up room for its tag."""
+    from resources.lib.ui.viewers_window import PANEL_SLOTS
+
+    root = ET.parse(VIEWERS).getroot()
+    for n in range(1, PANEL_SLOTS + 1):
+        tag = f"Container(100).ListItem.Property(slot{n}_tag)"
+        lines = {
+            c.findtext("visible"): c for c in root.iter("control")
+            if c.findtext("label") == f"$INFO[Container(100).ListItem.Property(slot{n})]"
+        }
+        assert set(lines) == {f"String.IsEmpty({tag})", f"!String.IsEmpty({tag})"}, n
+        wide, narrow = lines[f"String.IsEmpty({tag})"], lines[f"!String.IsEmpty({tag})"]
+        tag_label = next(c for c in root.iter("control") if c.findtext("label") == f"$INFO[{tag}]")
+        assert int(narrow.findtext("left") or 0) + int(narrow.findtext("width") or 0) <= int(tag_label.findtext("left") or 0)
+        assert int(wide.findtext("width") or 0) > int(narrow.findtext("width") or 0)

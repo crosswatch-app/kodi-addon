@@ -58,6 +58,14 @@ ROLE_FONTS = {
     "ListItem.Label": "font30_title",
     "ListItem.Property(detail)": "font13",
     "ListItem.Property(tag)": "font12",
+    "Container(100).ListItem.Label": "font32_title",
+    "Container(100).ListItem.Property(route_text)": "font13",
+}
+# The split viewers window's panel slots, one set per slot.
+ROLE_PATTERNS = {
+    r"\$INFO\[Container\(100\)\.ListItem\.Property\(slot\d+_head\)\]": "font12",
+    r"\$INFO\[Container\(100\)\.ListItem\.Property\(slot\d+_tag\)\]": "font12",
+    r"\$INFO\[Container\(100\)\.ListItem\.Property\(slot\d+\)\]": "font13",
 }
 
 
@@ -148,6 +156,9 @@ def test_text_uses_the_font_of_its_role(window):
         for role, expected in ROLE_FONTS.items():
             if f"$INFO[{role}]" in label:
                 assert font == expected, (role, font)
+        for pattern, expected in ROLE_PATTERNS.items():
+            if re.search(pattern, label):
+                assert font == expected, (pattern, font)
 
 
 def test_every_window_has_a_default_control(window):

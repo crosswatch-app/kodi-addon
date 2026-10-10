@@ -215,5 +215,49 @@
     "message": "Remembered answers lose this name. A show nobody else is remembered for is asked again.",
     "keys": [],
     "group": "viewers"
+  },
+  "viewers-split": {
+    "window": "crosswatch-viewers.xml",
+    "viewers": "household",
+    "key": "Ben",
+    "keys": [],
+    "group": "viewers"
+  },
+  "viewers-split-long": {
+    "window": "crosswatch-viewers.xml",
+    "viewers": "long",
+    "key": "Anna",
+    "keys": [],
+    "group": "viewers"
+  },
+  "viewers-many": {
+    "window": "crosswatch-viewers.xml",
+    "viewers": "many",
+    "key": "Ivy",
+    "keys": [],
+    "group": "viewers"
+  },
+  "viewers-actions": {
+    "window": "crosswatch-viewers.xml",
+    "viewers": "household",
+    "key": "Anna",
+    "keys": [
+      "Right"
+    ],
+    "group": "viewers"
+  },
+  "viewers-empty": {
+    "window": "crosswatch-viewers.xml",
+    "viewers": "none",
+    "key": "",
+    "keys": [],
+    "group": "viewers"
+  },
+  "viewers-split-unusable": {
+    "window": "crosswatch-viewers.xml",
+    "viewers": "household",
+    "key": "Chloe",
+    "keys": [],
+    "group": "viewers"
   }
 }
