@@ -2,11 +2,18 @@ import pytest
 
 from resources.lib import paths, viewer_config
 from resources.lib.constants import (
+    VIEWER_MORE,
     VIEWER_NONE,
+    VIEWER_PLAYLISTS,
+    VIEWER_PROFILES,
+    VIEWER_ROUTE_MISSING,
+    VIEWER_ROUTE_OK,
     VIEWER_SUMMARY_PLAYLISTS,
     VIEWER_SUMMARY_PROFILES,
+    VIEWER_UNUSABLE,
     VIEWERS_ADD,
     VIEWERS_ALSO,
+    VIEWERS_COUNT,
     VIEWERS_HEADING,
     VIEWERS_MISSING,
     VIEWERS_MISSING_COUNT,
@@ -15,6 +22,7 @@ from resources.lib.constants import (
     VIEWERS_NOTHING,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_ONE_PROFILE,
+    VIEWERS_ONE_VIEWER,
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
     VIEWERS_PROFILES,
@@ -29,6 +37,7 @@ from resources.lib.playlist_index import PLAYLIST_DIR
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 from resources.lib.ui.list_window import ListResult, ListState
+from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, PanelLine
 from resources.lib.viewer_config import (
     PlaylistListing,
     apply_edit,
@@ -36,14 +45,17 @@ from resources.lib.viewer_config import (
     available_profiles,
     current_routes,
     flag_text,
+    panel_lines,
     profile_rows,
     remove_viewer,
     rename_viewer,
+    route_state,
     run_dialog,
     setup_text,
     summary_text,
     validate_name,
     viewer_rows,
+    viewers_request,
 )
 from tests.fakes import FakeKodi
 
@@ -278,6 +290,9 @@ class Worded(FakeKodi):
         VIEWERS_UNUSABLE_COUNT: "%s unusable", VIEWERS_MISSING: "missing", VIEWERS_ALSO: "Also %s",
         VIEWERS_NO_ROUTE: "no CrossWatch route",
         VIEWER_SUMMARY_PLAYLISTS: "Playlists: %s", VIEWER_SUMMARY_PROFILES: "Profiles: %s", VIEWER_NONE: "none",
+        VIEWER_PLAYLISTS: "Playlists", VIEWER_PROFILES: "Profiles", VIEWER_UNUSABLE: "not a TV show or film playlist",
+        VIEWER_MORE: "and %s more", VIEWER_ROUTE_OK: "CrossWatch route", VIEWER_ROUTE_MISSING: "No CrossWatch route",
+        VIEWERS_ONE_VIEWER: "1 viewer", VIEWERS_COUNT: "%s viewers",
     }
 
     def localised(self, string_id: int) -> str:
@@ -651,3 +666,63 @@ def test_the_viewer_list_rereads_the_route_facts_on_every_pass(tmp_path):
     run_dialog(kodi, store, memory, lambda: next(answers))
     assert [r.tag for r in kodi.lists_shown[0].rows] == ["", f"#{VIEWERS_NO_ROUTE}"]
     assert [r.tag for r in kodi.lists_shown[1].rows] == ["", ""]
+
+
+# --- The split window's rows ------------------------------------------------
+
+def test_panel_lines_list_playlists_then_profiles_with_their_tags():
+    listing = PlaylistListing(["Anna TV"], ["Eps"])
+    viewer = Viewer(name="anna", playlists=("Anna TV", "Gone", "Eps"), profiles=("Kids", "Old"))
+    assert panel_lines(Worded(), viewer, listing, ["Master user", "kids"]) == (
+        PanelLine("Playlists", heading=True),
+        PanelLine("Anna TV"),
+        PanelLine("Gone", tag="missing", warn=True),
+        PanelLine("Eps", tag="not a TV show or film playlist", warn=True),
+        PanelLine("Profiles", heading=True),
+        PanelLine("Kids"),  # matched without case, as playback matches the profile
+        PanelLine("Old", tag="missing", warn=True),
+    )
+
+
+def test_panel_lines_say_none_for_an_empty_section():
+    lines = panel_lines(Worded(), Viewer(name="anna"), PlaylistListing(["X"], []), [])
+    assert lines == (
+        PanelLine("Playlists", heading=True), PanelLine("none"),
+        PanelLine("Profiles", heading=True), PanelLine("none"),
+    )
+
+
+def test_a_failed_playlist_listing_tags_no_playlist_missing():
+    lines = panel_lines(Worded(), Viewer(name="a", playlists=("Anna TV",)), PlaylistListing([], []), [])
+    assert PanelLine("Anna TV") in lines
+
+
+def test_a_failed_profile_listing_tags_no_profile_missing():
+    """None is "could not be read", not "Kodi has no profiles"."""
+    lines = panel_lines(Worded(), Viewer(name="a", profiles=("Kids",)), PlaylistListing(["X"], []), None)
+    assert PanelLine("Kids") in lines
+
+
+def test_route_state_claims_only_what_crosswatch_was_asked():
+    routes = RouteFacts(1, frozenset({"anna"}), frozenset({"anna", "bob"}))
+    assert route_state(Viewer(name="anna"), routes) == ROUTE_ACCEPTED
+    assert route_state(Viewer(name="bob"), routes) == ROUTE_REFUSED
+    assert route_state(Viewer(name="dan"), routes) == ""  # added since the last ping
+    assert route_state(Viewer(name="anna"), None) == ""  # unpaired or no reply yet
+
+
+def test_viewers_request_has_a_row_per_viewer_in_order_and_the_count():
+    viewers = [Viewer(name="bob"), Viewer(name="anna", playlists=("Gone",))]
+    request = viewers_request(Worded(), viewers, PlaylistListing(["X"], []), [], None)
+    assert [r.key for r in request.rows] == ["bob", "anna"]
+    assert [r.warn for r in request.rows] == [False, True]
+    assert request.count == "2 viewers"
+    assert (request.more, request.route_ok, request.route_missing) == (
+        "and %s more", "CrossWatch route", "No CrossWatch route",
+    )
+
+
+def test_viewers_request_counts_one_viewer_and_none():
+    one = viewers_request(Worded(), [Viewer(name="anna")], PlaylistListing(["X"], []), [], None)
+    assert one.count == "1 viewer"
+    assert viewers_request(Worded(), [], PlaylistListing(["X"], []), [], None).count == ""

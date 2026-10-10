@@ -362,3 +362,23 @@ msgstr ""
 msgctxt "#30117"
 msgid "no CrossWatch route"
 msgstr ""
+
+msgctxt "#30118"
+msgid "No viewers yet"
+msgstr ""
+
+msgctxt "#30119"
+msgid "CrossWatch route"
+msgstr ""
+
+msgctxt "#30120"
+msgid "No CrossWatch route"
+msgstr ""
+
+msgctxt "#30121"
+msgid "and %s more"
+msgstr ""
+
+msgctxt "#30122"
+msgid "not a TV show or film playlist"
+msgstr ""

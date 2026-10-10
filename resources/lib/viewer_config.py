@@ -20,9 +20,15 @@ from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.config import read_settings
 from resources.lib.constants import (
+    VIEWER_MORE,
     VIEWER_NONE,
+    VIEWER_PLAYLISTS,
+    VIEWER_PROFILES,
+    VIEWER_ROUTE_MISSING,
+    VIEWER_ROUTE_OK,
     VIEWER_SUMMARY_PLAYLISTS,
     VIEWER_SUMMARY_PROFILES,
+    VIEWER_UNUSABLE,
     VIEWERS_ADD,
     VIEWERS_ALSO,
     VIEWERS_COUNT,
@@ -53,6 +59,7 @@ from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
+from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, PanelLine, ViewerRow, ViewersRequest
 
 _log = get_logger("config")
 
@@ -206,6 +213,66 @@ def current_routes(kodi: KodiApi) -> RouteFacts | None:
     if settings.webhook_url() is None:
         return None
     return RouteStore(paths.routes_path(kodi)).load(config_fingerprint(settings.webhook_token))
+
+
+def panel_lines(
+    kodi: KodiApi, viewer: Viewer, listing: PlaylistListing, profiles: Sequence[str] | None
+) -> tuple[PanelLine, ...]:
+    """The viewer's playlists and profiles in full, each tagged when it needs fixing.
+
+    profiles is None when Kodi's profiles could not be read: then nothing is called missing.
+    """
+    gone = set(missing_playlists(viewer, listing.matchable, listing.unusable))
+    wrong = set(unusable_playlists(viewer, listing.unusable))
+    missing, none = _text(kodi, VIEWERS_MISSING), _text(kodi, VIEWER_NONE)
+    lines = [PanelLine(_text(kodi, VIEWER_PLAYLISTS), heading=True)]
+    for name in viewer.playlists:
+        if name in wrong:
+            lines.append(PanelLine(name, tag=_text(kodi, VIEWER_UNUSABLE), warn=True))
+        elif name in gone:
+            lines.append(PanelLine(name, tag=missing, warn=True))
+        else:
+            lines.append(PanelLine(name))
+    if not viewer.playlists:
+        lines.append(PanelLine(none))
+    lines.append(PanelLine(_text(kodi, VIEWER_PROFILES), heading=True))
+    known = None if profiles is None else {p.casefold() for p in profiles}
+    for profile in viewer.profiles:
+        if known is not None and profile.casefold() not in known:
+            lines.append(PanelLine(profile, tag=missing, warn=True))
+        else:
+            lines.append(PanelLine(profile))
+    if not viewer.profiles:
+        lines.append(PanelLine(none))
+    return tuple(lines)
+
+
+def route_state(viewer: Viewer, routes: RouteFacts | None) -> str:
+    # Only what CrossWatch said about this pairing: without a reply there is no claim.
+    if routes is None or viewer.name not in routes.asked:
+        return ""
+    return ROUTE_ACCEPTED if viewer.name in routes.accepted else ROUTE_REFUSED
+
+
+def viewers_request(
+    kodi: KodiApi,
+    viewers: Sequence[Viewer],
+    listing: PlaylistListing,
+    profiles: Sequence[str] | None,
+    routes: RouteFacts | None,
+) -> ViewersRequest:
+    rows = tuple(
+        ViewerRow(key=v.name, lines=panel_lines(kodi, v, listing, profiles), route=route_state(v, routes))
+        for v in viewers
+    )
+    return ViewersRequest(
+        heading=_text(kodi, VIEWERS_HEADING),
+        count=_count(kodi, len(rows), VIEWERS_ONE_VIEWER, VIEWERS_COUNT) if rows else "",
+        rows=rows,
+        more=_text(kodi, VIEWER_MORE),
+        route_ok=_text(kodi, VIEWER_ROUTE_OK),
+        route_missing=_text(kodi, VIEWER_ROUTE_MISSING),
+    )
 
 
 def summary_text(kodi: KodiApi, viewer: Viewer) -> str:
