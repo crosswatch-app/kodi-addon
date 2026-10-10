@@ -2,14 +2,11 @@ import pytest
 
 from resources.lib import viewer_config
 from resources.lib.constants import (
-    LABEL_BACK,
     VIEWER_NONE,
     VIEWER_SUMMARY_PLAYLISTS,
     VIEWER_SUMMARY_PROFILES,
     VIEWERS_ADD,
     VIEWERS_ALSO,
-    VIEWERS_EDIT_PLAYLISTS,
-    VIEWERS_EDIT_PROFILES,
     VIEWERS_HEADING,
     VIEWERS_MISSING,
     VIEWERS_MISSING_COUNT,
@@ -20,12 +17,14 @@ from resources.lib.constants import (
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
     VIEWERS_PROFILES,
-    VIEWERS_REMOVE,
+    VIEWERS_PROFILES_FAILED,
+    VIEWERS_REMOVE_CONFIRM,
+    VIEWERS_REMOVE_MESSAGE,
     VIEWERS_UNUSABLE_COUNT,
 )
 from resources.lib.models import Viewer
 from resources.lib.playlist_index import PLAYLIST_DIR
-from resources.lib.storage import JsonViewerStore
+from resources.lib.storage import JsonViewerStore, PromptMemory
 from resources.lib.ui.list_window import ListResult, ListState
 from resources.lib.viewer_config import (
     PlaylistListing,
@@ -109,14 +108,6 @@ def test_an_unreadable_playlist_is_still_offered():
     assert available_playlists(_typed_listing({"Anna TV": None})).matchable == ["Anna TV"]
 
 
-def test_a_viewer_with_an_unusable_playlist_is_flagged_but_not_as_missing():
-    labels = viewer_config.viewer_labels(
-        FakeKodi(), [Viewer(name="anna", playlists=("Eps", "Anna TV"))], ["Anna TV"], ["Eps"]
-    )
-    assert f"#{VIEWERS_UNUSABLE_COUNT}" in labels[0]
-    assert f"#{VIEWERS_MISSING_COUNT}" not in labels[0]
-
-
 def test_adding_a_viewer_appends_it():
     assert apply_edit([], "anna", ("Anna TV",), ("Anna",)) == [
         Viewer(name="anna", playlists=("Anna TV",), profiles=("Anna",))
@@ -146,162 +137,6 @@ def test_a_duplicate_name_is_rejected_case_insensitively():
 
 def test_a_valid_name_is_returned_trimmed():
     assert validate_name("  anna  ", []) == "anna"
-
-
-# --- the dialog flow -------------------------------------------------------
-
-class ScriptedKodi(FakeKodi):
-    """Answers a scripted sequence of select, input and pick-window calls."""
-
-    def __init__(self, playlists, selects, inputs=None, picks=None, confirms=None) -> None:
-        files = [{"label": n, "file": f"special://profile/playlists/video/{n}.xsp"} for n in playlists]
-        super().__init__(rpc_handlers={"Files.GetDirectory": lambda params: {"files": files}})
-        self._selects = list(selects)
-        self._inputs = list(inputs or [])
-        self._picks = list(picks or [])
-        self._confirms = list(confirms or [])
-        self.select_headings: list[str] = []
-        self.select_options: list[list[str]] = []
-
-    def select(self, heading, options):
-        self.select_headings.append(heading)
-        self.select_options.append(list(options))
-        # No silent fallback: an exhausted script means the test's flow is wrong, and a
-        # default of -1 would rescue it by quietly backing out of the menu.
-        assert self._selects, f"unscripted select: {heading} {options}"
-        return self._selects.pop(0)
-
-    def text_input(self, heading, default=""):
-        return self._inputs.pop(0) if self._inputs else ""
-
-    def list_window(self, request, state):
-        self.list_window_calls.append((request, state))
-        keys = self._picks.pop(0) if self._picks else None
-        if keys is None:
-            return ListResult("close", state)
-        return ListResult("done", state, keys=tuple(keys))
-
-    def confirm(self, heading, message, autoclose=0):
-        return self._confirms.pop(0) if self._confirms else False
-
-
-def test_a_viewer_can_be_added_on_a_fresh_install(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    # menu is [Add viewer]; after the add it is [anna, Add viewer]; Cancel closes it
-    kodi = ScriptedKodi(["Anna TV"], selects=[0, -1], inputs=["anna"], picks=[["Anna TV"]])
-    run_dialog(kodi, store)
-    assert store.viewers() == [Viewer(name="anna", playlists=("Anna TV",))]
-
-
-def test_editing_preselects_the_current_playlists(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna", playlists=("Bob TV",))])
-    # pick viewer 0 -> Edit playlists -> keep -> Cancel
-    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], picks=[["Bob TV"]])
-    run_dialog(kodi, store)
-    assert kodi.list_window_calls[0][0].ticked == ("Bob TV",)
-    assert store.viewers()[0].playlists == ("Bob TV",)
-
-
-def test_cancelling_the_playlist_dialog_leaves_the_mapping_alone(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna", playlists=("Bob TV",))])
-    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], picks=[None])
-    run_dialog(kodi, store)
-    assert store.viewers()[0].playlists == ("Bob TV",)
-
-
-def test_a_viewer_can_be_removed(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna"), Viewer(name="bob")])
-    # [anna, bob, Add] -> pick anna -> Remove -> confirm -> [bob, Add] -> Cancel
-    kodi = ScriptedKodi([], selects=[0, 2, -1], confirms=[True])
-    run_dialog(kodi, store)
-    assert [v.name for v in store.viewers()] == ["bob"]
-
-
-def test_a_duplicate_name_does_not_replace_the_existing_viewer(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna", playlists=("Anna TV",))])
-    kodi = ScriptedKodi(["Anna TV"], selects=[1, -1], inputs=["ANNA"])
-    run_dialog(kodi, store)
-    assert store.viewers() == [Viewer(name="anna", playlists=("Anna TV",))]
-
-
-def test_backing_out_of_the_menu_saves_nothing_new(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna")])
-    run_dialog(ScriptedKodi([], selects=[-1]), store)
-    assert [v.name for v in store.viewers()] == ["anna"]
-
-
-def test_a_viewer_whose_playlist_has_vanished_is_flagged_in_the_list():
-    """The whole failure starts here: a playlist is renamed and nothing says so.
-
-    The service cannot name it in the shared log, and the toast only fires once the build
-    runs. The configuration screen is where someone goes to fix it, so it has to say which
-    viewer is affected.
-    """
-    labels = viewer_config.viewer_labels(
-        FakeKodi(),
-        [Viewer(name="anna", playlists=("Gone", "Anna TV")), Viewer(name="bob", playlists=("Anna TV",))],
-        ["Anna TV"],
-    )
-    assert labels[0].startswith("anna")
-    assert "!" in labels[0]
-    assert "!" not in labels[1]
-
-
-def test_nothing_is_flagged_when_every_playlist_exists():
-    labels = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("Anna TV",))], ["Anna TV"])
-    assert "!" not in labels[0]
-
-
-def test_no_viewer_is_flagged_when_the_playlist_listing_failed():
-    """available_playlists returns [] on an RPC failure, which is not the same as none
-    existing. Flagging every viewer there would be a false alarm during a Kodi hiccup."""
-    labels = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("Anna TV",))], [])
-    assert "!" not in labels[0]
-
-
-def test_a_viewer_with_no_playlists_is_not_flagged():
-    labels = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna")], ["Anna TV"])
-    assert "!" not in labels[0]
-
-
-# --- translated labels ----------------------------------------------------
-
-
-def test_the_viewer_list_is_translated_and_has_no_done_row(tmp_path):
-    """Kodi's select dialog has its own Cancel, which closes and saves exactly as Done did."""
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna")])
-    kodi = ScriptedKodi([], selects=[-1])
-    run_dialog(kodi, store)
-    assert kodi.select_headings == [f"#{VIEWERS_HEADING}"]
-    assert kodi.select_options[0][-1] == f"#{VIEWERS_ADD}"
-    assert len(kodi.select_options[0]) == 2
-
-
-def test_the_viewer_menu_is_translated(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna")])
-    kodi = ScriptedKodi([], selects=[0, 3, -1])
-    run_dialog(kodi, store)
-    assert kodi.select_options[1] == [
-        f"#{VIEWERS_EDIT_PLAYLISTS}",
-        f"#{VIEWERS_EDIT_PROFILES}",
-        f"#{VIEWERS_REMOVE}",
-        f"#{LABEL_BACK}",
-    ]
-
-
-def test_one_playlist_reads_in_the_singular():
-    """'anna (1 playlists)' read wrongly."""
-    one = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("A",))], ["A"])
-    two = viewer_config.viewer_labels(FakeKodi(), [Viewer(name="anna", playlists=("A", "B"))], ["A", "B"])
-    assert one == [f"anna (#{VIEWERS_ONE_PLAYLIST})"]
-    assert two == [f"anna (#{VIEWERS_PLAYLISTS})"]
 
 
 # --- the playlist picker ---------------------------------------------------
@@ -427,31 +262,6 @@ def test_a_failed_listing_keeps_the_mapping():
     assert kodi.list_window_calls == []
 
 
-def test_adding_a_viewer_shows_who_else_has_each_playlist(tmp_path):
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="bob", playlists=("Shared",))])
-    # [bob, Add viewer] -> Add -> name -> pick -> [bob, chloe, Add] -> Cancel
-    kodi = ScriptedKodi(["Shared"], selects=[1, -1], inputs=["chloe"], picks=[["Shared"]])
-    run_dialog(kodi, store)
-    request, _ = kodi.list_window_calls[0]
-    assert request.rows[0].detail == f"#{VIEWERS_ALSO}"
-    assert store.viewers()[1] == Viewer(name="chloe", playlists=("Shared",))
-
-
-def test_the_picker_logs_no_names(tmp_path):
-    from resources.lib import log as logmod
-
-    captured: list[str] = []
-    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
-    store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    store.save([Viewer(name="anna", playlists=("Secret list",))])
-    # [anna, Add] -> anna -> Edit playlists -> Done -> Cancel
-    run_dialog(ScriptedKodi(["Secret list"], selects=[0, 0, -1], picks=[["Secret list"]]), store)
-    viewer_config._edit_playlists(FakeKodi(), Viewer(name="anna"), [])
-    assert captured
-    assert not any(word in line for line in captured for word in ("Secret list", "anna"))
-
-
 # --- the viewer screens' pieces --------------------------------------------
 
 class Worded(FakeKodi):
@@ -550,3 +360,218 @@ def test_a_profile_matches_kodis_label_whatever_the_case():
     rows, ticked = profile_rows(Worded(), viewer, ["Master user"], [viewer])
     assert [r.key for r in rows] == ["Master user"]
     assert ticked == ("Master user",)
+
+
+# --- the viewer screens ----------------------------------------------------
+
+class ScriptedKodi(FakeKodi):
+    """Scripted list, viewer-window, pick, keyboard and confirm answers. Running out of list
+    or viewer-window answers fails the test: a default would hide a wrong flow."""
+
+    def __init__(self, playlists, lists=(), pages=(), picks=(), inputs=(), confirms=(), profiles=("Master user",)):
+        files = [{"label": n, "file": f"special://profile/playlists/video/{n}.xsp"} for n in playlists]
+        super().__init__(rpc_handlers={
+            "Files.GetDirectory": lambda params: {"files": files},
+            "Profiles.GetProfiles": lambda params: {"profiles": [{"label": p} for p in profiles]},
+        })
+        self._lists, self._pages, self._picks = list(lists), list(pages), list(picks)
+        self._inputs, self._confirms = list(inputs), list(confirms)
+        self.lists_shown: list = []
+        self.pick_requests: list = []
+
+    def list_window(self, request, state):
+        if request.pick:
+            self.pick_requests.append(request)
+            keys = self._picks.pop(0) if self._picks else None
+            return ListResult("close", state) if keys is None else ListResult("done", state, keys=tuple(keys))
+        self.lists_shown.append(request)
+        assert self._lists, "unscripted viewer list"
+        action, key = self._lists.pop(0)
+        return ListResult(action, state, key=key)
+
+    def viewer_window(self, heading, summary):
+        self.viewer_window_calls.append((heading, summary))
+        assert self._pages, f"unscripted viewer window for {heading}"
+        return self._pages.pop(0)
+
+    def text_input(self, heading, default=""):
+        self.input_calls.append((heading, default))
+        return self._inputs.pop(0) if self._inputs else ""
+
+    def confirm_window(self, heading, message):
+        self.confirm_window_calls.append((heading, message))
+        return self._confirms.pop(0) if self._confirms else False
+
+
+def _stores(tmp_path, viewers, answers=None):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save(viewers)
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    for key, names in (answers or {}).items():
+        memory.remember(key, tuple(names))
+    return store, memory
+
+
+def test_the_list_shows_every_viewer_with_add_viewer_always_available(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")])
+    kodi = ScriptedKodi([], lists=[("close", "")])
+    run_dialog(kodi, store, memory)
+    request = kodi.lists_shown[0]
+    assert [r.key for r in request.rows] == ["anna", "bob"]
+    assert request.bulk_always and request.bulk_all == f"#{VIEWERS_ADD}" and request.filters == ()
+    assert request.heading == f"#{VIEWERS_HEADING}"
+
+
+def test_opening_a_viewer_shows_their_window_and_back_returns_to_the_list(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna", playlists=("Anna TV",))])
+    kodi = ScriptedKodi(["Anna TV"], lists=[("open", "anna"), ("close", "")], pages=["back"])
+    run_dialog(kodi, store, memory)
+    assert kodi.viewer_window_calls[0][0] == "anna"
+    assert len(kodi.lists_shown) == 2
+
+
+def test_playlists_are_saved_as_soon_as_the_picker_closes(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna")])
+    saved_during = []
+    kodi = ScriptedKodi(
+        ["Anna TV"], lists=[("open", "anna"), ("close", "")], pages=["playlists", "back"], picks=[["Anna TV"]]
+    )
+    real = kodi.viewer_window
+
+    def page(heading, summary):
+        saved_during.append(store.viewers())
+        return real(heading, summary)
+
+    kodi.viewer_window = page
+    run_dialog(kodi, store, memory)
+    assert saved_during[1] == [Viewer(name="anna", playlists=("Anna TV",))]
+
+
+def test_profiles_are_picked_from_kodi_and_saved(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna")])
+    kodi = ScriptedKodi(
+        [], lists=[("open", "anna"), ("close", "")], pages=["profiles", "back"], picks=[["Kids"]],
+        profiles=("Master user", "Kids"),
+    )
+    run_dialog(kodi, store, memory)
+    assert [r.key for r in kodi.pick_requests[0].rows] == ["Master user", "Kids"]
+    assert store.viewers() == [Viewer(name="anna", profiles=("Kids",))]
+
+
+def test_a_failed_profile_listing_shows_a_notice_and_changes_nothing(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna", profiles=("Kids",))])
+    kodi = ScriptedKodi([], lists=[("open", "anna"), ("close", "")], pages=["profiles", "back"])
+
+    def boom(params):
+        raise RuntimeError("down")
+
+    kodi.rpc_handlers["Profiles.GetProfiles"] = boom
+    run_dialog(kodi, store, memory)
+    assert kodi.ok_calls and kodi.ok_calls[0][1] == f"#{VIEWERS_PROFILES_FAILED}"
+    assert store.viewers() == [Viewer(name="anna", profiles=("Kids",))]
+
+
+def test_rename_carries_the_remembered_answers_over(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna", playlists=("A",))], {"show:tvdb:1": ["anna"]})
+    kodi = ScriptedKodi(["A"], lists=[("open", "anna"), ("close", "")], pages=["rename", "back"], inputs=["annie"])
+    run_dialog(kodi, store, memory)
+    assert kodi.input_calls[0][1] == "anna"  # prefilled
+    assert store.viewers() == [Viewer(name="annie", playlists=("A",))]
+    answer = memory.recall("show:tvdb:1")
+    assert answer is not None and answer.viewers == ("annie",)
+    assert kodi.viewer_window_calls[1][0] == "annie"  # the window reopens under the new name
+
+
+def test_a_case_only_rename_is_accepted_and_answers_follow(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna")], {"show:tvdb:1": ["anna"]})
+    kodi = ScriptedKodi([], lists=[("open", "anna"), ("close", "")], pages=["rename", "back"], inputs=["Anna"])
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna")]
+    answer = memory.recall("show:tvdb:1")
+    assert answer is not None and answer.viewers == ("Anna",)
+
+
+def test_a_rename_to_another_viewers_name_changes_nothing(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")])
+    kodi = ScriptedKodi([], lists=[("open", "anna"), ("close", "")], pages=["rename", "back"], inputs=["BOB"])
+    run_dialog(kodi, store, memory)
+    assert [v.name for v in store.viewers()] == ["anna", "bob"]
+
+
+def test_remove_asks_then_strips_the_name_from_remembered_answers(tmp_path):
+    store, memory = _stores(
+        tmp_path, [Viewer(name="anna"), Viewer(name="bob")], {"show:tvdb:1": ["anna"], "show:tvdb:2": ["anna", "bob"]}
+    )
+    kodi = ScriptedKodi([], lists=[("open", "anna"), ("close", "")], pages=["remove"], confirms=[True])
+    run_dialog(kodi, store, memory)
+    assert kodi.confirm_window_calls[0] == (f"#{VIEWERS_REMOVE_CONFIRM}", f"#{VIEWERS_REMOVE_MESSAGE}")
+    assert [v.name for v in store.viewers()] == ["bob"]
+    assert memory.recall("show:tvdb:1") is None
+    shared = memory.recall("show:tvdb:2")
+    assert shared is not None and shared.viewers == ("bob",)
+
+
+def test_remove_answered_no_changes_nothing(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna")], {"show:tvdb:1": ["anna"]})
+    kodi = ScriptedKodi([], lists=[("open", "anna"), ("close", "")], pages=["remove", "back"], confirms=[False])
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="anna")]
+    answer = memory.recall("show:tvdb:1")
+    assert answer is not None and answer.viewers == ("anna",)
+
+
+def test_removing_the_last_viewer_leaves_add_viewer_reachable(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna")])
+    kodi = ScriptedKodi([], lists=[("open", "anna"), ("close", "")], pages=["remove"], confirms=[True])
+    run_dialog(kodi, store, memory)
+    empty = kodi.lists_shown[1]
+    assert empty.rows == () and empty.bulk_always
+
+
+def test_add_viewer_asks_the_name_then_playlists_then_opens_their_window(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="bob", playlists=("Shared",))])
+    kodi = ScriptedKodi(
+        ["Shared"], lists=[("bulk", ""), ("close", "")], pages=["back"], inputs=["chloe"], picks=[["Shared"]]
+    )
+    run_dialog(kodi, store, memory)
+    assert kodi.pick_requests[0].rows[0].detail == f"#{VIEWERS_ALSO}"
+    assert store.viewers()[1] == Viewer(name="chloe", playlists=("Shared",))
+    assert kodi.viewer_window_calls[0][0] == "chloe"
+
+
+def test_add_viewer_from_a_search_that_found_nobody(tmp_path):
+    """The bulk result carries no keys then; Add viewer must not depend on them."""
+    store, memory = _stores(tmp_path, [Viewer(name="anna")])
+    kodi = ScriptedKodi([], lists=[("bulk", ""), ("close", "")], pages=["back"], inputs=["carol"])
+    run_dialog(kodi, store, memory)
+    assert [v.name for v in store.viewers()] == ["anna", "carol"]
+
+
+def test_a_fresh_install_goes_straight_to_add_viewer(tmp_path):
+    store, memory = _stores(tmp_path, [])
+    kodi = ScriptedKodi(["Anna TV"], lists=[("close", "")], pages=["back"], inputs=["anna"], picks=[["Anna TV"]])
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="anna", playlists=("Anna TV",))]
+    assert kodi.input_calls and kodi.viewer_window_calls[0][0] == "anna"
+
+
+def test_a_fresh_install_that_cancels_the_name_closes_without_a_list(tmp_path):
+    store, memory = _stores(tmp_path, [])
+    kodi = ScriptedKodi([], inputs=[""])
+    run_dialog(kodi, store, memory)
+    assert kodi.lists_shown == [] and store.viewers() == []
+
+
+def test_the_screens_log_no_names(tmp_path):
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+    store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")], {"show:tvdb:1": ["anna"]})
+    kodi = ScriptedKodi(
+        ["Secret list"], lists=[("open", "anna"), ("open", "bob"), ("close", "")],
+        pages=["playlists", "rename", "back", "remove"], picks=[["Secret list"]], inputs=["annie"], confirms=[True],
+    )
+    run_dialog(kodi, store, memory)
+    assert captured
+    assert not any(word in line for line in captured for word in ("Secret list", "anna", "annie", "bob"))

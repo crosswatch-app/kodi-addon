@@ -111,18 +111,6 @@ msgctxt "#30048"
 msgid "Add viewer"
 msgstr ""
 
-msgctxt "#30049"
-msgid "Edit playlists"
-msgstr ""
-
-msgctxt "#30050"
-msgid "Edit Kodi profiles"
-msgstr ""
-
-msgctxt "#30051"
-msgid "Remove viewer"
-msgstr ""
-
 msgctxt "#30052"
 msgid "Playlists for %s"
 msgstr ""
