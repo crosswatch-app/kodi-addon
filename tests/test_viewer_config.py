@@ -30,7 +30,8 @@ from resources.lib.playlist_index import PLAYLIST_DIR
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 from resources.lib.ui.list_window import ListResult, ListState
-from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, PanelLine, ViewersResult
+from resources.lib.ui.panel import PanelLine
+from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, ViewersResult
 from resources.lib.viewer_config import (
     PlaylistListing,
     apply_edit,

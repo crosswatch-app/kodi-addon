@@ -10,20 +10,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from resources.lib.ui import panel
+from resources.lib.ui.panel import PanelLine
+
 # Text slots between the viewer's name and the route line. The XML has one set of controls
 # per slot; tests/test_skin_xml.py checks the two agree.
 PANEL_SLOTS = 8
 
 ROUTE_ACCEPTED = "accepted"
 ROUTE_REFUSED = "refused"
-
-
-@dataclass(frozen=True)
-class PanelLine:
-    text: str
-    heading: bool = False
-    tag: str = ""
-    warn: bool = False
 
 
 @dataclass(frozen=True)
@@ -56,21 +51,6 @@ class ViewersResult:
     key: str = ""
 
 
-def fit(lines: Sequence[PanelLine], more: str) -> tuple[PanelLine, ...]:
-    """At most PANEL_SLOTS lines. Cut lines end in "and N more", N counting what was left out
-    except headings, and a heading is not left dangling above it. The cut line carries the
-    warning of any line it hides, since the row's icon promises the panel shows the reason."""
-    if len(lines) <= PANEL_SLOTS:
-        return tuple(lines)
-    kept = list(lines[: PANEL_SLOTS - 1])
-    while kept and kept[-1].heading:
-        kept.pop()
-    hidden = lines[len(kept):]
-    left_out = sum(1 for line in hidden if not line.heading)
-    # replace rather than %: a translation that drops the placeholder must not raise.
-    return (*kept, PanelLine(more.replace("%s", str(left_out), 1), warn=any(line.warn for line in hidden)))
-
-
 def properties(row: ViewerRow, request: ViewersRequest) -> dict[str, str]:
     route_text = {ROUTE_ACCEPTED: request.route_ok, ROUTE_REFUSED: request.route_missing}
     props = {
@@ -78,14 +58,7 @@ def properties(row: ViewerRow, request: ViewersRequest) -> dict[str, str]:
         "route": row.route,
         "route_text": route_text.get(row.route, ""),
     }
-    shown = fit(row.lines, request.more)
-    for n in range(1, PANEL_SLOTS + 1):
-        line = shown[n - 1] if n <= len(shown) else PanelLine("")
-        props[f"slot{n}_head"] = line.text if line.heading else ""
-        props[f"slot{n}"] = "" if line.heading else line.text
-        props[f"slot{n}_tag"] = line.tag
-        props[f"slot{n}_warn"] = "true" if line.warn else ""
-    return props
+    return props | panel.slot_properties(row.lines, request.more, PANEL_SLOTS)
 
 
 def start_position(rows: Sequence[ViewerRow], key: str) -> int:

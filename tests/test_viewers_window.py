@@ -1,11 +1,10 @@
+from resources.lib.ui.panel import PanelLine
 from resources.lib.ui.viewers_window import (
     PANEL_SLOTS,
     ROUTE_ACCEPTED,
     ROUTE_REFUSED,
-    PanelLine,
     ViewerRow,
     ViewersRequest,
-    fit,
     properties,
     start_position,
 )
@@ -19,33 +18,6 @@ def _request(rows=(), more="and %s more") -> ViewersRequest:
         heading="Viewers", count="2 viewers", rows=tuple(rows), more=more,
         route_ok="CrossWatch route", route_missing="No CrossWatch route",
     )
-
-
-def test_lines_that_fit_are_kept_as_they_are():
-    lines = (HEAD_P, PanelLine("Anna TV"), HEAD_Q, PanelLine("Kids"))
-    assert fit(lines, "and %s more") == lines
-
-
-def test_lines_that_do_not_fit_end_in_and_n_more():
-    lines = (HEAD_P, *(PanelLine(f"P{i}") for i in range(10)), HEAD_Q, PanelLine("Kids"))
-    kept = fit(lines, "and %s more")
-    assert len(kept) == PANEL_SLOTS
-    assert kept[:-1] == lines[: PANEL_SLOTS - 1]
-    # P6 to P9 and Kids are left out; the profiles heading is not counted.
-    assert kept[-1] == PanelLine("and 5 more")
-
-
-def test_a_heading_is_never_the_last_line_before_and_n_more():
-    lines = (HEAD_P, *(PanelLine(f"P{i}") for i in range(5)), HEAD_Q, *(PanelLine(f"Q{i}") for i in range(4)))
-    kept = fit(lines, "and %s more")
-    assert not kept[-2].heading
-    assert kept[-1] == PanelLine("and 4 more")
-    assert len(kept) == PANEL_SLOTS - 1
-
-
-def test_more_text_without_a_placeholder_does_not_raise():
-    lines = tuple(PanelLine(f"P{i}") for i in range(PANEL_SLOTS + 2))
-    assert fit(lines, "more")[-1] == PanelLine("more")
 
 
 def test_a_row_warns_for_a_flagged_line_or_a_refused_route():
@@ -84,11 +56,3 @@ def test_the_window_starts_on_the_key_or_the_first_row():
     assert start_position(rows, "dan") == 0
     assert start_position(rows, "") == 0
     assert start_position((), "anna") == 0
-
-
-def test_a_warning_cut_off_the_panel_shows_on_and_n_more():
-    """The row's icon says something needs fixing; the panel must not hide where."""
-    lines = (HEAD_P, *(PanelLine(f"P{i}") for i in range(6)), HEAD_Q, PanelLine("Old", tag="missing", warn=True))
-    kept = fit(lines, "and %s more")
-    assert kept[-1] == PanelLine("and 1 more", warn=True)
-    assert not fit((*lines[:-1], PanelLine("Kids")), "and %s more")[-1].warn

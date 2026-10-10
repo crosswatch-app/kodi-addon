@@ -14,7 +14,8 @@ from resources.lib.constants import (
     WINDOW_YES,
 )
 from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, ListState
-from resources.lib.ui.viewers_window import PanelLine, ViewerRow, ViewersRequest, ViewersResult
+from resources.lib.ui.panel import PanelLine
+from resources.lib.ui.viewers_window import ViewerRow, ViewersRequest, ViewersResult
 from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
     BUTTON_ADD,

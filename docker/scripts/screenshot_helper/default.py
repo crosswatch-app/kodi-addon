@@ -167,17 +167,18 @@ def _profiles(scene: dict, path: str) -> None:
 
 def _split(scene: dict, path: str) -> None:
     from resources.lib.ui import viewers_window as vw
+    from resources.lib.ui.panel import PanelLine
 
     text = TARGET.getLocalizedString
-    heads = (vw.PanelLine(text(30107), heading=True), vw.PanelLine(text(30108), heading=True))
-    missing, none = text(30058), vw.PanelLine(text(30113))
+    heads = (PanelLine(text(30107), heading=True), PanelLine(text(30108), heading=True))
+    missing, none = text(30058), PanelLine(text(30113))
 
     def row(name, playlists, profiles=(), route=""):
         lines = (heads[0], *(playlists or (none,)), heads[1], *(profiles or (none,)))
         return vw.ViewerRow(name, lines, route)
 
     def line(name, tag=""):
-        return vw.PanelLine(name, tag=tag, warn=bool(tag))
+        return PanelLine(name, tag=tag, warn=bool(tag))
 
     easytv = ("All Shows", "Continue Watching", "Season Premieres", "Show Premieres", "Start Fresh", "Cartoons for the weekend")
     households = {

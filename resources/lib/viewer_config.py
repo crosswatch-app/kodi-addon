@@ -52,10 +52,10 @@ from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
+from resources.lib.ui.panel import PanelLine
 from resources.lib.ui.viewers_window import (
     ROUTE_ACCEPTED,
     ROUTE_REFUSED,
-    PanelLine,
     ViewerRow,
     ViewersRequest,
     ViewersResult,
