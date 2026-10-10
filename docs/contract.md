@@ -1,6 +1,6 @@
 # Kodi add-on contract
 
-Version 1.4. Draft.
+Version 1.5. Draft.
 
 ## The idea
 
@@ -139,16 +139,17 @@ When the add-on is active, CrossWatch stops polling that Kodi. No double scrobbl
 | Field | Needed | Notes |
 |---|---|---|
 | `version` | yes | Contract version. Now `1`. |
-| `event` | yes | `ping`, `start`, `resume`, `pause`, `progress` or `stop`. |
+| `event` | yes | `ping`, `start`, `resume`, `pause`, `progress`, `stop` or `rate`. |
 | `event_id` | yes | Unique per event. For logs, and for dedupe if CrossWatch ever needs it. |
-| `session_id` | playback | Same value for one playback on one device. |
+| `session_id` | playback | Same value for one playback on one device. On a `rate`, the playback it follows. |
 | `sent_at` | yes | ISO-8601 UTC, when the event happened. CrossWatch uses it as the watch time. |
-| `replayed` | no | `true` when a stored `stop` is delivered later. |
+| `replayed` | no | `true` when a stored `stop` or `rate` is delivered later. |
 | `addon_version` | no | Shown in CrossWatch. |
 | `device.id` | yes | Stable device id. Works with the server UUID filters. |
 | `device.name` | no | Shown in CrossWatch. |
-| `viewers` | yes | Who is watching. Can be empty. |
+| `viewers` | yes | Who is watching. Can be empty. On a `rate`, only who the rating belongs to. |
 | `viewers_source` | no | `playlist`, `profile` or `prompt`. How identity was decided. Diagnostic only. |
+| `rating` | `rate` only | Whole number, `1` to `10` to set, `0` to remove. See Ratings. |
 | `media.type` | playback | `movie` or `episode`. |
 | `media.title` | playback | Movie title, or the show title for episodes. |
 | `media.episode_title` | no | The episode's own title. |
@@ -163,7 +164,7 @@ When the add-on is active, CrossWatch stops polling that Kodi. No double scrobbl
 | `media.plex_rating_key` | no | PKC rating key, when `source` is `plexkodiconnect`. Not used yet. |
 | `pkc_skipped` | no | On the `ping` only. How many PKC playbacks were declined. Left out when zero. |
 
-Unknown fields are ignored. A `ping` has no `media` and no `session_id`.
+"Playback" in the Needed column includes `rate`. Unknown fields are ignored. A `ping` has no `media` and no `session_id`.
 
 There is no `cover` field. The playing card builds the poster from the tmdb id, and Kodi wraps its own art as `image://...` which CrossWatch would reject anyway.
 
@@ -196,6 +197,7 @@ No usable ids at all means don't send the event. There is nothing to route.
 | `progress` | Position update. Same as start. |
 | `pause` | Paused. |
 | `stop` | Stopped. Send the final `percent`, or `completed` when the duration was never known. |
+| `rate` | One viewer rated what was just watched, or removed their rating. See Ratings. |
 
 Live TV and recordings are out of scope. `Player.GetProperties` has a `live` property, and a channel reports `type: "channel"`. Send nothing for those. Recordings carry EPG metadata instead of library ids, which is a matching problem for CrossWatch to solve later.
 
@@ -209,6 +211,58 @@ Each Kodi route checks `viewers` against its own whitelist. If it matches, that 
 
 The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them and shows them in the user picker.
 
+## Ratings
+
+Planned for after add-on 1.0. CrossWatch does not handle `rate` yet. Until it does, it answers a `rate` with `ignored: true` and `unsupported_event`, so the add-on can tell.
+
+A `rate` is its own event, sent after the `stop` of a finished watch. The `stop` never waits for it.
+
+```json
+{
+  "version": 1,
+  "event": "rate",
+  "event_id": "2b9d6c41-8a17-4f3e-b0c5-6e1f9a7d3c22",
+  "session_id": "kodi-livingroom-1726742400",
+  "sent_at": "2026-09-19T20:52:40Z",
+  "device": { "id": "b8f1c2d4-livingroom", "name": "Living room" },
+  "viewers": ["anna"],
+  "rating": 8,
+  "media": {
+    "type": "episode",
+    "title": "The Expanse",
+    "episode_title": "Home",
+    "year": 2015,
+    "season": 2,
+    "episode": 5,
+    "ids": {
+      "tmdb_show": "63639",
+      "tvdb_show": "280619",
+      "imdb_show": "tt3230854"
+    },
+    "source": "library"
+  }
+}
+```
+
+- `rating` is a whole number. `1` to `10` sets the rating. `0` removes it.
+- Only send a `0` when the user chose to remove their rating. Closing or skipping the question sends nothing.
+- One event per viewer. `viewers` holds exactly the one person the rating belongs to. A playback without any viewer sends one event with an empty `viewers`.
+- With several viewers the add-on asks each one, and every answer is its own event. When the household chose a shared rating in the add-on, it still sends one event per viewer, each with the same score.
+- `media` is the same block as on the `stop`: same type, titles and ids. `percent`, `position_ms`, `duration_ms`, `completed` and `file` are not needed.
+- The rating is for what was played: the movie or the episode. Rating the show itself is not part of this.
+
+What CrossWatch does with it:
+
+- It routes a `rate` like a `stop`. The route of that viewer gets it once, and routes without a whitelist get it too.
+- It forwards the rating to the route's destination when that destination takes ratings. There is no extra switch on the CrossWatch side. The switch is the add-on's own setting.
+- Not every service takes a rating for an episode. CrossWatch sorts that out and skips the ones that do not. It does not turn an episode rating into a show rating.
+- A `rate` never touches the now-playing card or the watched state.
+- The same rating sent twice is harmless.
+
+If no matching route can take the rating, the answer is `ignored: true` with `no_rating_target`.
+
+Writing the rating into the Kodi library is the add-on's own choice and not part of this contract. Kodi holds one rating per item, not one per viewer.
+
 ## Cadence
 
 - Send every state change.
@@ -219,7 +273,9 @@ The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them an
 
 - No queue for normal events. Retry for 2 minutes counted from when the event happened, then drop it. So nothing arrives late.
 - One exception: a `stop` that completes a watch goes to disk before the first attempt and is kept until CrossWatch takes it, up to 7 days, surviving a Kodi restart. Kodi bumps its own playcount anyway, but only the add-on knows who watched.
+- A `rate` follows the same rule as that `stop`: stored before the first attempt, kept up to 7 days, and replayed with its original `event_id` and `sent_at` and `replayed: true`. Only the add-on knows who rated.
 - A stored stop is replayed with its original `event_id` and `sent_at`, and carries `replayed: true`. Plex, Emby and Jellyfin date the watch from `sent_at`. Trackers, CrossWatch's own history included, record it when it arrives.
+- A replayed `rate` is recorded when it arrives.
 - A late stop never touches the now-playing card. That is keyed per session.
 - Timeout of 10 seconds.
 - Retry on connection errors, timeouts, `5xx` and a lost response. A duplicate is safe: Trakt and Simkl dedupe server side, and the media server sinks just set a watched flag. A lost `stop` is worse.
@@ -233,7 +289,7 @@ CrossWatch always answers with JSON, normally a `200`.
 { "ok": true, "ignored": false, "crosswatch_version": "0.13.0" }
 ```
 
-If `ignored` is `true`, `error` tells why. For example `addon_disabled`, `no_routes` or `no_matching_route`. Show it in the add-on. Don't retry.
+If `ignored` is `true`, `error` tells why. For example `no_routes`, `no_matching_route` or `watcher_disabled`. Show it in the add-on. Don't retry.
 
 - A bad token gets a `401` with `{ "ok": false, "error": "invalid_token" }`. Don't retry.
 - An error inside CrossWatch gets a `500` with `internal_error`. Retry like any `5xx`.
@@ -257,6 +313,8 @@ A `ping` also tells which routes each viewer hits. Handy for a Test connection b
 CrossWatch takes what it understands and ignores the rest. Also from a newer `version`.
 
 There is no minimum CrossWatch version to check. Only a CrossWatch with this endpoint can take an event, and it reads an absent `percent` as unknown. An older CrossWatch answers `404`, so nothing is written.
+
+A CrossWatch that does not know `rate` yet answers it with `ignored: true` and `unsupported_event`. Nothing is written.
 
 ## PlexKodiConnect
 
