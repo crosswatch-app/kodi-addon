@@ -73,7 +73,15 @@ def _list(scene: dict, path: str) -> None:
         *(lw.ListFilter(n, lambda row, n=n: n in row.names) for n in ("Anna", "Ben", "Chloe")),
         lw.ListFilter("will ask again", lambda row: not row.names),
     )
-    request = lw.ListRequest("Remembered answers", rows, filters, "Forget all", "Forget %s shown")
+    request = lw.ListRequest(
+        heading="Remembered answers",
+        rows=rows,
+        count_one=TARGET.getLocalizedString(30097),
+        count_all=TARGET.getLocalizedString(30090),
+        filters=filters,
+        bulk_all="Forget all",
+        bulk_shown="Forget %s shown",
+    )
     dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
     dialog.prepare(request, lw.ListState(search=scene["search"], filter_index=scene["filter"]), TARGET.getLocalizedString)
     try:

@@ -69,7 +69,7 @@ def test_confirm_window_records_and_answers():
 def test_list_window_returns_scripted_results_then_close():
     from resources.lib.ui.list_window import ListRequest, ListResult, ListState
 
-    request = ListRequest("h", (), (), "a", "s")
+    request = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", bulk_all="a", bulk_shown="s")
     opened = ListResult("open", ListState(), key="k")
     kodi = FakeKodi()
     kodi.list_window_results = [opened]

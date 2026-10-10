@@ -94,7 +94,9 @@
                 <scrolltime>0</scrolltime>
                 <pagecontrol>101</pagecontrol>
                 <onup>30</onup>
-                <ondown>20</ondown>
+                <!-- First match wins (GUIAction GetNavigation). A hidden button cannot take focus. -->
+                <ondown condition="!String.IsEmpty(Window.Property(CW.Bulk))">20</ondown>
+                <ondown>21</ondown>
                 <itemlayout width="1140" height="76">
                     <control type="image">
                         <left>0</left><top>0</top><width>1140</width><height>66</height>
@@ -194,6 +196,8 @@
                 <label>$INFO[Window.Property(CW.Bulk)]</label>
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <!-- Empty with nothing shown: it would act on nothing. -->
+                <visible>!String.IsEmpty(Window.Property(CW.Bulk))</visible>
                 <onup>100</onup>
                 <onright>21</onright>
             </control>
@@ -208,7 +212,7 @@
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
                 <onup>100</onup>
-                <onleft>20</onleft>
+                <onleft condition="!String.IsEmpty(Window.Property(CW.Bulk))">20</onleft>
             </control>
         </control>
     </controls>

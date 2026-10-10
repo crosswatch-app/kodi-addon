@@ -297,7 +297,7 @@ class ListDialog(CrossWatchDialog):
             position = self.state().position
             if 0 <= position < len(self._shown):
                 self.finish("open", lw.ListResult("open", self.state(), key=self._shown[position].key))
-        elif controlId == BUTTON_BULK and self._shown:
+        elif controlId == BUTTON_BULK and lw.bulk_label(self._request, len(self._shown)):
             keys = tuple(row.key for row in self._shown)
             self.finish("bulk", lw.ListResult("bulk", self.state(), keys=keys))
         elif controlId == BUTTON_CLOSE:
@@ -326,6 +326,6 @@ class ListDialog(CrossWatchDialog):
             rows.selectItem(min(max(position, 0), len(self._shown) - 1))
         label = self._localised(WINDOW_VIEWER).replace("%s", row_filter.label) if row_filter else ""
         self.setProperty("CW.Filter", label)
-        self.setProperty("CW.Count", lw.count_text(self._localised, len(self._shown), len(request.rows)))
+        self.setProperty("CW.Count", lw.count_text(request, self._localised, len(self._shown)))
         self.setProperty("CW.Bulk", lw.bulk_label(request, len(self._shown)))
         self.setProperty("CW.Empty", "" if self._shown else "true")

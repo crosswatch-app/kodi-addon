@@ -188,7 +188,7 @@ def test_confirm_window_back_and_failure_are_no(runtime, monkeypatch):
     monkeypatch.setattr(window_mod, "ConfirmDialog", broken)
     assert runtime.confirm_window("h", "m") is False
 
-LIST_REQUEST = ListRequest("h", (), (), "Forget all", "Forget %s shown")
+LIST_REQUEST = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", bulk_all="Forget all", bulk_shown="Forget %s shown")
 
 
 def test_list_window_returns_what_the_window_returned(runtime, monkeypatch):

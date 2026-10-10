@@ -27,6 +27,8 @@ from resources.lib.constants import (
     REMEMBERED_NOT_STABLE,
     REMEMBERED_WILL_ASK,
     WINDOW_ALL,
+    WINDOW_COUNT_ALL,
+    WINDOW_COUNT_ONE,
     WINDOW_FORGET_ALL,
     WINDOW_FORGET_SHOWN,
 )
@@ -233,6 +235,8 @@ def run(kodi: KodiApi, memory: PromptMemory, viewers: list[Viewer]) -> None:
         request = ListRequest(
             heading=kodi.localised(REMEMBERED_HEADING),
             rows=tuple(_list_row(row) for row in rows.values()),
+            count_one=kodi.localised(WINDOW_COUNT_ONE),
+            count_all=kodi.localised(WINDOW_COUNT_ALL),
             filters=filters,
             bulk_all=kodi.localised(WINDOW_FORGET_ALL),
             bulk_shown=kodi.localised(WINDOW_FORGET_SHOWN),

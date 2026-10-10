@@ -115,9 +115,27 @@ def test_the_list_window_navigates_between_search_rows_and_buttons():
 
     # Close, not the list: the list is empty until Python fills it, see the who-watched test.
     assert root.findtext("defaultcontrol") == "21"
-    assert control("100").findtext("onup") == "30" and control("100").findtext("ondown") == "20"
+    assert control("100").findtext("onup") == "30"
     assert control("30").get("type") == "edit" and control("30").findtext("ondown") == "100"
     assert control("30").findtext("onright") == "31" and control("31").findtext("onleft") == "30"
-    assert control("20").findtext("onright") == "21" and control("21").findtext("onleft") == "20"
+    assert control("20").findtext("onright") == "21"
     assert control("100").findtext("pagecontrol") == "101"
     LIST.read_text(encoding="ascii")
+
+
+def _navigation(control: ET.Element, key: str) -> list[tuple[str | None, str]]:
+    return [(nav.get("condition"), (nav.text or "").strip()) for nav in control.findall(key)]
+
+
+def test_the_bulk_button_hides_and_down_reaches_close_when_nothing_is_shown():
+    """Kodi takes the first navigation whose condition holds, so the unconditioned Close
+    comes last; a hidden bulk button would otherwise swallow Down."""
+    root = ET.parse(LIST).getroot()
+    rows = root.find(".//control[@id='100']")
+    bulk = root.find(".//control[@id='20']")
+    close = root.find(".//control[@id='21']")
+    assert rows is not None and bulk is not None and close is not None
+    shown = "!String.IsEmpty(Window.Property(CW.Bulk))"
+    assert bulk.findtext("visible") == shown
+    assert _navigation(rows, "ondown")[-2:] == [(shown, "20"), (None, "21")]
+    assert _navigation(close, "onleft")[-1] == (shown, "20")

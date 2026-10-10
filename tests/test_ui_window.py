@@ -323,7 +323,15 @@ START = ListState()
 
 
 def _list(state=START, filters=FILTERS) -> tuple[Any, FakeRows, FakeEdit]:
-    request = ListRequest("Remembered answers", SHOWS, filters, "Forget all", "Forget %s shown")
+    request = ListRequest(
+        heading="Remembered answers",
+        rows=SHOWS,
+        count_one="1 show",
+        count_all="%s shows",
+        filters=filters,
+        bulk_all="Forget all",
+        bulk_shown="Forget %s shown",
+    )
     dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
     dialog.prepare(request, state, lambda i: LIST_TEXTS.get(i, ""))
     rows, edit = FakeRows(), FakeEdit()
@@ -485,3 +493,12 @@ def test_the_bulk_button_does_nothing_when_nothing_is_shown():
     dialog.onAction(Action(0))
     dialog.onClick(BUTTON_BULK)
     assert dialog.closed == 0 and dialog.result is None
+
+
+def test_nothing_shown_empties_the_bulk_label_so_the_button_hides():
+    dialog, _, edit = _list()
+    dialog.onInit()
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "zzz"
+    dialog.onAction(Action(0))
+    assert dialog.getProperty("CW.Bulk") == ""
