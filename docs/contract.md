@@ -213,8 +213,6 @@ The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them an
 
 ## Ratings
 
-Planned for after add-on 1.0. CrossWatch does not handle `rate` yet. Until it does, it answers a `rate` with `ignored: true` and `unsupported_event`, so the add-on can tell.
-
 A `rate` is its own event, sent after the `stop` of a finished watch. The `stop` never waits for it.
 
 ```json
@@ -257,9 +255,46 @@ What CrossWatch does with it:
 - It forwards the rating to the route's destination when that destination takes ratings. There is no extra switch on the CrossWatch side. The switch is the add-on's own setting.
 - Not every service takes a rating for an episode. CrossWatch sorts that out and skips the ones that do not. It does not turn an episode rating into a show rating.
 - A `rate` never touches the now-playing card or the watched state.
-- The same rating sent twice is harmless.
+- The same rating sent twice is harmless. CrossWatch ignores an identical rating for the same viewer and title within 10 seconds.
+- Show ids plus season and episode are enough for an episode rating. The episode's own id is not needed.
 
-If no matching route can take the rating, the answer is `ignored: true` with `no_rating_target`.
+The answer lists every route CrossWatch wrote to:
+
+```json
+{
+  "ok": true,
+  "ignored": false,
+  "crosswatch_version": "0.13.0",
+  "rated": [
+    { "id": "R1", "sink": "trakt", "ok": true }
+  ]
+}
+```
+
+- `rated` has one entry per route that took the rating. `ok` is `false` when the write to that destination failed. That is still a `200`, so don't retry it.
+- A `rating` that is not a whole number from `0` to `10` gets `ignored: true` with `invalid_rating`.
+- When no route accepts that viewer, the answer is `ignored: true` with `no_matching_route`.
+- When routes match but none can take the rating, the answer is `ignored: true` with `no_rating_target`. For example an episode rating to a Simkl route.
+
+Where a rating can go:
+
+| Destination | Movie | Episode | Note |
+|---|---|---|---|
+| Trakt | yes | yes | |
+| Plex | yes | yes | The title must be in the Plex library. |
+| MDBList | yes | yes | |
+| CrossWatch tracker | yes | yes | |
+| Floppy | yes | yes | Needs a TMDb id. |
+| PunchPlay | yes | yes | |
+| FlickList | yes | yes | |
+| WeTrakr | yes | yes | |
+| Scrob | yes | yes | Needs a TMDb id. |
+| Simkl | yes | no | Simkl has no episode ratings. |
+| AniList | yes | no | Scores a whole anime entry. |
+| Kitsu | yes | no | Scores a whole anime entry. |
+| MyAnimeList | yes | no | Scores a whole anime entry. |
+
+Emby, Jellyfin, Kodi and BingeBase take no rating.
 
 Writing the rating into the Kodi library is the add-on's own choice and not part of this contract. Kodi holds one rating per item, not one per viewer.
 
