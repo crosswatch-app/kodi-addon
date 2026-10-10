@@ -73,7 +73,14 @@ class CrossWatchDialog(xbmcgui.WindowXMLDialog):
         if self._filled:
             return
         self._filled = True
-        self.fill()
+        try:
+            self.fill()
+        except Exception as exc:
+            # Kodi logs an exception raised here and keeps the window open, and doModal never
+            # sees it: without this the caller waits on a window with nothing in it.
+            _log.warning("ui.window_failed", window=self.name, error_type=type(exc).__name__)
+            self.finish("error")
+            return
         self._show_countdown()
         if self._remaining > 0 or self._close_on_playback:
             self._thread = threading.Thread(target=self._watch, name="crosswatch-window", daemon=True)

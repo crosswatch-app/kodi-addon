@@ -213,3 +213,18 @@ def test_stop_after_an_outside_close_logs_and_ends_the_watch():
     dialog.stop()
     assert dialog.close_reason == "closed" and dialog.result is None
     assert dialog._thread is not None and not dialog._thread.is_alive()
+
+
+def test_a_window_that_fails_to_fill_closes_as_a_logged_cancel():
+    """Kodi logs an exception raised in onInit and keeps the window open, so without this
+    the service thread would wait on a window nobody may be there to close."""
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+    dialog, _ = _dialog(autoclose=3)
+    dialog.set_control(LIST_VIEWERS, None)  # addItem on None raises
+    dialog.onInit()
+    assert dialog.close_reason == "error" and dialog.result is None and dialog.closed == 1
+    assert any("ui.window_failed" in line and "AttributeError" in line for line in captured)
+    assert dialog._thread is None
