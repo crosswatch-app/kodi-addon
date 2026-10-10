@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 MediaType = Literal["episode", "movie"]
-EventKind = Literal["start", "pause", "resume", "progress", "stop"]
+EventKind = Literal["start", "pause", "resume", "progress", "stop", "rate"]
 ViewersSource = Literal["playlist", "profile", "prompt"]
 # The contract's vocabulary. Typed rather than a bare str so a value outside it cannot
 # reach the wire, and defaulted to the value the overwhelming majority of items carry.
@@ -70,6 +70,8 @@ class PlaybackEvent:
     # Not on the wire. Marks the one event worth keeping through an outage and a restart:
     # a stop that Kodi itself would count as watched. See the outbox.
     completes_watch: bool = False
+    # Only on a rate: 1 to 10 sets the score, 0 removes it.
+    rating: int | None = None
 
 
 @dataclass(frozen=True)

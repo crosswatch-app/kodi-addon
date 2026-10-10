@@ -313,7 +313,14 @@ class HttpReporter:
                 reason=str(parsed.get("error") or "activity_not_recorded"),
             )
             return False
-        _log.info("reporter.posted", url=self._safe_url, event=kind)
+        rated = parsed.get("rated")
+        if kind == "rate" and isinstance(rated, list):
+            # A write that failed at a destination is still a 200: CrossWatch logs why, and
+            # sending the same score again would fail the same way.
+            failed = sum(1 for route in rated if isinstance(route, dict) and route.get("ok") is False)
+            _log.info("reporter.rated", url=self._safe_url, routes=len(rated), failed=failed)
+        else:
+            _log.info("reporter.posted", url=self._safe_url, event=kind)
         instance = parsed.get("instance")
         if kind == "ping" and self._on_instance is not None and isinstance(instance, str) and instance.strip():
             try:
@@ -332,8 +339,13 @@ class HttpReporter:
 
 
 def _kept_on_disk(event: Event) -> bool:
-    """Only a stop can mark something watched, whatever else a caller sets."""
-    return isinstance(event, PlaybackEvent) and event.kind == "stop" and event.completes_watch
+    """A completed watch and a rate: only the add-on knows who watched, or who rated.
+
+    Only a stop can mark something watched, whatever else a caller sets.
+    """
+    if not isinstance(event, PlaybackEvent):
+        return False
+    return event.kind == "rate" or (event.kind == "stop" and event.completes_watch)
 
 
 @dataclass(frozen=True)
@@ -405,11 +417,13 @@ class ReporterQueue:
         if outbox is not None and _kept_on_disk(event):
             # Stored before it is queued, so neither a full queue nor a shutdown between here
             # and the first attempt can lose it.
-            outbox.store.add(build_payload(event, self._device), "stop")
+            outbox.store.add(build_payload(event, self._device), event_kind(event))
         with self._latest_lock:
             self._sequence += 1
             sequence = self._sequence
-            if isinstance(event, PlaybackEvent):
+            # A rate follows its session's stop, which already cleared the entry; recording it
+            # would leave the session behind for good.
+            if isinstance(event, PlaybackEvent) and event.kind != "rate":
                 self._latest[event.session_id] = sequence
         try:
             self._queue.put_nowait((event, self._clock(), sequence))

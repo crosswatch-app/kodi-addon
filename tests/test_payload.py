@@ -199,3 +199,42 @@ def test_viewers_without_a_mechanism_send_no_viewers_source():
     body = build_payload(_event(viewers=("anna",), viewers_source=None), DEVICE)
     assert body["viewers"] == ["anna"]
     assert "viewers_source" not in body
+
+
+RATE_EVENT = replace(
+    BASE_EVENT,
+    kind="rate",
+    rating=8,
+    viewers=("anna",),
+    viewers_source=None,
+    position_ms=None,
+    duration_ms=None,
+    percent=None,
+)
+
+
+def test_a_rate_carries_the_rating_and_the_media_without_playback_fields():
+    body = build_payload(replace(RATE_EVENT, viewers_source="playlist", position_ms=5, duration_ms=9, percent=55.5, completed=True), DEVICE)
+    assert body["event"] == "rate"
+    assert body["rating"] == 8
+    assert body["viewers"] == ["anna"]
+    assert body["session_id"] == "s-1"
+    assert "viewers_source" not in body
+    for key in ("percent", "position_ms", "duration_ms", "completed", "file"):
+        assert key not in body["media"], key
+    assert body["media"]["type"] == "episode"
+    assert body["media"]["ids"] == {"tmdb_show": "1419", "tvdb_show": "83462", "imdb_show": "tt1219024", "tvdb": "3110601"}
+
+
+def test_a_rate_of_zero_is_sent_as_zero_and_nobody_as_an_empty_list():
+    body = build_payload(replace(RATE_EVENT, rating=0, viewers=()), DEVICE)
+    assert body["rating"] == 0 and body["viewers"] == []
+
+
+def test_a_rate_keeps_the_plex_rating_key():
+    media = replace(EPISODE, source="plexkodiconnect", plex_rating_key="12345")
+    assert build_payload(replace(RATE_EVENT, media=media), DEVICE)["media"]["plex_rating_key"] == "12345"
+
+
+def test_no_other_event_carries_a_rating():
+    assert "rating" not in build_payload(BASE_EVENT, DEVICE)

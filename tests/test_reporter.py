@@ -205,6 +205,25 @@ def test_an_ignored_response_is_not_delivery(lines, reporter_factory):
     assert any("reporter.rejected" in line and "invalid_profile" in line for line in lines)
 
 
+def test_rated_routes_are_logged_and_count_as_delivered(lines, reporter_factory):
+    body = b'{"ok": true, "ignored": false, "rated": [{"id": "R1", "sink": "trakt", "ok": true}, {"id": "R2", "sink": "plex", "ok": false}]}'
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory("http://host/webhook/kodi", connection_factory=lambda *a, **k: connection)
+    assert reporter.report(_event("rate"), DEVICE) is True
+    assert len(connection.requests) == 1
+    assert any("reporter.rated" in line and "routes=2" in line and "failed=1" in line for line in lines)
+
+
+@pytest.mark.parametrize("reason", ["no_matching_route", "no_rating_target", "invalid_rating", "unsupported_event"])
+def test_an_ignored_rate_is_logged_with_its_reason_and_not_retried(reason, lines, reporter_factory):
+    body = json.dumps({"ok": True, "ignored": True, "error": reason}).encode()
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory("http://host/webhook/kodi", connection_factory=lambda *a, **k: connection)
+    assert reporter.report(_event("rate"), DEVICE) is False
+    assert len(connection.requests) == 1
+    assert any("reporter.rejected" in line and reason in line for line in lines)
+
+
 def test_activity_not_recorded_is_not_delivery(lines, reporter_factory):
     connection = FakeConnection(FakeResponse(200, b'{"activity_recorded": false, "targets": []}'))
     reporter = reporter_factory("http://host/webhook/kodi?profile=tok", connection_factory=lambda *a, **k: connection)
@@ -859,6 +878,67 @@ def test_a_completed_watch_that_fails_live_stays_in_the_outbox(tmp_path):
     queue.submit(_watched())
     queue.stop(deadline=2.0)
     assert store.pending() == 1
+
+
+def _rated(event_id: str = "r-1") -> PlaybackEvent:
+    return replace(
+        _event("rate"), event_id=event_id, rating=8, viewers_source=None, position_ms=None, duration_ms=None, percent=None
+    )
+
+
+def test_a_rate_is_on_disk_before_the_first_attempt(tmp_path):
+    store = _store(tmp_path)
+    seen: list[int] = []
+
+    class Checking:
+        def report(self, event, device, deadline=None):
+            seen.append(store.pending())
+            return True
+
+    queue = ReporterQueue(Checking(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "accepted"))
+    queue.submit(_rated())
+    queue.stop(deadline=2.0)
+    assert seen == [1]
+    assert store.pending() == 0
+
+
+def test_a_rate_is_stored_under_its_own_kind(tmp_path):
+    store = _store(tmp_path)
+
+    class Down:
+        def report(self, event, device, deadline=None):
+            return False
+
+    queue = ReporterQueue(Down(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, lambda b, k: "unreachable"))
+    queue.submit(_rated())
+    queue.stop(deadline=2.0)
+    assert '"kind": "rate"' in (tmp_path / "outbox.json").read_text(encoding="utf-8")
+
+
+def test_a_stored_rate_replays_with_its_original_body(tmp_path):
+    _store(tmp_path).add(_body_of(_rated()), "rate")
+    store = _store(tmp_path)
+    sent: list[tuple[dict, str]] = []
+    done = threading.Event()
+
+    def send(body, kind):
+        sent.append((body, kind))
+        done.set()
+        return "accepted"
+
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, send))
+    assert done.wait(2.0)
+    queue.stop(deadline=2.0)
+    assert sent == [({**_body_of(_rated()), "replayed": True}, "rate")]
+
+
+def test_a_rate_leaves_no_session_behind_in_the_latest_table():
+    sink = Gate()
+    queue = _queued(sink, time.monotonic, replace(_event("stop"), event_id="stop"), replace(_rated(), event_id="rate"))
+    sink.release.set()
+    queue.stop(deadline=2.0)
+    assert sink.delivered == ["blocker", "stop", "rate"]
+    assert "s-1" not in queue._latest
 
 
 def test_any_other_event_is_never_stored(tmp_path):

@@ -12,6 +12,9 @@ reason about a media that is absent.
 
 Episodes are keyed on show ids plus season and episode number, because most episodes carry
 no usable episode id.
+
+A rate carries the stop's media block without the playback fields (contract, Ratings): its
+score is about the item, not about where playback was.
 """
 
 from __future__ import annotations
@@ -46,7 +49,9 @@ def build_payload(event: PlaybackEvent | PingEvent, device: Device) -> dict[str,
     body["event"] = event.kind
     body["session_id"] = event.session_id
     body["media"] = _media(event)
-    if event.viewers_source:
+    if event.kind == "rate":
+        body["rating"] = event.rating
+    elif event.viewers_source:
         body["viewers_source"] = event.viewers_source
     return body
 
@@ -76,6 +81,10 @@ def _media(event: PlaybackEvent) -> dict[str, Any]:
     ids = _ids(media)
     if ids:
         out["ids"] = ids
+    if event.kind == "rate":
+        if media.plex_rating_key:
+            out["plex_rating_key"] = media.plex_rating_key
+        return out
 
     # Omitted rather than zeroed when the duration was never known. Kodi reports a duration
     # of zero for a stream of unknown length, and a percent of 0.0 is indistinguishable from
