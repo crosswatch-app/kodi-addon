@@ -43,9 +43,9 @@ LIBRARY = {
 class ScriptedKodi(FakeKodi):
     """Answers each window from a queue, in the order the screen opens them."""
 
-    def __init__(self, lists=(), answers=(), confirms=(), library=None) -> None:
+    def __init__(self, windows=(), answers=(), confirms=(), library=None) -> None:
         super().__init__(rpc_handlers={"VideoLibrary.GetTVShows": lambda params: LIBRARY if library is None else library})
-        self.list_window_results = list(lists)
+        self.remembered_window_results = list(windows)
         self.answers = list(answers)
         self.confirms = list(confirms)
 
@@ -63,8 +63,12 @@ def memory(tmp_path):
     return PromptMemory(str(tmp_path / "prompts.json"))
 
 
-def _open(key: str, state: ListState = START) -> ListResult:
-    return ListResult("open", state, key=key)
+def _change(key: str, state: ListState = START) -> ListResult:
+    return ListResult("change", state, key=key)
+
+
+def _forget(key: str, state: ListState = START) -> ListResult:
+    return ListResult("forget", state, key=key)
 
 
 def _bulk(*keys: str, state: ListState = START) -> ListResult:
@@ -77,7 +81,7 @@ def _rows(memory, kodi=None, viewers=VIEWERS):
 
 
 def _shown(memory, kodi=None):
-    return [(row.name, row.tag, row.detail) for row in _rows(memory, kodi)]
+    return [(row.name, row.warn, row.viewers) for row in _rows(memory, kodi)]
 
 
 # --- rows -------------------------------------------------------------------
@@ -85,7 +89,7 @@ def _shown(memory, kodi=None):
 
 def test_a_show_is_listed_by_its_library_title_with_its_viewers(memory):
     memory.remember("show:tvdb:100", ("anna", "bob"))
-    assert _shown(memory) == [("Alpha", "", "anna, bob")]
+    assert _shown(memory) == [("Alpha", False, ("anna", "bob"))]
     assert _rows(memory)[0].thumb == "image://alpha/"
 
 
@@ -97,34 +101,31 @@ def test_rows_are_sorted_by_title(memory):
 
 def test_a_removed_viewer_is_left_out_and_nobody_left_reads_as_asking_again(memory):
     memory.remember("show:tvdb:100", ("carol",))
-    assert _shown(memory) == [("Alpha", "", f"#{REMEMBERED_WILL_ASK}")]
+    assert _shown(memory) == [("Alpha", False, ())]
 
 
 def test_a_show_no_longer_in_the_library_keeps_its_stored_title(memory):
     memory.remember("show:tvdb:999", ("anna",), title="Gone Show", year=2001)
-    assert _shown(memory) == [("Gone Show", f"#{REMEMBERED_NOT_IN_LIBRARY_HEAD}", "anna")]
+    assert _shown(memory) == [("Gone Show", True, ("anna",))]
     assert _rows(memory)[0].thumb == ""
 
 
 def test_a_show_with_neither_library_entry_nor_title_shows_its_id(memory):
     memory.remember("show:tvdb:999", ("anna",))
-    assert _shown(memory) == [("tvdb 999", f"#{REMEMBERED_NOT_IN_LIBRARY_HEAD}", "anna")]
+    assert _shown(memory) == [("tvdb 999", True, ("anna",))]
 
 
 def test_a_library_id_answer_that_still_matches_is_listed_normally(memory):
     memory.remember("tvshow:42", ("anna",), title="No Ids", year=2020)
-    assert [(r.name, r.tag, r.changeable) for r in _rows(memory)] == [("No Ids", "", True)]
+    assert [(r.name, r.warn, r.changeable) for r in _rows(memory)] == [("No Ids", False, True)]
 
 
 def test_a_library_id_answer_that_no_longer_matches_is_marked_and_cannot_be_changed(memory):
     """The id now holds another show, or the answer predates stored titles."""
     memory.remember("tvshow:42", ("anna",), title="Old Name", year=2020)
     memory.remember("tvshow:7", ("bob",))
-    assert sorted((r.name, r.tag, r.changeable) for r in _rows(memory)) == sorted(
-        [
-            (f"#{REMEMBERED_LIBRARY_ID}", f"#{REMEMBERED_NOT_STABLE_HEAD}", False),
-            ("Old Name", f"#{REMEMBERED_NOT_STABLE_HEAD}", False),
-        ]
+    assert sorted((r.name, r.warn, r.changeable) for r in _rows(memory)) == sorted(
+        [(f"#{REMEMBERED_LIBRARY_ID}", True, False), ("Old Name", True, False)]
     )
 
 
@@ -136,17 +137,17 @@ def test_a_failed_library_lookup_still_lists_answers_without_judging_them(memory
 
     kodi = ScriptedKodi()
     kodi.rpc_handlers["VideoLibrary.GetTVShows"] = boom
-    assert _shown(memory, kodi) == [("Alpha", "", "anna")]
+    assert _shown(memory, kodi) == [("Alpha", False, ("anna",))]
 
 
-# --- the list window ----------------------------------------------------------
+# --- the split window ----------------------------------------------------------
 
 
 def test_the_list_holds_every_answer_with_viewer_filters(memory):
     memory.remember("show:tvdb:100", ("anna",))
     kodi = ScriptedKodi()
     remembered.run(kodi, memory, VIEWERS)
-    request, state = kodi.list_window_calls[0]
+    request, state = kodi.remembered_window_calls[0]
     assert request.heading == f"#{REMEMBERED_HEADING}"
     assert [row.title for row in request.rows] == ["Alpha"]
     assert request.rows[0].names == ("anna",) and request.rows[0].thumb == "image://alpha/"
@@ -160,7 +161,7 @@ def test_the_viewer_filters_match_their_rows(memory):
     memory.remember("tvshow:42", ("carol",), title="No Ids", year=2020)  # carol is not configured
     kodi = ScriptedKodi()
     remembered.run(kodi, memory, VIEWERS)
-    request, _ = kodi.list_window_calls[0]
+    request, _ = kodi.remembered_window_calls[0]
     every, anna, bob, will_ask = request.filters
     assert [r.title for r in request.rows if anna.match(r)] == ["Alpha"]
     assert [r.title for r in request.rows if bob.match(r)] == []
@@ -172,7 +173,7 @@ def test_a_removed_viewer_has_no_filter_and_their_rows_count_as_will_ask(memory)
     memory.remember("show:tvdb:100", ("carol",))
     kodi = ScriptedKodi()
     remembered.run(kodi, memory, VIEWERS)
-    request, _ = kodi.list_window_calls[0]
+    request, _ = kodi.remembered_window_calls[0]
     assert "carol" not in [f.label for f in request.filters]
     assert request.filters[-1].match(request.rows[0])
 
@@ -181,70 +182,83 @@ def test_nothing_remembered_says_so_and_opens_no_window(memory):
     kodi = ScriptedKodi()
     remembered.run(kodi, memory, VIEWERS)
     assert kodi.notifications and kodi.notifications[0][1] == f"#{REMEMBERED_NONE_YET}"
-    assert kodi.list_window_calls == []
+    assert kodi.remembered_window_calls == []
 
 
 def test_opening_a_show_changes_its_answer_and_reopens_where_it_was(memory):
     memory.remember("show:tvdb:100", ("anna",), title="Alpha", year=2008)
     where = ListState(search="al", filter_index=1, position=0)
-    kodi = ScriptedKodi(lists=[_open("show:tvdb:100", where)], answers=[("bob",)])
+    kodi = ScriptedKodi(windows=[_change("show:tvdb:100", where)], answers=[("bob",)])
     remembered.run(kodi, memory, VIEWERS)
     assert memory.recall("show:tvdb:100") == RememberedAnswer(viewers=("bob",), title="Alpha", year=2008)
     request = kodi.who_watched_calls[0]
-    assert request.offer_forget is True and request.preselect == ("anna",), "the current answer is pre-ticked"
+    assert request.preselect == ("anna",), "the current answer is pre-ticked"
     assert (request.title, request.subtitle, request.poster) == ("Alpha", "2008", "image://alpha/")
     assert request.autoclose_seconds == 0 and request.close_on_playback is False
-    assert kodi.list_window_calls[1][1] == where
+    assert kodi.remembered_window_calls[1][1] == where
 
 
 def test_change_fills_in_a_title_an_older_answer_lacked(memory):
     memory.remember("show:tvdb:100", ("anna",))
-    remembered.run(ScriptedKodi(lists=[_open("show:tvdb:100")], answers=[("anna", "bob")]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(windows=[_change("show:tvdb:100")], answers=[("anna", "bob")]), memory, VIEWERS)
     assert memory.recall("show:tvdb:100") == RememberedAnswer(viewers=("anna", "bob"), title="Alpha", year=2008)
 
 
 def test_change_for_a_show_missing_from_the_library_has_no_poster(memory):
     memory.remember("show:tvdb:999", ("anna",), title="Gone", year=2001)
-    kodi = ScriptedKodi(lists=[_open("show:tvdb:999")], answers=[("bob",)])
+    kodi = ScriptedKodi(windows=[_change("show:tvdb:999")], answers=[("bob",)])
     remembered.run(kodi, memory, VIEWERS)
     request = kodi.who_watched_calls[0]
     assert (request.title, request.subtitle, request.poster) == ("Gone", "2001", "")
 
 
-def test_forget_in_the_window_forgets_the_answer(memory):
+def test_done_with_nobody_ticked_forgets_the_answer(memory):
     memory.remember("show:tvdb:100", ("anna",))
     memory.remember("tvshow:42", ("bob",), title="No Ids", year=2020)
-    remembered.run(ScriptedKodi(lists=[_open("show:tvdb:100")], answers=[()]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(windows=[_change("show:tvdb:100")], answers=[()]), memory, VIEWERS)
     assert list(memory.entries()) == ["tvshow:42"]
 
 
 def test_skip_in_the_window_leaves_the_answer_alone(memory):
     memory.remember("show:tvdb:100", ("anna",))
-    remembered.run(ScriptedKodi(lists=[_open("show:tvdb:100")], answers=[None]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(windows=[_change("show:tvdb:100")], answers=[None]), memory, VIEWERS)
     answer = memory.recall("show:tvdb:100")
     assert answer is not None and answer.viewers == ("anna",)
 
 
-def test_a_row_that_cannot_be_checked_asks_to_forget_instead(memory):
+def test_a_row_that_cannot_be_checked_is_never_changed(memory):
+    """The window hides Change for it; a change that arrives anyway does nothing."""
     memory.remember("tvshow:7", ("bob",))
-    kodi = ScriptedKodi(lists=[_open("tvshow:7")], confirms=[True])
+    kodi = ScriptedKodi(windows=[_change("tvshow:7")])
     remembered.run(kodi, memory, VIEWERS)
-    assert kodi.who_watched_calls == []
-    assert kodi.confirm_window_calls == [(f"#{REMEMBERED_HEADING}", f"#{REMEMBERED_CONFIRM_FORGET_ONE}")]
-    assert memory.entries() == {}
-
-
-def test_a_row_that_cannot_be_checked_stays_on_no(memory):
-    memory.remember("tvshow:7", ("bob",))
-    remembered.run(ScriptedKodi(lists=[_open("tvshow:7")], confirms=[False]), memory, VIEWERS)
+    assert kodi.who_watched_calls == [] and kodi.confirm_window_calls == []
     assert list(memory.entries()) == ["tvshow:7"]
+
+
+def test_forget_asks_first_and_forgets_on_yes(memory):
+    memory.remember("tvshow:7", ("bob",))
+    memory.remember("show:tvdb:100", ("anna",))
+    where = ListState(search="", filter_index=0, position=1, key="tvshow:7")
+    kodi = ScriptedKodi(windows=[_forget("tvshow:7", where)], confirms=[True])
+    remembered.run(kodi, memory, VIEWERS)
+    assert kodi.confirm_window_calls == [(f"#{REMEMBERED_HEADING}", f"#{REMEMBERED_CONFIRM_FORGET_ONE}")]
+    assert list(memory.entries()) == ["show:tvdb:100"]
+    # Reopened with the forgotten key: the window falls back to its position, the row that
+    # took its place.
+    assert kodi.remembered_window_calls[1][1] == where
+
+
+def test_forget_answered_no_keeps_the_answer(memory):
+    memory.remember("show:tvdb:100", ("anna",))
+    remembered.run(ScriptedKodi(windows=[_forget("show:tvdb:100")], confirms=[False]), memory, VIEWERS)
+    assert list(memory.entries()) == ["show:tvdb:100"]
 
 
 def test_forget_shown_forgets_only_the_rows_shown(memory):
     memory.remember("show:tvdb:100", ("anna",))
     memory.remember("tvshow:42", ("bob",), title="No Ids", year=2020)
     memory.remember("show:tvdb:999", ("bob",), title="Gone Show", year=2001)
-    kodi = ScriptedKodi(lists=[_bulk("show:tvdb:100", "show:tvdb:999")], confirms=[True])
+    kodi = ScriptedKodi(windows=[_bulk("show:tvdb:100", "show:tvdb:999")], confirms=[True])
     remembered.run(kodi, memory, VIEWERS)
     assert list(memory.entries()) == ["tvshow:42"]
     assert kodi.confirm_window_calls[0][1] == f"#{REMEMBERED_CONFIRM_FORGET_ALL}"
@@ -253,9 +267,9 @@ def test_forget_shown_forgets_only_the_rows_shown(memory):
 def test_forget_all_needs_a_yes(memory):
     memory.remember("show:tvdb:100", ("anna",))
     memory.remember("tvshow:42", ("bob",), title="No Ids", year=2020)
-    remembered.run(ScriptedKodi(lists=[_bulk("show:tvdb:100", "tvshow:42")], confirms=[False]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(windows=[_bulk("show:tvdb:100", "tvshow:42")], confirms=[False]), memory, VIEWERS)
     assert len(memory.entries()) == 2
-    remembered.run(ScriptedKodi(lists=[_bulk("show:tvdb:100", "tvshow:42")], confirms=[True]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(windows=[_bulk("show:tvdb:100", "tvshow:42")], confirms=[True]), memory, VIEWERS)
     assert memory.entries() == {}
 
 
@@ -263,7 +277,7 @@ def test_forget_wording_follows_the_count(memory):
     """'Forget who watched 1 shows?' read wrongly on a real Kodi."""
     memory.remember("show:tvdb:100", ("anna",))
     memory.remember("tvshow:42", ("bob",), title="No Ids", year=2020)
-    kodi = ScriptedKodi(lists=[_bulk("show:tvdb:100"), _bulk("show:tvdb:100", "tvshow:42")])
+    kodi = ScriptedKodi(windows=[_bulk("show:tvdb:100"), _bulk("show:tvdb:100", "tvshow:42")])
     remembered.run(kodi, memory, VIEWERS)
     assert [message for _, message in kodi.confirm_window_calls] == [
         f"#{REMEMBERED_CONFIRM_FORGET_ONE}",
@@ -273,7 +287,7 @@ def test_forget_wording_follows_the_count(memory):
 
 def test_bulk_with_nothing_shown_asks_nothing(memory):
     memory.remember("show:tvdb:100", ("anna",))
-    kodi = ScriptedKodi(lists=[_bulk()])
+    kodi = ScriptedKodi(windows=[_bulk()])
     remembered.run(kodi, memory, VIEWERS)
     assert kodi.confirm_window_calls == []
     assert len(memory.entries()) == 1
@@ -281,9 +295,9 @@ def test_bulk_with_nothing_shown_asks_nothing(memory):
 
 def test_forgetting_the_last_answer_closes_with_the_notice(memory):
     memory.remember("show:tvdb:100", ("anna",))
-    kodi = ScriptedKodi(lists=[_open("show:tvdb:100")], answers=[()])
+    kodi = ScriptedKodi(windows=[_change("show:tvdb:100")], answers=[()])
     remembered.run(kodi, memory, VIEWERS)
-    assert len(kodi.list_window_calls) == 1
+    assert len(kodi.remembered_window_calls) == 1
     assert kodi.notifications[-1][1] == f"#{REMEMBERED_NONE_YET}"
 
 
@@ -297,7 +311,7 @@ def test_log_lines_carry_no_titles_or_names(memory):
         memory.remember("show:tvdb:100", ("anna",))
         memory.remember("tvshow:42", ("bob",), title="No Ids", year=2020)
         kodi = ScriptedKodi(
-            lists=[_open("show:tvdb:100"), _bulk("tvshow:42", state=ListState(search="No"))],
+            windows=[_change("show:tvdb:100"), _bulk("tvshow:42", state=ListState(search="No"))],
             answers=[("bob",)],
             confirms=[True],
         )
@@ -330,7 +344,8 @@ def test_a_show_a_playlist_covers_is_marked_so(memory):
     covers = remembered.covering_playlists(kodi, [ANNA_LISTED, BOB], library)
     assert covers == {"show:tvdb:100": (("anna", "Anna TV"),)}
     rows = remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covers)
-    assert [(row.name, row.tag, row.detail) for row in rows] == [("Alpha", f"#{REMEMBERED_COVERED_BY}", "bob")]
+    assert [(row.name, row.warn, row.viewers) for row in rows] == [("Alpha", False, ("bob",))]
+    assert PanelLine(f"#{REMEMBERED_COVERED_BY}", heading=True) in rows[0].lines
     # Still changeable: the answer applies again if the show leaves the playlist.
     assert rows[0].changeable
 
@@ -341,7 +356,7 @@ def test_a_show_no_playlist_covers_is_not_marked(memory):
     library = remembered.library_shows(kodi)
     covers = remembered.covering_playlists(kodi, [ANNA_LISTED, BOB], library)
     rows = remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covers)
-    assert [(row.name, row.tag, row.detail) for row in rows] == [("Alpha", "", "bob")]
+    assert PanelLine(f"#{REMEMBERED_COVERED_BY}", heading=True) not in rows[0].lines
 
 
 def test_an_unreadable_playlist_marks_nothing(memory):
@@ -358,7 +373,8 @@ def test_the_screen_marks_covered_shows(memory):
     memory.remember("show:tvdb:100", ("bob",))
     kodi = PlaylistKodi()
     remembered.run(kodi, memory, [ANNA_LISTED, BOB])
-    assert kodi.list_window_calls[0][0].rows[0].tag == f"#{REMEMBERED_COVERED_BY}"
+    props = dict(kodi.remembered_window_calls[0][0].rows[0].properties)
+    assert f"#{REMEMBERED_COVERED_BY}" in props.values()
 
 
 def test_a_failed_bulk_write_is_not_logged_as_forgotten(memory, monkeypatch):
@@ -368,7 +384,7 @@ def test_a_failed_bulk_write_is_not_logged_as_forgotten(memory, monkeypatch):
     logmod.configure(log_dir=None, debug=False, sink=lambda msg, level: captured.append(msg))
     memory.remember("show:tvdb:100", ("anna",))
     monkeypatch.setattr(memory, "forget_many", lambda keys: False)
-    remembered.run(ScriptedKodi(lists=[_bulk("show:tvdb:100")], confirms=[True]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(windows=[_bulk("show:tvdb:100")], confirms=[True]), memory, VIEWERS)
     assert not any("config.remembered_forgot_all" in line for line in captured)
 
 

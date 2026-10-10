@@ -113,47 +113,6 @@
     "keys": [],
     "group": "remembered"
   },
-  "remembered-list": {
-    "window": "crosswatch-list.xml",
-    "rows": "library",
-    "search": "",
-    "filter": 0,
-    "keys": [],
-    "group": "remembered"
-  },
-  "remembered-list-filtered": {
-    "window": "crosswatch-list.xml",
-    "rows": "library",
-    "search": "e",
-    "filter": 1,
-    "keys": [],
-    "group": "remembered"
-  },
-  "remembered-list-nothing-matches": {
-    "window": "crosswatch-list.xml",
-    "rows": "library",
-    "search": "zzzz",
-    "filter": 0,
-    "keys": [],
-    "group": "remembered"
-  },
-  "remembered-change-forget": {
-    "window": "crosswatch-who.xml",
-    "library": "tvshow",
-    "subtitle": "{year}",
-    "names": [
-      "Anna",
-      "Ben",
-      "Chloe"
-    ],
-    "preselect": [
-      "Anna"
-    ],
-    "autoclose_seconds": 0,
-    "offer_forget": true,
-    "keys": [],
-    "group": "remembered"
-  },
   "playlist-picker": {
     "window": "crosswatch-list.xml",
     "rows": "playlists",

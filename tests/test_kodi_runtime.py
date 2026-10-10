@@ -165,29 +165,29 @@ LIST_REQUEST = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", 
 
 
 def test_list_window_returns_what_the_window_returned(runtime, monkeypatch):
-    class Dialog(window_mod.ListDialog):
+    class Dialog(window_mod.PickListDialog):
         def doModal(self) -> None:
-            self.finish("open", ListResult("open", ListState(search="x"), key="k"))
+            self.finish("done", ListResult("done", ListState(search="x"), keys=("k",)))
 
-    monkeypatch.setattr(window_mod, "ListDialog", Dialog)
+    monkeypatch.setattr(window_mod, "PickListDialog", Dialog)
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
-    assert runtime.list_window(LIST_REQUEST, ListState()) == ListResult("open", ListState(search="x"), key="k")
+    assert runtime.list_window(LIST_REQUEST, ListState()) == ListResult("done", ListState(search="x"), keys=("k",))
 
 
 def test_list_window_back_or_failure_is_close_with_the_state_kept(runtime, monkeypatch):
     def broken(*args, **kwargs):
         raise RuntimeError("no skin file")
 
-    monkeypatch.setattr(window_mod, "ListDialog", broken)
+    monkeypatch.setattr(window_mod, "PickListDialog", broken)
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
     state = ListState(search="a")
     assert runtime.list_window(LIST_REQUEST, state) == ListResult("close", state)
 
 
-PICK_REQUEST = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", pick=True)
+PICK_REQUEST = ListRequest(heading="h", rows=(), count_one="1", count_all="%s")
 
 
-def test_list_window_opens_the_pick_window_for_a_pick_request(runtime, monkeypatch):
+def test_list_window_opens_the_pick_window(runtime, monkeypatch):
     opened = []
 
     class Pick(window_mod.PickListDialog):

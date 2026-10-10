@@ -322,7 +322,6 @@ def _edit_playlists(
         rows=rows,
         count_one=_text(kodi, VIEWERS_ONE_PLAYLIST),
         count_all=_text(kodi, VIEWERS_PLAYLISTS),
-        pick=True,
         ticked=viewer.playlists,
     )
     result = kodi.list_window(request, ListState())
@@ -351,7 +350,6 @@ def _edit_profiles(
         rows=rows,
         count_one=_text(kodi, VIEWERS_ONE_PROFILE),
         count_all=_text(kodi, VIEWERS_PROFILES),
-        pick=True,
         ticked=ticked,
     )
     result = kodi.list_window(request, ListState())

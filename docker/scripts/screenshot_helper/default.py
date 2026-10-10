@@ -39,7 +39,6 @@ def _who_watched(scene: dict, path: str) -> None:
         names=tuple(scene["names"]),
         preselect=tuple(scene["preselect"]),
         autoclose_seconds=scene["autoclose_seconds"],
-        offer_forget=scene.get("offer_forget", False),
     )
     monitor = xbmc.Monitor()
     dialog = window.WhoWatchedDialog(window.WHO_WATCHED_XML, path, "Default", "1080i")
@@ -53,47 +52,16 @@ def _who_watched(scene: dict, path: str) -> None:
 
 
 DEMO_WHO = [("Anna", "Ben"), ("Chloe",), (), ("Ben",), ("Anna",), ("Anna", "Chloe"), ("Ben",), ()]
-DEMO_TAG = ["", "", "", "covered by playlist", "", "not in library", "", ""]
 
 
 def _list(scene: dict, path: str) -> None:
-    from resources.lib.ui import list_window as lw
-
     if scene.get("rows") == "playlists":
         _pick(scene, path)
         return
     if scene.get("rows") == "profiles":
         _profiles(scene, path)
         return
-    with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
-        shows = json.load(handle)["shows"]
-    rows = tuple(
-        lw.ListRow(
-            key=str(i), title=show["title"], detail=", ".join(DEMO_WHO[i % 8]) or "will ask again",
-            tag=DEMO_TAG[i % 8], thumb=show["poster"], names=DEMO_WHO[i % 8],
-        )
-        for i, show in enumerate(shows)
-    )
-    filters = (
-        lw.ListFilter("All", lambda row: True),
-        *(lw.ListFilter(n, lambda row, n=n: n in row.names) for n in ("Anna", "Ben", "Chloe")),
-        lw.ListFilter("will ask again", lambda row: not row.names),
-    )
-    request = lw.ListRequest(
-        heading="Remembered answers",
-        rows=rows,
-        count_one=TARGET.getLocalizedString(30097),
-        count_all=TARGET.getLocalizedString(30090),
-        filters=filters,
-        bulk_all="Forget all",
-        bulk_shown="Forget %s shown",
-    )
-    dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
-    dialog.prepare(request, lw.ListState(search=scene["search"], filter_index=scene["filter"]), TARGET.getLocalizedString)
-    try:
-        dialog.doModal()
-    finally:
-        dialog.stop()
+    raise ValueError(f"unknown list scene rows: {scene.get('rows')}")
 
 
 # name, other viewers with it, flag (string id or 0), ticked
@@ -123,7 +91,6 @@ def _pick(scene: dict, path: str) -> None:
         rows=rows,
         count_one=text(30059),
         count_all=text(30056),
-        pick=True,
         ticked=tuple(name for name, _, _, ticked in DEMO_PLAYLISTS if ticked),
     )
     dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
@@ -155,7 +122,7 @@ def _profiles(scene: dict, path: str) -> None:
     )
     request = lw.ListRequest(
         heading=text(30114).replace("%s", "Anna"), rows=rows, count_one=text(30105), count_all=text(30106),
-        pick=True, ticked=("Kids", "Old profile"),
+        ticked=("Kids", "Old profile"),
     )
     dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
     dialog.prepare(request, lw.ListState(), text)

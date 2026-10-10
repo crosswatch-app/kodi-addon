@@ -57,14 +57,14 @@ class ListRequest:
     # Empty hides the bulk button.
     bulk_all: str = ""
     bulk_shown: str = ""
-    # A pick list: OK ticks a row in place, Done returns every ticked key.
-    pick: bool = False
+    # The rows that start ticked.
     ticked: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ListResult:
-    # "open" (OK on a row), "bulk" (the bulk button), "done" (Done on a pick list) or "close"
+    # "bulk" (the bulk button), "done" (Done on a pick list), "change" and "forget" (the
+    # Remembered answers window) or "close"
     action: str
     state: ListState
     key: str = ""

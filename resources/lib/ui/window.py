@@ -39,7 +39,6 @@ WHO_WATCHED_XML = "crosswatch-who.xml"
 LIST_VIEWERS = 200
 BUTTON_DONE = 20
 BUTTON_SKIP = 21
-BUTTON_FORGET = 22
 
 Localised = Callable[[int], str]
 
@@ -172,7 +171,6 @@ class WhoWatchedDialog(CrossWatchDialog):
                 "CW.Subtitle": request.subtitle,
                 "CW.Poster": request.poster,
                 "CW.Question": localised(WHO_WATCHED_QUESTION),
-                "CW.OfferForget": "true" if request.offer_forget else "",
             },
             request.autoclose_seconds,
             request.close_on_playback,
@@ -196,9 +194,6 @@ class WhoWatchedDialog(CrossWatchDialog):
             self._show_ticks()
         elif controlId == BUTTON_DONE:
             self.finish("done", ww.answer(names, self._ticked))
-        elif controlId == BUTTON_FORGET and self._request.offer_forget:
-            # The same answer as Done with nobody ticked, which the screen treats as forget.
-            self.finish("forget", ())
         elif controlId == BUTTON_SKIP:
             self.finish("skip")
 
@@ -386,10 +381,6 @@ class ListDialog(CrossWatchDialog):
         elif controlId == LIST_FILTER and self._request.filters:
             self._filter_index = (self._filter_index + 1) % len(self._request.filters)
             self._show(lw.ListState())
-        elif controlId == LIST_ROWS:
-            position = self.state().position
-            if 0 <= position < len(self._shown):
-                self.finish("open", lw.ListResult("open", self.state(), key=self._shown[position].key))
         elif controlId == BUTTON_BULK and lw.bulk_label(self._request, len(self._shown)):
             keys = tuple(row.key for row in self._shown)
             self.finish("bulk", lw.ListResult("bulk", self.state(), keys=keys))
@@ -435,7 +426,6 @@ class PickListDialog(ListDialog):
     def prepare(self, request: lw.ListRequest, state: lw.ListState, localised: Localised) -> None:
         super().prepare(request, state, localised)
         self._ticked = frozenset(request.ticked)
-        self._window_properties["CW.Pick"] = "true"
         self._window_properties["CW.Close"] = localised(WINDOW_CANCEL)
 
     def onClick(self, controlId: int) -> None:

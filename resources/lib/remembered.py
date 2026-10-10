@@ -73,8 +73,6 @@ class Row:
     key: str
     name: str  # what the list shows: the title, or a readable stand-in for the key
     title: str | None
-    detail: str  # who the answer is for, or "will ask again"
-    tag: str  # covered by playlist, not in library, or not stable
     thumb: str
     viewers: tuple[str, ...]
     # False for an answer keyed on Kodi's database id that can no longer be checked against
@@ -149,26 +147,18 @@ def _row(
     found = library.get(key) if library is not None else None
     title = answer.title
     changeable = True
-    tag = ""
     gone = False
     if key.startswith(LIBRARY_KEY_PREFIX):
         # Trusted only while the show at that id is still the one answered for.
         changeable = answer.title is not None and (found is None or (answer.title, answer.year) == (found.title, found.year))
-        if not changeable:
-            tag = kodi.localised(REMEMBERED_NOT_STABLE_HEAD)
-        elif found is None and library is not None:
-            gone = True
-            tag = kodi.localised(REMEMBERED_NOT_IN_LIBRARY_HEAD)
+        gone = changeable and found is None and library is not None
     elif found is not None:
         title = found.title or title
     elif library is not None:
         gone = True
-        tag = kodi.localised(REMEMBERED_NOT_IN_LIBRARY_HEAD)
-    covered = covers.get(key, ()) if not tag else ()
-    if covered:
-        # Changing the answer is still allowed: it applies again if the show leaves the
-        # playlist.
-        tag = kodi.localised(REMEMBERED_COVERED_BY)
+    # Covered only matters for an answer that is otherwise fine. Changing it is still
+    # allowed: it applies again if the show leaves the playlist.
+    covered = covers.get(key, ()) if changeable and not gone else ()
     known = {v.name for v in viewers}
     current = tuple(n for n in answer.viewers if n in known)
     lines = _panel_lines(kodi, answer, found if changeable else None, current, covered, gone, changeable, found)
@@ -176,8 +166,6 @@ def _row(
         key=key,
         name=title or _fallback_name(kodi, key),
         title=title,
-        detail=", ".join(current) if current else kodi.localised(REMEMBERED_WILL_ASK),
-        tag=tag,
         thumb=found.poster if found is not None else "",
         viewers=current,
         changeable=changeable,
@@ -246,7 +234,6 @@ def _change(kodi: KodiApi, memory: PromptMemory, row: Row, library: Library | No
         # From the library lookup the list was built from: no second request per show.
         poster=row.thumb,
         preselect=row.viewers,
-        offer_forget=True,
     )
     if picked is None:
         return
@@ -280,8 +267,6 @@ def _list_row(row: Row, more: str) -> ListRow:
     return ListRow(
         key=row.key,
         title=row.name,
-        detail=row.detail,
-        tag=row.tag,
         thumb=row.thumb,
         names=row.viewers,
         properties=tuple(properties.items()),
@@ -318,13 +303,13 @@ def run(kodi: KodiApi, memory: PromptMemory, viewers: list[Viewer]) -> None:
             bulk_all=kodi.localised(WINDOW_FORGET_ALL),
             bulk_shown=kodi.localised(WINDOW_FORGET_SHOWN),
         )
-        result = kodi.list_window(request, state)
+        result = kodi.remembered_window(request, state)
         state = result.state
-        if result.action == "open" and result.key in rows:
-            row = rows[result.key]
-            if row.changeable:
-                _change(kodi, memory, row, library, viewers)
-            elif _forget_confirmed(kodi, 1):
+        row = rows.get(result.key)
+        if result.action == "change" and row is not None and row.changeable:
+            _change(kodi, memory, row, library, viewers)
+        elif result.action == "forget" and row is not None:
+            if _forget_confirmed(kodi, 1):
                 memory.forget(row.key)
                 _log.info("config.remembered_forgotten")
         elif result.action == "bulk":

@@ -23,7 +23,6 @@ from resources.lib.ui.window import (
     BUTTON_CHANGE,
     BUTTON_CLOSE,
     BUTTON_DONE,
-    BUTTON_FORGET,
     BUTTON_FORGET_ONE,
     BUTTON_NO,
     BUTTON_PICK_DONE,
@@ -74,7 +73,7 @@ class Action:
 
 
 def _dialog(
-    names=("anna", "bob"), preselect=(), autoclose=0, on_playback=False, playing=False, aborts=(), offer_forget=False
+    names=("anna", "bob"), preselect=(), autoclose=0, on_playback=False, playing=False, aborts=()
 ) -> tuple[Any, FakeList]:
     """The dialog is returned as Any: it is built on the stub window (tests/stubs.py), whose
     recording helpers the Kodistubs type the checker reads does not have.
@@ -83,7 +82,7 @@ def _dialog(
     so a started watch thread ticks fast without spinning."""
     request = WhoWatchedRequest(
         title="Example", subtitle="Season 2, episode 5", poster="image://p/", names=names,
-        preselect=preselect, autoclose_seconds=autoclose, close_on_playback=on_playback, offer_forget=offer_forget,
+        preselect=preselect, autoclose_seconds=autoclose, close_on_playback=on_playback,
     )
     abort_answers = list(aborts)
 
@@ -417,14 +416,12 @@ def test_nothing_matching_shows_the_empty_line():
     assert dialog.getProperty("CW.Count") == "0 of 4"
 
 
-def test_ok_on_a_row_returns_it_with_the_state():
+def test_the_state_carries_the_filter_and_the_selected_key():
     dialog, rows, _ = _list()
     dialog.onInit()
     dialog.onClick(LIST_FILTER)  # anna: Alpha, Gamma
     rows.position = 1
-    dialog.onClick(LIST_ROWS)
-    assert dialog.result.action == "open" and dialog.result.key == "c"
-    assert dialog.result.state == ListState(search="", filter_index=1, position=1, key="c")
+    assert dialog.state() == ListState(search="", filter_index=1, position=1, key="c")
 
 
 def test_the_bulk_button_returns_the_keys_shown():
@@ -473,28 +470,6 @@ def test_without_filters_the_viewer_button_is_hidden():
     dialog.onClick(LIST_FILTER)
     assert _titles(rows) == ["Alpha", "Beta", "Gamma", "Delta"]
 
-
-def test_forget_is_offered_only_when_asked():
-    plain, _ = _dialog()
-    plain.onInit()
-    assert plain.getProperty("CW.OfferForget") == ""
-    offered, _ = _dialog(offer_forget=True)
-    offered.onInit()
-    assert offered.getProperty("CW.OfferForget") == "true"
-
-
-def test_forget_returns_the_nobody_answer():
-    dialog, _ = _dialog(preselect=("anna",), offer_forget=True)
-    dialog.onInit()
-    dialog.onClick(BUTTON_FORGET)
-    assert dialog.result == () and dialog.close_reason == "forget"
-
-
-def test_forget_does_nothing_when_not_offered():
-    dialog, _ = _dialog(preselect=("anna",))
-    dialog.onInit()
-    dialog.onClick(BUTTON_FORGET)
-    assert dialog.closed == 0
 
 def test_a_list_that_opens_empty_focuses_the_search_so_the_household_is_not_stuck():
     """An empty list cannot take focus, and no direction leads out of nothing. The search box
@@ -555,7 +530,6 @@ def _pick(ticked=("Cartoons", "Eps"), state=START) -> tuple[Any, FakeRows, FakeE
         rows=PLAYLISTS,
         count_one="1 playlist",
         count_all="%s playlists",
-        pick=True,
         ticked=ticked,
     )
     dialog: Any = PickListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
@@ -570,7 +544,6 @@ def test_a_pick_list_opens_with_its_ticks_and_says_cancel():
     dialog, rows, _ = _pick()
     dialog.onInit()
     assert _chosen(rows) == ["", "true", "", "true"]
-    assert dialog.getProperty("CW.Pick") == "true"
     assert dialog.getProperty("CW.Close") == "Cancel"
     assert dialog.getProperty("CW.Bulk") == ""
     assert dialog.getProperty("CW.Filter") == ""
@@ -638,14 +611,6 @@ def test_the_bulk_button_does_nothing_on_a_pick_list():
     dialog.onInit()
     dialog.onClick(BUTTON_BULK)
     assert dialog.closed == 0
-
-
-def test_ok_on_a_row_of_a_plain_list_still_opens_it():
-    """The pick override must not leak into the list it extends."""
-    dialog, rows, _ = _list()
-    dialog.onInit()
-    dialog.onClick(LIST_ROWS)
-    assert dialog.result.action == "open" and dialog.getProperty("CW.Pick") == ""
 
 
 VIEWER_ROWS = (

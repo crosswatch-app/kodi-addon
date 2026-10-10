@@ -135,7 +135,6 @@ def choose_viewers(
     preselect: tuple[str, ...] = (),
     autoclose: int = 0,
     close_on_playback: bool = False,
-    offer_forget: bool = False,
 ) -> tuple[str, ...] | None:
     """None when cancelled, () when Done with nobody ticked, else the names.
 
@@ -150,7 +149,6 @@ def choose_viewers(
         preselect=preselect,
         autoclose_seconds=autoclose,
         close_on_playback=close_on_playback,
-        offer_forget=offer_forget,
     )
     return kodi.who_watched(request)
 

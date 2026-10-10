@@ -193,19 +193,6 @@
                     <texturefocus border="16">crosswatch/box_accent_focus.png</texturefocus>
                     <onup>200</onup>
                 </control>
-                <control type="button" id="22">
-                    <width>170</width><height>72</height>
-                    <align>center</align><aligny>center</aligny>
-                    <font>font30_title</font>
-                    <textcolor>FFF1F3F5</textcolor>
-                    <focusedcolor>FFF1F3F5</focusedcolor>
-                    <pulseonselect>false</pulseonselect>
-                    <label>$ADDON[service.crosswatch 30039]</label>
-                    <texturenofocus border="16">crosswatch/box.png</texturenofocus>
-                    <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
-                    <visible>String.IsEqual(Window.Property(CW.OfferForget),true)</visible>
-                    <onup>200</onup>
-                </control>
                 <control type="button" id="21">
                     <width>170</width><height>72</height>
                     <align>center</align><aligny>center</aligny>
