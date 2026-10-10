@@ -21,6 +21,11 @@ PALETTE = {
     "text": "FFF1F3F5",
     "muted": "FF9299A6",
     "accent": "FF7C5CFF",
+    # The brand gradient's stops at a third, so a missing poster gets a soft wash of the
+    # gradient rather than art-strength colour.
+    "wash_cyan": "552DE2FF",
+    "wash_violet": "557C5CFF",
+    "wash_pink": "55FF7AE0",
 }
 SCREEN_HEIGHT = 1080
 PANEL_LEFT = 340  # centres the panel on a 1920 wide screen

@@ -87,6 +87,41 @@ def test_the_viewer_list_shows_when_there_are_more_rows():
     assert scrollbar.findtext("showonepage") == "false"
 
 
+
+NO_POSTER = "String.IsEmpty(Window.Property(CW.Poster))"
+
+
+def _poster_box(control: ET.Element) -> tuple[str | None, ...]:
+    return tuple(control.findtext(key) for key in ("left", "top", "width", "height"))
+
+
+def test_a_missing_poster_shows_brand_tinted_corners():
+    """One neutral white fade, flipped into each corner and tinted in the window, so the
+    colours live in the XML with the rest of the palette rather than in an image."""
+    glows = [c for c in _root().iter("control") if c.findtext("texture") == "crosswatch/glow.png"]
+    assert len(glows) == 4
+    corners = set()
+    for glow in glows:
+        texture = glow.find("texture")
+        assert texture is not None
+        assert glow.findtext("visible") == NO_POSTER
+        assert texture.get("diffuse") == "crosswatch/mask_poster.png"
+        assert glow.findtext("colordiffuse")
+        assert _poster_box(glow) == ("50", "60", "300", "450")
+        corners.add((texture.get("flipx"), texture.get("flipy")))
+    assert corners == {(None, None), ("true", None), (None, "true"), ("true", "true")}
+
+
+def test_a_missing_poster_says_so_in_translatable_text():
+    from resources.lib.constants import WHO_WATCHED_NO_POSTER
+
+    labels = [
+        c for c in _root().iter("control") if c.findtext("label") == f"$ADDON[{ADDON_ID} {WHO_WATCHED_NO_POSTER}]"
+    ]
+    assert len(labels) == 1
+    assert labels[0].findtext("visible") == NO_POSTER
+    assert _poster_box(labels[0]) == ("50", "60", "300", "450")
+
 CONFIRM = SKIN / "1080i" / "crosswatch-confirm.xml"
 
 

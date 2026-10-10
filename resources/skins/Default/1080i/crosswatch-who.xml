@@ -33,6 +33,40 @@
                 <left>50</left><top>60</top><width>300</width><height>450</height>
                 <texture border="16">crosswatch/poster_empty.png</texture>
             </control>
+            <!-- No poster: one neutral fade flipped into each corner and tinted here, so the colours
+                 stay in the palette with everything else. Cyan, violet, pink: the top bar's order. -->
+            <control type="image">
+                <left>50</left><top>60</top><width>300</width><height>450</height>
+                <texture diffuse="crosswatch/mask_poster.png">crosswatch/glow.png</texture>
+                <colordiffuse>552DE2FF</colordiffuse>
+                <visible>String.IsEmpty(Window.Property(CW.Poster))</visible>
+            </control>
+            <control type="image">
+                <left>50</left><top>60</top><width>300</width><height>450</height>
+                <texture diffuse="crosswatch/mask_poster.png" flipx="true">crosswatch/glow.png</texture>
+                <colordiffuse>557C5CFF</colordiffuse>
+                <visible>String.IsEmpty(Window.Property(CW.Poster))</visible>
+            </control>
+            <control type="image">
+                <left>50</left><top>60</top><width>300</width><height>450</height>
+                <texture diffuse="crosswatch/mask_poster.png" flipy="true">crosswatch/glow.png</texture>
+                <colordiffuse>557C5CFF</colordiffuse>
+                <visible>String.IsEmpty(Window.Property(CW.Poster))</visible>
+            </control>
+            <control type="image">
+                <left>50</left><top>60</top><width>300</width><height>450</height>
+                <texture diffuse="crosswatch/mask_poster.png" flipx="true" flipy="true">crosswatch/glow.png</texture>
+                <colordiffuse>55FF7AE0</colordiffuse>
+                <visible>String.IsEmpty(Window.Property(CW.Poster))</visible>
+            </control>
+            <control type="label">
+                <left>50</left><top>60</top><width>300</width><height>450</height>
+                <align>center</align><aligny>center</aligny>
+                <font>font13</font>
+                <textcolor>FF9299A6</textcolor>
+                <label>$ADDON[service.crosswatch 30101]</label>
+                <visible>String.IsEmpty(Window.Property(CW.Poster))</visible>
+            </control>
             <control type="image">
                 <left>50</left><top>60</top><width>300</width><height>450</height>
                 <aspectratio>scale</aspectratio>
