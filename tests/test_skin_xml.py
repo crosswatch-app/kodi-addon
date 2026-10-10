@@ -407,7 +407,9 @@ def test_the_remembered_window_navigates_between_header_list_panel_and_buttons()
     assert _nav(rows, "ondown") == [(HAS_BULK, "20"), (None, "21")]
     actions = _bottom_group(REMEMBERED)
     assert [c.get("id") for c in actions.findall("control")] == ["40", "41"]
-    assert _nav(actions, "onleft") == [(HAS_BULK, "20"), (SHOWN, "100")]
+    # The last entry unconditional: Kodi checks for one that holds while the window loads,
+    # before any property is set, and otherwise wires the first button's Left to the last.
+    assert _nav(actions, "onleft") == [(HAS_BULK, "20"), (None, "100")]
     assert _nav(actions, "onright") == [(None, "21")]
     for button in actions.findall("control"):
         assert _nav(button, "onup") == [(None, "100")], button.get("id")
@@ -482,7 +484,7 @@ def test_the_settings_screens_share_one_header_line():
         by_label = {c.findtext("label"): c for c in root.iter("control") if c.get("type") == "label"}
         brand, heading = by_label["CROSSWATCH"], by_label["$INFO[Window.Property(CW.Heading)]"]
         count = by_label["$INFO[Window.Property(CW.Count)]"]
-        assert (brand.findtext("left"), brand.findtext("top")) == ("50", "40"), window.name
+        assert (brand.findtext("left"), brand.findtext("top"), brand.findtext("width")) == ("50", "40", "220"), window.name
         assert (heading.findtext("left"), heading.findtext("width"), heading.findtext("align")) == ("270", "700", "center")
         assert (count.findtext("left"), count.findtext("width"), count.findtext("align")) == ("990", "200", "right")
         assert brand.findtext("top") == heading.findtext("top") == count.findtext("top") == "40"

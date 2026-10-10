@@ -30,7 +30,7 @@
                 <texture>crosswatch/gradient.png</texture>
             </control>
             <control type="label">
-                <left>50</left><top>40</top><width>200</width><height>50</height>
+                <left>50</left><top>40</top><width>220</width><height>50</height>
                 <aligny>center</aligny>
                 <font>font25_title</font>
                 <textcolor>FF9299A6</textcolor>
@@ -622,8 +622,8 @@
                 <onright condition="!String.IsEqual(Window.Property(CW.Empty),true)">10</onright>
                 <onright>21</onright>
             </control>
-            <!-- The actions on the highlighted viewer, right-aligned; hidden with no viewers, which
-                 leaves Close in place. Ids 10 to 13: never 2, 3 or 4, which WindowXML keeps for itself. -->
+            <!-- The actions on the highlighted viewer, centred between Add viewer and Close; hidden
+                 with no viewers. Ids 10 to 13: never 2, 3 or 4, which WindowXML keeps for itself. -->
             <control type="grouplist">
                 <left>300</left><top>740</top><width>700</width><height>72</height>
                 <orientation>horizontal</orientation>
