@@ -72,3 +72,10 @@ def test_the_licence_names_the_icons_licence_and_ships_its_text():
     """The status icons are Material Symbols, Apache-2.0, shipped as separate assets."""
     assert _root().findtext(".//license") == "GPL-2.0-only AND Apache-2.0"
     assert (ADDON_XML.parent / "resources" / "licences" / "Apache-2.0.txt").is_file()
+
+
+def test_the_website_is_the_published_docs_site():
+    """Kodi's add-on info links <website>; it has to be the URL the docs site is built for."""
+    site_url = re.search(r'^site_url = "([^"]+)"', (ADDON_XML.parent / "zensical.toml").read_text(), re.M)
+    assert site_url is not None
+    assert _root().findtext(".//website") == site_url.group(1)

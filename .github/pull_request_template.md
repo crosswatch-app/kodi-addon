@@ -9,6 +9,6 @@
 
 ## Checklist
 
-- [ ] README and `strings.po` updated for anything a user sees
+- [ ] Docs page (`docs/`) and `strings.po` updated for anything a user sees
 - [ ] `docs/contract.md` unchanged, or changed with the CrossWatch maintainer's agreement
 - [ ] No tokens, private names or hostnames in code, tests, logs or this description

@@ -14,6 +14,7 @@
         <platform>all</platform>
         <license>GPL-2.0-only AND Apache-2.0</license>
         <source>https://github.com/crosswatch-app/kodi-addon</source>
+        <website>https://crosswatch-app.github.io/kodi-addon/</website>
         <news>v1.0.0~beta1 (2026-10-07)
 - Reports what you watch in Kodi to your own CrossWatch, including who in the household watched it.
 - Works out who watched using smart playlists, your Kodi profile, or a question at the end of playback that is remembered per show.
