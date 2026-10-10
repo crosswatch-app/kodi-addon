@@ -153,6 +153,8 @@ activemq-data/
 .env
 .envrc
 .venv
+# The docs build's own venv, kept apart from the gates' one (see requirements-docs.txt).
+.venv-docs/
 env/
 venv/
 ENV/
