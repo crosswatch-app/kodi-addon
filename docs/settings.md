@@ -23,6 +23,10 @@ Device name).
 | Configure viewers and playlists | | Add, edit or remove viewers and their playlists or Kodi profiles. |
 | Remembered answers | | View, change or forget who-watched answers remembered per show. |
 | Ask who watched a film | on | Whether the who-watched question is also asked after a film. |
+| Ask for a rating | Off | Whether to ask how it was after a finished watch: Off, Films, Episodes, or Films and episodes. See [Rating](rating.md). |
+| When to ask | After each watch | Shown when "Ask for a rating" is not Off. "After each watch", or "At the end, for everything watched", which asks for every finished watch once playback stops for good. See [When it asks](rating.md#when-it-asks). |
+| Shared rating | off | Shown when "Ask for a rating" is not Off. One question, "How was it?", whose score goes to every credited viewer, instead of one question per viewer. See [Who is asked](rating.md#who-is-asked). |
+| Write the rating to Kodi's library | off | Shown when "Ask for a rating" is not Off. Also sets Kodi's own user rating for items in Kodi's library. See [Kodi's own rating](rating.md#kodis-own-rating). |
 | Skip PlexKodiConnect playback | on | PlexKodiConnect playback is not reported, so a household also running CrossWatch's own Plex watcher does not get the same watch counted twice. Turn off to report PlexKodiConnect playback instead, labelled as such. This setting has not been tested, because PlexKodiConnect is not available on the test machine. |
 
 ## Advanced

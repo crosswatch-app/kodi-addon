@@ -46,6 +46,7 @@ The full documentation is at <https://crosswatch-app.github.io/kodi-addon/>.
 - [Who watched](https://crosswatch-app.github.io/kodi-addon/who-watched/): how the add-on decides who watched.
 - [Viewers](https://crosswatch-app.github.io/kodi-addon/viewers/): one viewer per person, with playlists or profiles.
 - [Remembered answers](https://crosswatch-app.github.io/kodi-addon/remembered-answers/): the answers remembered per show.
+- [Rating](https://crosswatch-app.github.io/kodi-addon/rating/): asking how it was after a watch.
 - [Settings](https://crosswatch-app.github.io/kodi-addon/settings/): every setting and its default.
 - [Troubleshooting](https://crosswatch-app.github.io/kodi-addon/troubleshooting/): problems by what you see.
 - [What the add-on sends](https://crosswatch-app.github.io/kodi-addon/what-is-sent/): what goes to CrossWatch, and what happens in an outage.

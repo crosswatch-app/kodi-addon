@@ -84,6 +84,8 @@ For a show, the answer is remembered and reused for later episodes, including fr
 of playback. For a film, nothing is remembered. [Remembered answers](remembered-answers.md)
 shows, changes and forgets them.
 
+After this question, a rating question can follow; see [Rating](rating.md).
+
 ## Nobody resolved
 
 If no viewer is resolved by any of the above, the event is sent with no viewers. CrossWatch

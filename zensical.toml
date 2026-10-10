@@ -21,6 +21,7 @@ nav = [
     { "Who watched" = "who-watched.md" },
     { "Viewers" = "viewers.md" },
     { "Remembered answers" = "remembered-answers.md" },
+    { "Rating" = "rating.md" },
   ] },
   { "Reference" = [
     { "Settings" = "settings.md" },
