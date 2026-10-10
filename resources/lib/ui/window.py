@@ -268,7 +268,11 @@ class ListDialog(CrossWatchDialog):
         search: Any = self.getControl(LIST_SEARCH)
         search.setText(self._search)
         self._show(self._position)
-        self.setFocusId(LIST_ROWS)
+        if self._shown:
+            self.setFocusId(LIST_ROWS)
+        else:
+            # An empty list cannot take focus, and no direction leads out of it.
+            self.setFocusId(LIST_FILTER if self._request.filters else LIST_SEARCH)
 
     def onAction(self, action: Any) -> None:
         super().onAction(action)

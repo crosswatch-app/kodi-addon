@@ -43,7 +43,7 @@
                 <label>$INFO[Window.Property(CW.Heading)]</label>
             </control>
             <control type="edit" id="30">
-                <left>50</left><top>146</top><width>640</width><height>72</height>
+                <left>50</left><top>146</top><width>560</width><height>72</height>
                 <aligny>center</aligny>
                 <textoffsetx>24</textoffsetx>
                 <font>font30_title</font>
@@ -58,7 +58,7 @@
                 <ondown>100</ondown>
             </control>
             <control type="button" id="31">
-                <left>706</left><top>146</top><width>300</width><height>72</height>
+                <left>626</left><top>146</top><width>380</width><height>72</height>
                 <align>center</align><aligny>center</aligny>
                 <font>font30_title</font>
                 <textcolor>FFF1F3F5</textcolor>
