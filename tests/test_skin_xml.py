@@ -38,9 +38,12 @@ def test_every_texture_ships():
         assert (SKIN / "media" / name).is_file(), name
 
 
-def test_focus_starts_on_the_viewer_list():
+def test_the_window_opens_on_a_control_that_can_take_focus():
+    """The viewer list is empty until Python fills it in onInit, so Kodi cannot focus it when
+    the window opens and logs an error each time; Skip can, and onInit then moves focus to
+    the list."""
     default = _root().find("defaultcontrol")
-    assert default is not None and default.text == "200"
+    assert default is not None and default.text == "21"
 
 
 def test_the_buttons_sit_in_one_row_below_the_list():
@@ -110,7 +113,8 @@ def test_the_list_window_navigates_between_search_rows_and_buttons():
         assert found is not None, control_id
         return found
 
-    assert root.findtext("defaultcontrol") == "100"
+    # Close, not the list: the list is empty until Python fills it, see the who-watched test.
+    assert root.findtext("defaultcontrol") == "21"
     assert control("100").findtext("onup") == "30" and control("100").findtext("ondown") == "20"
     assert control("30").get("type") == "edit" and control("30").findtext("ondown") == "100"
     assert control("30").findtext("onright") == "31" and control("31").findtext("onleft") == "30"

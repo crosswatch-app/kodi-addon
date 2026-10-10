@@ -2,7 +2,8 @@
 <!-- Every control is inline: Kodi resolves includes and named colours from the active skin only, never from a script's own skin folder. Fonts are anchor names that skin_fonts.py maps onto the active skin. -->
 <window>
     <zorder>1</zorder>
-    <defaultcontrol always="true">100</defaultcontrol>
+    <!-- Not the show list: it is empty until onInit fills it, so Kodi cannot focus it when the window opens and logs an error. onInit moves focus to it. -->
+    <defaultcontrol always="true">21</defaultcontrol>
     <controls>
         <control type="image">
             <left>0</left><top>0</top><width>1920</width><height>1080</height>
