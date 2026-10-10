@@ -28,7 +28,6 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - run: "pip install --require-hashes --only-binary :all: -r requirements-docs.lock"
       # Strict: a broken link, anchor or image fails the build instead of going live.
       - run: zensical build --clean --strict
