@@ -13,7 +13,7 @@ import pytest
 
 WINDOWS = sorted((Path(__file__).resolve().parents[1] / "resources" / "skins" / "Default" / "1080i").glob("*.xml"))
 
-# cenodude's palette for CrossWatch (issue #1). Positive and danger are reserved.
+# cenodude's palette for CrossWatch (issue #1).
 PALETTE = {
     "background": "FF090A0D",
     "dim": "E6090A0D",  # the screen behind a window, background at 90 %
@@ -26,6 +26,8 @@ PALETTE = {
     "wash_cyan": "552DE2FF",
     "wash_violet": "557C5CFF",
     "wash_pink": "55FF7AE0",
+    "positive": "FF57B58A",  # the route check
+    "danger": "FFD86672",  # anything that needs fixing
 }
 SCREEN_HEIGHT = 1080
 PANEL_LEFT = 340  # centres the panel on a 1920 wide screen

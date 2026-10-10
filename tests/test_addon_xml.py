@@ -66,3 +66,9 @@ def test_every_declared_asset_ships_with_the_addon():
     for asset in assets:
         assert (ADDON_XML.parent / (asset.text or "")).is_file(), asset.tag
     assert assets.findtext("icon") == "icon.png"
+
+
+def test_the_licence_names_the_icons_licence_and_ships_its_text():
+    """The status icons are Material Symbols, Apache-2.0, shipped as separate assets."""
+    assert _root().findtext(".//license") == "GPL-2.0-only AND Apache-2.0"
+    assert (ADDON_XML.parent / "resources" / "licences" / "Apache-2.0.txt").is_file()

@@ -509,3 +509,6 @@ Developers: the payload contract is [docs/contract.md](docs/contract.md).
 ## Licence
 
 GPL-2.0-only. See [LICENSE](LICENSE).
+
+The status icons are Material Symbols by Google, under the Apache License 2.0
+([resources/licences/Apache-2.0.txt](resources/licences/Apache-2.0.txt)).

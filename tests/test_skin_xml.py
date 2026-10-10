@@ -1,5 +1,6 @@
 import itertools
 import re
+import struct
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from resources.lib.constants import ADDON_ID, WHO_WATCHED_DONE, WHO_WATCHED_SKIP
 
 SKIN = Path(__file__).resolve().parents[1] / "resources" / "skins" / "Default"
 WHO = SKIN / "1080i" / "crosswatch-who.xml"
+ICONS = SKIN / "media" / "crosswatch" / "icons"
 ANCHORS = {"font40_title", "font32_title", "font30_title", "font25_title", "font13", "font12"}
 
 
@@ -305,3 +307,14 @@ def test_a_list_without_artwork_gives_its_tags_room():
         assert tag[1] - tag[0] >= 400
         ordered = sorted(spans.values())
         assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered
+
+
+def test_the_icons_are_64_pixel_rgba_pngs():
+    """White on transparent at 64 px, drawn at 32 and tinted in the XML."""
+    names = sorted(p.name for p in ICONS.glob("*.png"))
+    assert names == ["check_circle.png", "warning.png"]
+    for name in names:
+        head = (ICONS / name).read_bytes()[:26]
+        assert head[:8] == b"\x89PNG\r\n\x1a\n"
+        width, height, depth, colour = struct.unpack(">IIBB", head[16:26])
+        assert (width, height, depth, colour) == (64, 64, 8, 6), name  # 6: RGBA
