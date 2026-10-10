@@ -145,3 +145,43 @@ def test_the_close_label_comes_from_a_property_so_a_pick_list_can_say_cancel():
     root = ET.parse(LIST).getroot()
     close = root.find(".//control[@id='21']")
     assert close is not None and close.findtext("label") == "$INFO[Window.Property(CW.Close)]"
+
+
+PICK = "String.IsEqual(Window.Property(CW.Pick),true)"
+
+
+def test_a_pick_list_has_an_accent_done_button_where_the_bulk_button_sits():
+    root = ET.parse(LIST).getroot()
+    done = root.find(".//control[@id='22']")
+    bulk = root.find(".//control[@id='20']")
+    assert done is not None and bulk is not None
+    assert done.findtext("visible") == PICK
+    assert done.findtext("label") == f"$ADDON[{ADDON_ID} {WHO_WATCHED_DONE}]"
+    assert done.findtext("texturenofocus") == "crosswatch/box_accent.png"
+    assert done.findtext("texturefocus") == "crosswatch/box_accent_focus.png"
+    assert (done.findtext("left"), done.findtext("top")) == (bulk.findtext("left"), bulk.findtext("top"))
+    assert done.findtext("onup") == "100" and done.findtext("onright") == "21"
+
+
+def test_down_from_a_pick_list_reaches_done_first():
+    root = ET.parse(LIST).getroot()
+    rows = root.find(".//control[@id='100']")
+    close = root.find(".//control[@id='21']")
+    assert rows is not None and close is not None
+    assert _navigation(rows, "ondown")[0] == (PICK, "22")
+    assert _navigation(close, "onleft")[0] == (PICK, "22")
+
+
+def test_pick_rows_show_a_tick_and_hide_the_thumbnail():
+    root = ET.parse(LIST).getroot()
+    for layout in ("itemlayout", "focusedlayout"):
+        found = root.find(f".//control[@id='100']/{layout}")
+        assert found is not None
+        images = found.findall("control[@type='image']")
+        ticks = [i for i in images if i.findtext("texture") == "crosswatch/tick.png"]
+        assert len(ticks) == 1 and ticks[0].findtext("visible") == "String.IsEqual(ListItem.Property(chosen),true)"
+        assert (ticks[0].findtext("width"), ticks[0].findtext("height")) == ("48", "48")
+        thumbs = [i for i in images if "thumb" in (i.findtext("texture") or "") or "poster_empty" in (i.findtext("texture") or "")]
+        assert thumbs and all(i.findtext("visible") == f"!{PICK}" for i in thumbs)
+        chosen = [i for i in images if (i.findtext("texture") or "").startswith("crosswatch/box_chosen")]
+        assert chosen
