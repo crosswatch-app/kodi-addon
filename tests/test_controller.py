@@ -140,6 +140,34 @@ def test_the_index_is_built_from_the_idle_tick_not_from_playback_start(tmp_path)
     assert collector.playback()[0].viewers == ()
 
 
+def test_a_renamed_viewer_is_not_sent_under_the_old_name_from_a_stale_index(tmp_path):
+    """The settings screen saves at once, but the index holds the names it was built with.
+    A route whose whitelist already follows the new name would drop the old one."""
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    _warm_index(controller, kodi)
+    renamed = [Viewer(name="Anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    JsonViewerStore(str(tmp_path / "viewers.json")).save(renamed)
+    controller.on_av_started()
+    assert "anna" not in collector.playback()[0].viewers
+
+
+def test_the_index_is_rebuilt_once_the_viewers_change(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    _warm_index(controller, kodi)
+    renamed = [Viewer(name="Anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    JsonViewerStore(str(tmp_path / "viewers.json")).save(renamed)
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("Anna",)
+    assert collector.playback()[0].viewers_source == "playlist"
+
+
 def test_playback_after_a_warm_index_resolves_from_the_playlist(tmp_path):
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])

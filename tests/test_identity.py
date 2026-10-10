@@ -75,3 +75,10 @@ def test_an_episode_with_no_parent_show_skips_the_playlist_step():
 
 def test_no_index_yet_still_falls_through_to_profile():
     assert resolve(None, [ANNA], _episode(), "Anna") == Identity(("anna",), "profile")
+
+
+def test_a_playlist_name_that_is_no_longer_a_viewer_is_dropped():
+    """The index is built from an earlier viewers.json; a renamed or removed viewer's old
+    name must not be sent."""
+    index = PlaylistIndex({("tvshow", 42): ("anna", "bob")})
+    assert resolve(index, [Viewer(name="Anna"), BOB], _episode(), "") == Identity(("bob",), "playlist")

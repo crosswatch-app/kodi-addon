@@ -68,6 +68,9 @@ class Controller:
         self._pending_stop: PlaybackSession | None = None
         self._paused = False
         self._index: PlaylistIndex | None = None
+        # The viewers an index was built from: a change in the settings screen rebuilds it.
+        self._index_viewers: tuple[Viewer, ...] = ()
+        self._building_for: tuple[Viewer, ...] = ()
         self._builder: IndexBuilder | None = None
         self._index_dirty = True
         self._index_retired = False
@@ -219,13 +222,16 @@ class Controller:
         if self._builder is None:
             if not self._needs_index():
                 return
-            self._builder = IndexBuilder(self._kodi, self._viewers(), self._monotonic)
+            viewers = self._viewers()
+            self._builder = IndexBuilder(self._kodi, viewers, self._monotonic)
+            self._building_for = tuple(viewers)
         if not self._builder.step():
             return
         built = self._builder.result()
         self._builder = None
         if built is not None:
             self._index = built
+            self._index_viewers = self._building_for
             if built.degraded:
                 # Published, but not current. A degraded viewer has no membership at all
                 # until a build succeeds, so the index stays dirty and the failure backoff
@@ -299,6 +305,10 @@ class Controller:
             if self._monotonic() - self._failed_at < backoff:
                 return False
         if self._index_dirty or self._index is None:
+            return True
+        # The settings screen runs in its own interpreter and saves at once; reading the
+        # small viewers file here is how its changes reach the index.
+        if tuple(self._viewers()) != self._index_viewers:
             return True
         return (self._monotonic() - self._index.built_at) >= self._settings.index_ttl_seconds
 
