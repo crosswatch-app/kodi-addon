@@ -12,7 +12,8 @@
       "Ben"
     ],
     "autoclose_seconds": 120,
-    "keys": []
+    "keys": [],
+    "group": "who-watched"
   },
   "who-watched-everyone-ticked": {
     "window": "crosswatch-who.xml",
@@ -27,7 +28,8 @@
     "autoclose_seconds": 120,
     "keys": [
       "Select"
-    ]
+    ],
+    "group": "who-watched"
   },
   "who-watched-film": {
     "window": "crosswatch-who.xml",
@@ -42,7 +44,8 @@
       "Ben"
     ],
     "autoclose_seconds": 120,
-    "keys": []
+    "keys": [],
+    "group": "who-watched"
   },
   "who-watched-no-poster": {
     "window": "crosswatch-who.xml",
@@ -55,7 +58,8 @@
     ],
     "preselect": [],
     "autoclose_seconds": 120,
-    "keys": []
+    "keys": [],
+    "group": "who-watched"
   },
   "who-watched-many-viewers-done": {
     "window": "crosswatch-who.xml",
@@ -82,7 +86,8 @@
       "Down",
       "Down",
       "Down"
-    ]
+    ],
+    "group": "who-watched"
   },
   "remembered-change": {
     "window": "crosswatch-who.xml",
@@ -98,34 +103,39 @@
       "Chloe"
     ],
     "autoclose_seconds": 0,
-    "keys": []
+    "keys": [],
+    "group": "remembered"
   },
   "remembered-confirm": {
     "window": "crosswatch-confirm.xml",
     "heading": "Remembered answers",
     "message": "Forget who watched 3 shows? Each will be asked again.",
-    "keys": []
+    "keys": [],
+    "group": "remembered"
   },
   "remembered-list": {
     "window": "crosswatch-list.xml",
     "rows": "library",
     "search": "",
     "filter": 0,
-    "keys": []
+    "keys": [],
+    "group": "remembered"
   },
   "remembered-list-filtered": {
     "window": "crosswatch-list.xml",
     "rows": "library",
     "search": "e",
     "filter": 1,
-    "keys": []
+    "keys": [],
+    "group": "remembered"
   },
   "remembered-list-nothing-matches": {
     "window": "crosswatch-list.xml",
     "rows": "library",
     "search": "zzzz",
     "filter": 0,
-    "keys": []
+    "keys": [],
+    "group": "remembered"
   },
   "remembered-change-forget": {
     "window": "crosswatch-who.xml",
@@ -141,21 +151,24 @@
     ],
     "autoclose_seconds": 0,
     "offer_forget": true,
-    "keys": []
+    "keys": [],
+    "group": "remembered"
   },
   "playlist-picker": {
     "window": "crosswatch-list.xml",
     "rows": "playlists",
     "search": "",
     "filter": 0,
-    "keys": []
+    "keys": [],
+    "group": "playlists"
   },
   "playlist-picker-search": {
     "window": "crosswatch-list.xml",
     "rows": "playlists",
     "search": "an",
     "filter": 0,
-    "keys": []
+    "keys": [],
+    "group": "playlists"
   },
   "playlist-picker-missing": {
     "window": "crosswatch-list.xml",
@@ -163,38 +176,44 @@
     "search": "",
     "filter": 0,
     "position": 6,
-    "keys": []
+    "keys": [],
+    "group": "playlists"
   },
   "viewer-window": {
     "window": "crosswatch-viewer.xml",
     "heading": "Anna",
     "message": "Playlists: Anna's shows, Cartoons[CR]Profiles: Master user",
-    "keys": []
+    "keys": [],
+    "group": "viewers"
   },
   "viewer-list": {
     "window": "crosswatch-list.xml",
     "rows": "viewers",
     "search": "",
     "filter": 0,
-    "keys": []
+    "keys": [],
+    "group": "viewers"
   },
   "profile-picker": {
     "window": "crosswatch-list.xml",
     "rows": "profiles",
     "search": "",
     "filter": 0,
-    "keys": []
+    "keys": [],
+    "group": "viewers"
   },
   "viewer-window-long": {
     "window": "crosswatch-viewer.xml",
     "heading": "Anna",
     "message": "Playlists: EasyTV - TVShow - All Shows, EasyTV - TVShow - Continue Watching, EasyTV - TVShow - Season Premieres, EasyTV - TVShow - Show Premieres, EasyTV - TVShow - Start Fresh, EasyTV - TVShow - Cartoons for the weekend[CR]Profiles: Master user, Kids",
-    "keys": []
+    "keys": [],
+    "group": "viewers"
   },
   "viewer-remove-confirm": {
     "window": "crosswatch-confirm.xml",
     "heading": "Remove Anna?",
     "message": "Remembered answers lose this name. A show nobody else is remembered for is asked again.",
-    "keys": []
+    "keys": [],
+    "group": "viewers"
   }
 }

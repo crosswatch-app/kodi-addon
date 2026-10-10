@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture every CrossWatch window into screenshots/, cropped to the window.
+"""Capture every CrossWatch window into screenshots/<screen>/, cropped to the window.
 
 Runs against the Flatpak Kodi on an X display (the test rig): installs this checkout and a
 development-only helper add-on (screenshot_helper/), restarts Kodi so new strings and the
@@ -161,9 +161,11 @@ def capture(url: str, display: str, name: str, scene: dict) -> Path:
     # Focus and tick changes animate; wait them out so reruns give identical files.
     time.sleep(1.5)
     left, top, width, height = panel(window)
-    raw = OUT / f".{name}.raw.png"
+    folder = OUT / scene["group"]
+    folder.mkdir(parents=True, exist_ok=True)
+    raw = folder / f".{name}.raw.png"
     subprocess.run(["import", "-display", display, "-window", "root", str(raw)], check=True)
-    out = OUT / f"{name}.png"
+    out = folder / f"{name}.png"
     # -strip drops the timestamps ImageMagick writes, so an unchanged window gives an
     # unchanged file and git shows only real differences.
     subprocess.run(
