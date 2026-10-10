@@ -13,7 +13,7 @@ This runs as a separate script with its own module state, so main() configures l
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import NamedTuple
 
 from resources.lib import log as logmod
@@ -21,6 +21,9 @@ from resources.lib import paths
 from resources.lib.config import read_settings
 from resources.lib.constants import (
     LABEL_BACK,
+    VIEWER_NONE,
+    VIEWER_SUMMARY_PLAYLISTS,
+    VIEWER_SUMMARY_PROFILES,
     VIEWERS_ADD,
     VIEWERS_ALSO,
     VIEWERS_EDIT_PLAYLISTS,
@@ -30,9 +33,12 @@ from resources.lib.constants import (
     VIEWERS_MISSING_COUNT,
     VIEWERS_NAME_PROMPT,
     VIEWERS_NO_PLAYLISTS,
+    VIEWERS_NOTHING,
     VIEWERS_ONE_PLAYLIST,
+    VIEWERS_ONE_PROFILE,
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
+    VIEWERS_PROFILES,
     VIEWERS_PROFILES_FOR,
     VIEWERS_REMOVE,
     VIEWERS_REMOVE_CONFIRM,
@@ -93,13 +99,24 @@ def available_playlists(kodi: KodiApi) -> PlaylistListing:
     return listing
 
 
-def validate_name(name: str, existing: list[Viewer]) -> str:
+def validate_name(name: str, existing: list[Viewer], own: str | None = None) -> str:
+    """The cleaned name, or ValueError("empty") / ValueError("taken").
+
+    Reason codes, not sentences: the reason is logged, and a sentence would carry the name.
+    own is the viewer being renamed: their current name is not taken, so a change of case is
+    allowed.
+    """
     cleaned = str(name or "").strip()
     if not cleaned:
-        raise ValueError("a viewer needs a name")
-    if any(v.name.casefold() == cleaned.casefold() for v in existing):
-        raise ValueError(f"a viewer named {cleaned} already exists")
+        raise ValueError("empty")
+    mine = own.casefold() if own else None
+    if any(v.name.casefold() == cleaned.casefold() and v.name.casefold() != mine for v in existing):
+        raise ValueError("taken")
     return cleaned
+
+
+def rename_viewer(viewers: list[Viewer], old: str, new: str) -> list[Viewer]:
+    return [Viewer(name=new, playlists=v.playlists, profiles=v.profiles) if v.name == old else v for v in viewers]
 
 
 def apply_edit(
@@ -162,6 +179,88 @@ def viewer_labels(
     return labels
 
 
+def _also(kodi: KodiApi, viewer: Viewer, viewers: Sequence[Viewer], has: Callable[[Viewer], bool]) -> str:
+    # A shared playlist or profile credits everyone who has it, which is easy to miss.
+    others = [v.name for v in viewers if v.name.casefold() != viewer.name.casefold() and has(v)]
+    return _text(kodi, VIEWERS_ALSO, ", ".join(others)) if others else ""
+
+
+def _count(kodi: KodiApi, n: int, one: int, many: int) -> str:
+    return _text(kodi, one) if n == 1 else _text(kodi, many, n)
+
+
+def setup_text(kodi: KodiApi, viewer: Viewer) -> str:
+    parts = []
+    if viewer.playlists:
+        parts.append(_count(kodi, len(viewer.playlists), VIEWERS_ONE_PLAYLIST, VIEWERS_PLAYLISTS))
+    if viewer.profiles:
+        parts.append(_count(kodi, len(viewer.profiles), VIEWERS_ONE_PROFILE, VIEWERS_PROFILES))
+    return ", ".join(parts) or _text(kodi, VIEWERS_NOTHING)
+
+
+def flag_text(kodi: KodiApi, viewer: Viewer, listing: PlaylistListing) -> str:
+    """What needs fixing, shown where someone comes to fix it: the service cannot name a
+    playlist in Kodi's shared log, by design."""
+    parts = []
+    gone = missing_playlists(viewer, listing.matchable, listing.unusable)
+    if gone:
+        parts.append(_text(kodi, VIEWERS_MISSING_COUNT, len(gone)))
+    wrong = unusable_playlists(viewer, listing.unusable)
+    if wrong:
+        parts.append(_text(kodi, VIEWERS_UNUSABLE_COUNT, len(wrong)))
+    return ", ".join(parts)
+
+
+def viewer_rows(kodi: KodiApi, viewers: list[Viewer], listing: PlaylistListing) -> tuple[ListRow, ...]:
+    return tuple(
+        ListRow(key=v.name, title=v.name, detail=setup_text(kodi, v), tag=flag_text(kodi, v, listing)) for v in viewers
+    )
+
+
+def summary_text(kodi: KodiApi, viewer: Viewer) -> str:
+    none = _text(kodi, VIEWER_NONE)
+    playlists = _text(kodi, VIEWER_SUMMARY_PLAYLISTS, ", ".join(viewer.playlists) or none)
+    profiles = _text(kodi, VIEWER_SUMMARY_PROFILES, ", ".join(viewer.profiles) or none)
+    # [CR] is Kodi's line break in a label.
+    return f"{playlists}[CR]{profiles}"
+
+
+def available_profiles(kodi: KodiApi) -> list[str] | None:
+    """Kodi's profile labels; None when they could not be read, which is not "none"."""
+    try:
+        result = kodi.jsonrpc("Profiles.GetProfiles")
+    except Exception as exc:
+        _log.warning("config.profile_listing_failed", error=type(exc).__name__)
+        return None
+    profiles = result.get("profiles")
+    if not isinstance(profiles, list):
+        return None
+    labels = (str(p.get("label") or "").strip() for p in profiles if isinstance(p, dict))
+    return [label for label in labels if label]
+
+
+def profile_rows(
+    kodi: KodiApi, viewer: Viewer, profiles: Sequence[str], viewers: Sequence[Viewer]
+) -> tuple[tuple[ListRow, ...], tuple[str, ...]]:
+    """Kodi's profiles, then the viewer's ones Kodi no longer has; and what starts ticked.
+
+    Matched without case, as playback matches the active profile, and ticked under Kodi's
+    own label so the stored name follows Kodi once picked.
+    """
+    kodi_labels = {p.casefold(): p for p in profiles}
+
+    def also(label: str) -> str:
+        return _also(kodi, viewer, viewers, lambda v: any(p.casefold() == label.casefold() for p in v.profiles))
+
+    missing = [p for p in viewer.profiles if p.casefold() not in kodi_labels]
+    rows = (
+        *(ListRow(key=p, title=p, detail=also(p)) for p in profiles),
+        *(ListRow(key=p, title=p, detail=also(p), tag=_text(kodi, VIEWERS_MISSING)) for p in missing),
+    )
+    ticked = tuple(kodi_labels.get(p.casefold(), p) for p in viewer.profiles)
+    return rows, ticked
+
+
 def playlist_rows(
     kodi: KodiApi, viewer: Viewer, playlists: Sequence[str], unusable: Sequence[str], viewers: Sequence[Viewer]
 ) -> tuple[ListRow, ...]:
@@ -174,9 +273,7 @@ def playlist_rows(
     """
 
     def also(name: str) -> str:
-        # A shared playlist credits everyone who has it, which is easy to miss when picking.
-        others = [v.name for v in viewers if v.name.casefold() != viewer.name.casefold() and name in v.playlists]
-        return _text(kodi, VIEWERS_ALSO, ", ".join(others)) if others else ""
+        return _also(kodi, viewer, viewers, lambda v: name in v.playlists)
 
     missing = _text(kodi, VIEWERS_MISSING)
     return (

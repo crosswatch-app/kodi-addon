@@ -3,6 +3,9 @@ import pytest
 from resources.lib import viewer_config
 from resources.lib.constants import (
     LABEL_BACK,
+    VIEWER_NONE,
+    VIEWER_SUMMARY_PLAYLISTS,
+    VIEWER_SUMMARY_PROFILES,
     VIEWERS_ADD,
     VIEWERS_ALSO,
     VIEWERS_EDIT_PLAYLISTS,
@@ -11,9 +14,12 @@ from resources.lib.constants import (
     VIEWERS_MISSING,
     VIEWERS_MISSING_COUNT,
     VIEWERS_NO_PLAYLISTS,
+    VIEWERS_NOTHING,
     VIEWERS_ONE_PLAYLIST,
+    VIEWERS_ONE_PROFILE,
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
+    VIEWERS_PROFILES,
     VIEWERS_REMOVE,
     VIEWERS_UNUSABLE_COUNT,
 )
@@ -22,11 +28,19 @@ from resources.lib.playlist_index import PLAYLIST_DIR
 from resources.lib.storage import JsonViewerStore
 from resources.lib.ui.list_window import ListResult, ListState
 from resources.lib.viewer_config import (
+    PlaylistListing,
     apply_edit,
     available_playlists,
+    available_profiles,
+    flag_text,
+    profile_rows,
     remove_viewer,
+    rename_viewer,
     run_dialog,
+    setup_text,
+    summary_text,
     validate_name,
+    viewer_rows,
 )
 from tests.fakes import FakeKodi
 
@@ -121,12 +135,12 @@ def test_removing_a_viewer_leaves_the_others():
 
 
 def test_a_blank_name_is_rejected():
-    with pytest.raises(ValueError, match="name"):
+    with pytest.raises(ValueError, match="empty"):
         validate_name("  ", [])
 
 
 def test_a_duplicate_name_is_rejected_case_insensitively():
-    with pytest.raises(ValueError, match="already"):
+    with pytest.raises(ValueError, match="taken"):
         validate_name("Anna", [Viewer(name="anna")])
 
 
@@ -436,3 +450,103 @@ def test_the_picker_logs_no_names(tmp_path):
     viewer_config._edit_playlists(FakeKodi(), Viewer(name="anna"), [])
     assert captured
     assert not any(word in line for line in captured for word in ("Secret list", "anna"))
+
+
+# --- the viewer screens' pieces --------------------------------------------
+
+class Worded(FakeKodi):
+    """Real templates for the strings these helpers fill, so the names show in assertions."""
+
+    TEXTS = {
+        VIEWERS_ONE_PLAYLIST: "1 playlist", VIEWERS_PLAYLISTS: "%s playlists",
+        VIEWERS_ONE_PROFILE: "1 profile", VIEWERS_PROFILES: "%s profiles",
+        VIEWERS_NOTHING: "nothing set up", VIEWERS_MISSING_COUNT: "%s missing",
+        VIEWERS_UNUSABLE_COUNT: "%s unusable", VIEWERS_MISSING: "missing", VIEWERS_ALSO: "Also %s",
+        VIEWER_SUMMARY_PLAYLISTS: "Playlists: %s", VIEWER_SUMMARY_PROFILES: "Profiles: %s", VIEWER_NONE: "none",
+    }
+
+    def localised(self, string_id: int) -> str:
+        return self.TEXTS.get(string_id, super().localised(string_id))
+
+
+def test_a_rename_may_keep_the_viewers_own_name_in_another_case():
+    assert validate_name("Anna", [Viewer(name="anna")], own="anna") == "Anna"
+
+
+def test_a_rename_to_another_viewers_name_is_taken():
+    with pytest.raises(ValueError, match="taken"):
+        validate_name("BOB", [Viewer(name="anna"), Viewer(name="bob")], own="anna")
+
+
+def test_rename_viewer_keeps_playlists_and_profiles():
+    viewers = [Viewer(name="anna", playlists=("A",), profiles=("P",)), Viewer(name="bob")]
+    assert rename_viewer(viewers, "anna", "annie") == [
+        Viewer(name="annie", playlists=("A",), profiles=("P",)),
+        Viewer(name="bob"),
+    ]
+
+
+def test_setup_text_counts_what_is_set_up():
+    kodi = Worded()
+    assert setup_text(kodi, Viewer(name="a", playlists=("x", "y"), profiles=("p",))) == "2 playlists, 1 profile"
+    assert setup_text(kodi, Viewer(name="a", playlists=("x",))) == "1 playlist"
+    assert setup_text(kodi, Viewer(name="a", profiles=("p", "q"))) == "2 profiles"
+    assert setup_text(kodi, Viewer(name="a")) == "nothing set up"
+
+
+def test_flag_text_names_missing_and_unusable():
+    listing = PlaylistListing(["Anna TV"], ["Eps"])
+    viewer = Viewer(name="a", playlists=("Gone", "Eps", "Anna TV"))
+    assert flag_text(Worded(), viewer, listing) == "1 missing, 1 unusable"
+    assert flag_text(Worded(), Viewer(name="a", playlists=("Anna TV",)), listing) == ""
+
+
+def test_nothing_is_flagged_when_the_playlist_listing_failed():
+    """A failed listing is not the same as none existing; flagging then is a false alarm."""
+    assert flag_text(Worded(), Viewer(name="a", playlists=("Anna TV",)), PlaylistListing([], [])) == ""
+
+
+def test_viewer_rows_list_every_viewer_by_name_in_order():
+    viewers = [Viewer(name="bob"), Viewer(name="anna", playlists=("Gone",))]
+    rows = viewer_rows(Worded(), viewers, PlaylistListing(["X"], []))
+    assert [(r.key, r.title, r.detail, r.tag) for r in rows] == [
+        ("bob", "bob", "nothing set up", ""),
+        ("anna", "anna", "1 playlist", "1 missing"),
+    ]
+
+
+def test_summary_text_lists_playlists_and_profiles():
+    viewer = Viewer(name="anna", playlists=("Anna TV", "Cartoons"))
+    assert summary_text(Worded(), viewer) == "Playlists: Anna TV, Cartoons[CR]Profiles: none"
+
+
+def test_available_profiles_reads_kodis_labels():
+    profiles = {"profiles": [{"label": "Master user"}, {"label": " Kids "}, {}]}
+    kodi = FakeKodi(rpc_handlers={"Profiles.GetProfiles": lambda p: profiles})
+    assert available_profiles(kodi) == ["Master user", "Kids"]
+
+
+def test_a_failed_profile_listing_is_none_not_empty():
+    def boom(params):
+        raise RuntimeError("rpc down")
+
+    assert available_profiles(FakeKodi(rpc_handlers={"Profiles.GetProfiles": boom})) is None
+
+
+def test_profile_rows_tick_the_viewers_profiles_and_list_missing_ones_last():
+    viewer = Viewer(name="anna", profiles=("Kids", "Old"))
+    others = [viewer, Viewer(name="bob", profiles=("Kids",))]
+    rows, ticked = profile_rows(Worded(), viewer, ["Master user", "Kids"], others)
+    assert [(r.key, r.detail, r.tag) for r in rows] == [
+        ("Master user", "", ""),
+        ("Kids", "Also bob", ""),
+        ("Old", "", "missing"),
+    ]
+    assert ticked == ("Kids", "Old")
+
+
+def test_a_profile_matches_kodis_label_whatever_the_case():
+    viewer = Viewer(name="anna", profiles=("master user",))
+    rows, ticked = profile_rows(Worded(), viewer, ["Master user"], [viewer])
+    assert [r.key for r in rows] == ["Master user"]
+    assert ticked == ("Master user",)
