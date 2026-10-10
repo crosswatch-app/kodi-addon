@@ -184,6 +184,7 @@ def test_the_close_label_comes_from_a_property_so_a_pick_list_can_say_cancel():
 
 
 PICK = "String.IsEqual(Window.Property(CW.Pick),true)"
+NO_THUMBS = "String.IsEqual(Window.Property(CW.NoThumbs),true)"
 
 
 def test_a_pick_list_has_an_accent_done_button_where_the_bulk_button_sits():
@@ -218,7 +219,7 @@ def test_pick_rows_show_a_tick_and_hide_the_thumbnail():
         assert len(ticks) == 1 and ticks[0].findtext("visible") == "String.IsEqual(ListItem.Property(chosen),true)"
         assert (ticks[0].findtext("width"), ticks[0].findtext("height")) == ("48", "48")
         thumbs = [i for i in images if "thumb" in (i.findtext("texture") or "") or "poster_empty" in (i.findtext("texture") or "")]
-        assert thumbs and all(i.findtext("visible") == f"!{PICK}" for i in thumbs)
+        assert thumbs and all(i.findtext("visible") == f"!{PICK} + !{NO_THUMBS}" for i in thumbs)
         chosen = [i for i in images if (i.findtext("texture") or "").startswith("crosswatch/box_chosen")]
         assert chosen
 
@@ -259,3 +260,13 @@ def test_the_viewer_window_buttons_sit_in_one_row_starting_on_playlists():
     labels = [VIEWER_PLAYLISTS, VIEWER_PROFILES, VIEWER_RENAME, VIEWER_REMOVE, LABEL_BACK]
     assert [b.findtext("label") for b in buttons] == [f"$ADDON[{ADDON_ID} {i}]" for i in labels]
     VIEWER.read_text(encoding="ascii")
+
+
+def test_a_list_without_artwork_starts_its_titles_at_the_left():
+    root = ET.parse(LIST).getroot()
+    for layout in ("itemlayout", "focusedlayout"):
+        found = root.find(f".//control[@id='100']/{layout}")
+        assert found is not None
+        titles = [c for c in found.findall("control") if c.findtext("label") == "$INFO[ListItem.Label]"]
+        bare = [t for t in titles if t.findtext("visible") == f"!{PICK} + {NO_THUMBS}"]
+        assert len(bare) == 1 and bare[0].findtext("left") == "28"

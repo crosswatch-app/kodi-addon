@@ -54,6 +54,8 @@ class ListRequest:
     bulk_shown: str = ""
     # The bulk button acts on the screen, not on the rows shown, so it stays with none.
     bulk_always: bool = False
+    # False for rows that never have artwork: the thumbnail column is dropped, not left empty.
+    thumbs: bool = True
     # A pick list: OK ticks a row in place, Done returns every ticked key.
     pick: bool = False
     ticked: tuple[str, ...] = ()

@@ -170,5 +170,19 @@
     "heading": "Anna",
     "message": "Playlists: Anna's shows, Cartoons[CR]Profiles: Master user",
     "keys": []
+  },
+  "viewer-list": {
+    "window": "crosswatch-list.xml",
+    "rows": "viewers",
+    "search": "",
+    "filter": 0,
+    "keys": []
+  },
+  "profile-picker": {
+    "window": "crosswatch-list.xml",
+    "rows": "profiles",
+    "search": "",
+    "filter": 0,
+    "keys": []
   }
 }

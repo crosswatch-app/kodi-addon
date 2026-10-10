@@ -420,6 +420,7 @@ def test_the_list_shows_every_viewer_with_add_viewer_always_available(tmp_path):
     assert [r.key for r in request.rows] == ["anna", "bob"]
     assert request.bulk_always and request.bulk_all == f"#{VIEWERS_ADD}" and request.filters == ()
     assert request.heading == f"#{VIEWERS_HEADING}"
+    assert not request.thumbs
 
 
 def test_opening_a_viewer_shows_their_window_and_back_returns_to_the_list(tmp_path):

@@ -417,6 +417,7 @@ def run_dialog(kodi: KodiApi, store: ViewerStore, memory: PromptMemory) -> None:
             bulk_all=add,
             bulk_shown=add,
             bulk_always=True,
+            thumbs=False,
         )
         result = kodi.list_window(request, state)
         state = result.state

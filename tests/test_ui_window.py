@@ -687,3 +687,19 @@ def test_back_leaves_the_viewer_window_with_no_action():
     dialog.onInit()
     dialog.onAction(Action(92))
     assert dialog.result is None and dialog.close_reason == "back"
+
+
+def test_a_list_without_artwork_hides_the_thumbnail_column():
+    request = ListRequest(heading="Viewers", rows=SHOWS, count_one="1", count_all="%s", thumbs=False)
+    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, START, lambda i: LIST_TEXTS.get(i, ""))
+    dialog.set_control(LIST_ROWS, FakeRows())
+    dialog.set_control(LIST_SEARCH, FakeEdit())
+    dialog.onInit()
+    assert dialog.getProperty("CW.NoThumbs") == "true"
+
+
+def test_a_list_with_artwork_keeps_the_thumbnail_column():
+    dialog, _, _ = _list()
+    dialog.onInit()
+    assert dialog.getProperty("CW.NoThumbs") == ""

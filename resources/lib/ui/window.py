@@ -301,7 +301,11 @@ class ListDialog(CrossWatchDialog):
         self._shown: list[lw.ListRow] = []
         self.configure(
             localised,
-            {"CW.Heading": request.heading, "CW.Close": localised(WINDOW_CLOSE)},
+            {
+                "CW.Heading": request.heading,
+                "CW.Close": localised(WINDOW_CLOSE),
+                "CW.NoThumbs": "" if request.thumbs else "true",
+            },
             autoclose_seconds=0,
             close_on_playback=False,
             is_playing=lambda: False,

@@ -62,6 +62,12 @@ def _list(scene: dict, path: str) -> None:
     if scene.get("rows") == "playlists":
         _pick(scene, path)
         return
+    if scene.get("rows") == "viewers":
+        _viewers(scene, path)
+        return
+    if scene.get("rows") == "profiles":
+        _profiles(scene, path)
+        return
     with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
         shows = json.load(handle)["shows"]
     rows = tuple(
@@ -135,6 +141,51 @@ def _pick(scene: dict, path: str) -> None:
 def _confirm(scene: dict, path: str) -> None:
     dialog = window.ConfirmDialog(window.CONFIRM_XML, path, "Default", "1080i")
     dialog.prepare(scene["heading"], scene["message"], TARGET.getLocalizedString)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
+def _viewers(scene: dict, path: str) -> None:
+    from resources.lib.ui import list_window as lw
+
+    text = TARGET.getLocalizedString
+    details = {
+        "Anna": text(30059),
+        "Ben": text(30056).replace("%s", "3") + ", " + text(30105),
+        "Chloe": text(30104),
+    }
+    tags = {"Ben": text(30057).replace("%s", "1")}
+    rows = tuple(lw.ListRow(key=n, title=n, detail=details[n], tag=tags.get(n, "")) for n in ("Anna", "Ben", "Chloe"))
+    add = text(30048)
+    request = lw.ListRequest(
+        heading=text(30010), rows=rows, count_one=text(30102), count_all=text(30103),
+        bulk_all=add, bulk_shown=add, bulk_always=True, thumbs=False,
+    )
+    dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
+    dialog.prepare(request, lw.ListState(search=scene["search"]), text)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
+def _profiles(scene: dict, path: str) -> None:
+    from resources.lib.ui import list_window as lw
+
+    text = TARGET.getLocalizedString
+    rows = (
+        lw.ListRow(key="Master user", title="Master user"),
+        lw.ListRow(key="Kids", title="Kids", detail=text(30098).replace("%s", "Ben")),
+        lw.ListRow(key="Old profile", title="Old profile", tag=text(30058)),
+    )
+    request = lw.ListRequest(
+        heading=text(30114).replace("%s", "Anna"), rows=rows, count_one=text(30105), count_all=text(30106),
+        pick=True, ticked=("Kids", "Old profile"),
+    )
+    dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
+    dialog.prepare(request, lw.ListState(), text)
     try:
         dialog.doModal()
     finally:
