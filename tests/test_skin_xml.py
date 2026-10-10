@@ -62,3 +62,12 @@ def test_no_include_or_named_colour_is_used():
     assert "<include" not in text
     for colour in re.findall(r"<(?:textcolor|focusedcolor)>([^<]*)<", text):
         assert re.fullmatch(r"[0-9A-F]{8}", colour), colour
+
+
+def test_the_viewer_list_shows_when_there_are_more_rows():
+    """The list holds Everyone and three names; a fourth viewer is already out of sight."""
+    page = _control("200").findtext("pagecontrol")
+    assert page is not None
+    scrollbar = _control(page)
+    assert scrollbar.get("type") == "scrollbar"
+    assert scrollbar.findtext("showonepage") == "false"

@@ -69,6 +69,7 @@
                 <left>400</left><top>292</top><width>790</width><height>304</height>
                 <orientation>vertical</orientation>
                 <scrolltime>0</scrolltime>
+                <pagecontrol>201</pagecontrol>
                 <ondown>20</ondown>
                 <itemlayout width="790" height="76">
                     <control type="image">
@@ -128,6 +129,17 @@
                         <visible>String.IsEqual(ListItem.Property(chosen),true)</visible>
                     </control>
                 </focusedlayout>
+            </control>
+            <control type="scrollbar" id="201">
+                <left>1204</left><top>292</top><width>6</width><height>294</height>
+                <orientation>vertical</orientation>
+                <showonepage>false</showonepage>
+                <texturesliderbackground colordiffuse="FF1C222C">crosswatch/white.png</texturesliderbackground>
+                <texturesliderbar colordiffuse="FF7C5CFF">crosswatch/white.png</texturesliderbar>
+                <texturesliderbarfocus colordiffuse="FF7C5CFF">crosswatch/white.png</texturesliderbarfocus>
+                <textureslidernib></textureslidernib>
+                <textureslidernibfocus></textureslidernibfocus>
+                <onleft>200</onleft>
             </control>
             <control type="button" id="20">
                 <left>400</left><top>620</top><width>170</width><height>72</height>
