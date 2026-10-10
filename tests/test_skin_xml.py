@@ -242,3 +242,20 @@ def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping
         ordered = sorted(spans.values())
         assert len(ordered) == 4  # title, detail, tag, tick
         assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered
+
+
+VIEWER = SKIN / "1080i" / "crosswatch-viewer.xml"
+
+
+def test_the_viewer_window_buttons_sit_in_one_row_starting_on_playlists():
+    from resources.lib.constants import LABEL_BACK, VIEWER_PLAYLISTS, VIEWER_PROFILES, VIEWER_REMOVE, VIEWER_RENAME
+
+    root = ET.parse(VIEWER).getroot()
+    assert root.findtext("defaultcontrol") == "10"
+    row = root.find(".//control[@type='grouplist']")
+    assert row is not None and row.findtext("orientation") == "horizontal"
+    buttons = row.findall("control")
+    assert [b.get("id") for b in buttons] == ["10", "11", "12", "13", "14"]
+    labels = [VIEWER_PLAYLISTS, VIEWER_PROFILES, VIEWER_RENAME, VIEWER_REMOVE, LABEL_BACK]
+    assert [b.findtext("label") for b in buttons] == [f"$ADDON[{ADDON_ID} {i}]" for i in labels]
+    VIEWER.read_text(encoding="ascii")

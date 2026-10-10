@@ -70,3 +70,11 @@ def test_list_window_returns_scripted_results_then_close():
     assert kodi.list_window(request, ListState()) == opened
     assert kodi.list_window(request, ListState(search="x")) == ListResult("close", ListState(search="x"))
     assert kodi.list_window_calls == [(request, ListState()), (request, ListState(search="x"))]
+
+
+def test_viewer_window_returns_scripted_actions_then_back():
+    kodi = FakeKodi()
+    kodi.viewer_window_results = ["profiles"]
+    assert kodi.viewer_window("anna", "s") == "profiles"
+    assert kodi.viewer_window("anna", "s") == "back"
+    assert kodi.viewer_window_calls == [("anna", "s"), ("anna", "s")]

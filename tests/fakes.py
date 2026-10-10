@@ -39,6 +39,8 @@ class FakeKodi:
         self.confirm_window_calls: list[tuple[str, str]] = []
         self.list_window_results: list[Any] = []
         self.list_window_calls: list[tuple[Any, Any]] = []
+        self.viewer_window_results: list[str] = []
+        self.viewer_window_calls: list[tuple[str, str]] = []
         self.select_answer = select_answer
         self.input_answer = input_answer
         # Consumed in order, for a flow that asks more than one question.
@@ -121,6 +123,10 @@ class FakeKodi:
         if self.list_window_results:
             return self.list_window_results.pop(0)
         return ListResult("close", state)
+
+    def viewer_window(self, heading: str, summary: str) -> str:
+        self.viewer_window_calls.append((heading, summary))
+        return self.viewer_window_results.pop(0) if self.viewer_window_results else "back"
 
     def select(self, heading: str, options: list[str]) -> int:
         return self.select_answer

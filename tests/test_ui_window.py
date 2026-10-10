@@ -22,7 +22,12 @@ from resources.lib.ui.window import (
     BUTTON_FORGET,
     BUTTON_NO,
     BUTTON_PICK_DONE,
+    BUTTON_PLAYLISTS,
+    BUTTON_PROFILES,
+    BUTTON_REMOVE,
+    BUTTON_RENAME,
     BUTTON_SKIP,
+    BUTTON_VIEWER_BACK,
     BUTTON_YES,
     LIST_FILTER,
     LIST_ROWS,
@@ -31,6 +36,7 @@ from resources.lib.ui.window import (
     ConfirmDialog,
     ListDialog,
     PickListDialog,
+    ViewerDialog,
     WhoWatchedDialog,
 )
 
@@ -649,3 +655,35 @@ def test_a_bulk_always_button_acts_with_nothing_shown():
     assert rows.items == [] and dialog.getProperty("CW.Bulk") == "Add viewer"
     dialog.onClick(BUTTON_BULK)
     assert dialog.result.action == "bulk" and dialog.result.keys == ()
+
+
+def _viewer() -> Any:
+    dialog: Any = ViewerDialog("crosswatch-viewer.xml", "/addon", "Default", "1080i")
+    dialog.prepare("anna", "Playlists: Anna TV[CR]Profiles: none", lambda i: "")
+    return dialog
+
+
+def test_the_viewer_window_shows_the_name_and_summary_and_starts_on_playlists():
+    dialog = _viewer()
+    dialog.onInit()
+    assert dialog.getProperty("CW.Heading") == "anna"
+    assert dialog.getProperty("CW.Message") == "Playlists: Anna TV[CR]Profiles: none"
+    assert dialog.focused == BUTTON_PLAYLISTS
+
+
+def test_each_viewer_button_returns_its_action():
+    for button, action in [
+        (BUTTON_PLAYLISTS, "playlists"), (BUTTON_PROFILES, "profiles"),
+        (BUTTON_RENAME, "rename"), (BUTTON_REMOVE, "remove"), (BUTTON_VIEWER_BACK, "back"),
+    ]:
+        dialog = _viewer()
+        dialog.onInit()
+        dialog.onClick(button)
+        assert dialog.result == action and dialog.close_reason == action
+
+
+def test_back_leaves_the_viewer_window_with_no_action():
+    dialog = _viewer()
+    dialog.onInit()
+    dialog.onAction(Action(92))
+    assert dialog.result is None and dialog.close_reason == "back"

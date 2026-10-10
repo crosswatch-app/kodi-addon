@@ -314,3 +314,19 @@ msgstr ""
 msgctxt "#30101"
 msgid "No poster"
 msgstr ""
+
+msgctxt "#30107"
+msgid "Playlists"
+msgstr ""
+
+msgctxt "#30108"
+msgid "Profiles"
+msgstr ""
+
+msgctxt "#30109"
+msgid "Rename"
+msgstr ""
+
+msgctxt "#30110"
+msgid "Remove"
+msgstr ""

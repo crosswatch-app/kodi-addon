@@ -164,5 +164,11 @@
     "filter": 0,
     "position": 6,
     "keys": []
+  },
+  "viewer-window": {
+    "window": "crosswatch-viewer.xml",
+    "heading": "Anna",
+    "message": "Playlists: Anna's shows, Cartoons[CR]Profiles: Master user",
+    "keys": []
   }
 }

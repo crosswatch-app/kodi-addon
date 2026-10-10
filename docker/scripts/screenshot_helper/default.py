@@ -141,7 +141,21 @@ def _confirm(scene: dict, path: str) -> None:
         dialog.stop()
 
 
-WINDOWS = {window.WHO_WATCHED_XML: _who_watched, window.LIST_XML: _list, window.CONFIRM_XML: _confirm}
+def _viewer(scene: dict, path: str) -> None:
+    dialog = window.ViewerDialog(window.VIEWER_XML, path, "Default", "1080i")
+    dialog.prepare(scene["heading"], scene["message"], TARGET.getLocalizedString)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
+WINDOWS = {
+    window.WHO_WATCHED_XML: _who_watched,
+    window.LIST_XML: _list,
+    window.CONFIRM_XML: _confirm,
+    window.VIEWER_XML: _viewer,
+}
 
 
 def main() -> None:
