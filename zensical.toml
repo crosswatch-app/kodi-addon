@@ -1,0 +1,62 @@
+[project]
+site_name = "CrossWatch for Kodi"
+site_description = "A Kodi add-on that reports what you watch, and who watched it, to your own CrossWatch."
+site_url = "https://crosswatch-app.github.io/kodi-addon/"
+repo_url = "https://github.com/crosswatch-app/kodi-addon"
+repo_name = "crosswatch-app/kodi-addon"
+docs_dir = "docs"
+# Under build/, which git ignores, so a local build never lands in a commit or the zip.
+site_dir = "build/site"
+nav = [
+  { "Home" = "index.md" },
+  { "Get started" = [
+    { "Install" = "install.md" },
+    { "Quick start" = "quick-start.md" },
+    { "Connect to CrossWatch" = "connect.md" },
+  ] },
+  { "Using it" = [
+    { "Who watched" = "who-watched.md" },
+    { "Viewers" = "viewers.md" },
+    { "Remembered answers" = "remembered-answers.md" },
+  ] },
+  { "Reference" = [
+    { "Settings" = "settings.md" },
+    { "Troubleshooting" = "troubleshooting.md" },
+    { "What the add-on sends" = "what-is-sent.md" },
+  ] },
+]
+
+# The payload contract is CrossWatch's maintainer's document for developers, not a user
+# page; it stays in docs/ and is read on GitHub.
+[project.plugins.exclude]
+glob = ["contract.md"]
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.arithmatex.generic = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}
