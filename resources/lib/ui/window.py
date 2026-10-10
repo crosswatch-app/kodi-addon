@@ -18,6 +18,7 @@ import xbmcgui
 from resources.lib.constants import (
     PROMPT_EVERYONE,
     WHO_WATCHED_QUESTION,
+    WINDOW_CANCEL,
     WINDOW_CLOSE,
     WINDOW_CLOSES_IN,
     WINDOW_SEARCH,
@@ -244,6 +245,7 @@ LIST_FILTER = 31
 LIST_ROWS = 100
 BUTTON_BULK = 20
 BUTTON_CLOSE = 21
+BUTTON_PICK_DONE = 22
 
 
 class ListDialog(CrossWatchDialog):
@@ -338,3 +340,37 @@ class ListDialog(CrossWatchDialog):
         self.setProperty("CW.Count", lw.count_text(request, self._localised, len(self._shown)))
         self.setProperty("CW.Bulk", lw.bulk_label(request, len(self._shown)))
         self.setProperty("CW.Empty", "" if self._shown else "true")
+
+
+class PickListDialog(ListDialog):
+    """A list to tick rows in. OK ticks a row in place; Done returns every ticked row, also
+    those a search hides; Cancel and Back change nothing."""
+
+    name = "pick_list"
+
+    def prepare(self, request: lw.ListRequest, state: lw.ListState, localised: Localised) -> None:
+        super().prepare(request, state, localised)
+        self._ticked = frozenset(request.ticked)
+        self._window_properties["CW.Pick"] = "true"
+        self._window_properties["CW.Close"] = localised(WINDOW_CANCEL)
+
+    def onClick(self, controlId: int) -> None:
+        if controlId == LIST_ROWS:
+            position = self.state().position
+            if 0 <= position < len(self._shown):
+                key = self._shown[position].key
+                self._ticked = lw.toggle(self._ticked, key)
+                # In place: refilling the list would move the household off the row.
+                rows: Any = self.getControl(LIST_ROWS)
+                rows.getListItem(position).setProperty("chosen", "true" if key in self._ticked else "")
+        elif controlId == BUTTON_PICK_DONE:
+            keys = lw.picked(self._request.rows, self._ticked)
+            self.finish("done", lw.ListResult("done", self.state(), keys=keys))
+        else:
+            super().onClick(controlId)
+
+    def _show(self, position: int) -> None:
+        super()._show(position)
+        rows: Any = self.getControl(LIST_ROWS)
+        for index, row in enumerate(self._shown):
+            rows.getListItem(index).setProperty("chosen", "true" if row.key in self._ticked else "")

@@ -302,3 +302,7 @@ msgstr ""
 msgctxt "#30097"
 msgid "1 show"
 msgstr ""
+
+msgctxt "#30099"
+msgid "Cancel"
+msgstr ""

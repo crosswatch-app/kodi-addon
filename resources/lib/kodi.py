@@ -230,11 +230,12 @@ class KodiRuntime:
         def make(path: str) -> Any:
             from resources.lib.ui import window
 
-            dialog = window.ListDialog(window.LIST_XML, path, "Default", "1080i")
+            kind = window.PickListDialog if request.pick else window.ListDialog
+            dialog = kind(window.LIST_XML, path, "Default", "1080i")
             dialog.prepare(request, state, self.localised)
             return dialog
 
-        dialog = self._modal("list", make)
+        dialog = self._modal("pick_list" if request.pick else "list", make)
         if dialog is None or dialog.result is None:
             return ListResult("close", state)
         return dialog.result

@@ -209,3 +209,36 @@ def test_list_window_back_or_failure_is_close_with_the_state_kept(runtime, monke
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
     state = ListState(search="a")
     assert runtime.list_window(LIST_REQUEST, state) == ListResult("close", state)
+
+
+PICK_REQUEST = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", pick=True)
+
+
+def test_list_window_opens_the_pick_window_for_a_pick_request(runtime, monkeypatch):
+    opened = []
+
+    class Pick(window_mod.PickListDialog):
+        def doModal(self) -> None:
+            opened.append(type(self))
+            self.finish("done", ListResult("done", ListState(), keys=("a",)))
+
+    monkeypatch.setattr(window_mod, "PickListDialog", Pick)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.list_window(PICK_REQUEST, ListState()) == ListResult("done", ListState(), keys=("a",))
+    assert opened == [Pick]
+
+
+def test_a_failed_pick_window_is_a_logged_close(runtime, monkeypatch):
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no skin file")
+
+    monkeypatch.setattr(window_mod, "PickListDialog", broken)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.list_window(PICK_REQUEST, ListState()) == ListResult("close", ListState())
+    line = next(m for m in captured if "ui.window_failed" in m)
+    assert "pick_list" in line and "RuntimeError" in line
