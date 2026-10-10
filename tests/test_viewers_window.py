@@ -84,3 +84,11 @@ def test_the_window_starts_on_the_key_or_the_first_row():
     assert start_position(rows, "dan") == 0
     assert start_position(rows, "") == 0
     assert start_position((), "anna") == 0
+
+
+def test_a_warning_cut_off_the_panel_shows_on_and_n_more():
+    """The row's icon says something needs fixing; the panel must not hide where."""
+    lines = (HEAD_P, *(PanelLine(f"P{i}") for i in range(6)), HEAD_Q, PanelLine("Old", tag="missing", warn=True))
+    kept = fit(lines, "and %s more")
+    assert kept[-1] == PanelLine("and 1 more", warn=True)
+    assert not fit((*lines[:-1], PanelLine("Kids")), "and %s more")[-1].warn

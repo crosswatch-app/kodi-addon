@@ -58,15 +58,17 @@ class ViewersResult:
 
 def fit(lines: Sequence[PanelLine], more: str) -> tuple[PanelLine, ...]:
     """At most PANEL_SLOTS lines. Cut lines end in "and N more", N counting what was left out
-    except headings, and a heading is not left dangling above it."""
+    except headings, and a heading is not left dangling above it. The cut line carries the
+    warning of any line it hides, since the row's icon promises the panel shows the reason."""
     if len(lines) <= PANEL_SLOTS:
         return tuple(lines)
     kept = list(lines[: PANEL_SLOTS - 1])
     while kept and kept[-1].heading:
         kept.pop()
-    left_out = sum(1 for line in lines[len(kept):] if not line.heading)
+    hidden = lines[len(kept):]
+    left_out = sum(1 for line in hidden if not line.heading)
     # replace rather than %: a translation that drops the placeholder must not raise.
-    return (*kept, PanelLine(more.replace("%s", str(left_out), 1)))
+    return (*kept, PanelLine(more.replace("%s", str(left_out), 1), warn=any(line.warn for line in hidden)))
 
 
 def properties(row: ViewerRow, request: ViewersRequest) -> dict[str, str]:

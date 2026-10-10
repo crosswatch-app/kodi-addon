@@ -298,7 +298,8 @@ with each profile (a section reads "none" when it is empty). A playlist that was
 renamed, and a profile Kodi no longer has, are tagged "missing" with a warning icon; a profile
 is only tagged when Kodi's profiles could be read. A playlist that is not a TV show or film
 playlist is tagged "unusable". When there are more lines than fit, the last one says "and N
-more": the "Playlists" and "Profiles" buttons list them all.
+more": the "Playlists" and "Profiles" buttons list them all. That line carries the warning
+icon when one of the lines it hides needs fixing.
 
 Below that is a CrossWatch line. A check icon and "CrossWatch route" mean a CrossWatch route
 accepts the viewer's name; a warning icon and "No CrossWatch route" mean none does. CrossWatch
