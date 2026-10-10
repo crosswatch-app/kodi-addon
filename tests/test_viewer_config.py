@@ -1,6 +1,6 @@
 import pytest
 
-from resources.lib import viewer_config
+from resources.lib import paths, viewer_config
 from resources.lib.constants import (
     VIEWER_NONE,
     VIEWER_SUMMARY_PLAYLISTS,
@@ -11,6 +11,7 @@ from resources.lib.constants import (
     VIEWERS_MISSING,
     VIEWERS_MISSING_COUNT,
     VIEWERS_NO_PLAYLISTS,
+    VIEWERS_NO_ROUTE,
     VIEWERS_NOTHING,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_ONE_PROFILE,
@@ -23,14 +24,17 @@ from resources.lib.constants import (
     VIEWERS_UNUSABLE_COUNT,
 )
 from resources.lib.models import Viewer
+from resources.lib.outbox import config_fingerprint
 from resources.lib.playlist_index import PLAYLIST_DIR
-from resources.lib.storage import JsonViewerStore, PromptMemory
+from resources.lib.routes import RouteFacts
+from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 from resources.lib.ui.list_window import ListResult, ListState
 from resources.lib.viewer_config import (
     PlaylistListing,
     apply_edit,
     available_playlists,
     available_profiles,
+    current_routes,
     flag_text,
     profile_rows,
     remove_viewer,
@@ -272,6 +276,7 @@ class Worded(FakeKodi):
         VIEWERS_ONE_PROFILE: "1 profile", VIEWERS_PROFILES: "%s profiles",
         VIEWERS_NOTHING: "nothing set up", VIEWERS_MISSING_COUNT: "%s missing",
         VIEWERS_UNUSABLE_COUNT: "%s unusable", VIEWERS_MISSING: "missing", VIEWERS_ALSO: "Also %s",
+        VIEWERS_NO_ROUTE: "no CrossWatch route",
         VIEWER_SUMMARY_PLAYLISTS: "Playlists: %s", VIEWER_SUMMARY_PROFILES: "Profiles: %s", VIEWER_NONE: "none",
     }
 
@@ -576,3 +581,51 @@ def test_the_screens_log_no_names(tmp_path):
     run_dialog(kodi, store, memory)
     assert captured
     assert not any(word in line for line in captured for word in ("Secret list", "anna", "annie", "bob"))
+
+
+# --- CrossWatch routes -----------------------------------------------------
+
+def test_a_viewer_no_crosswatch_route_takes_is_tagged():
+    routes = RouteFacts(count=1, accepted=frozenset({"anna"}))
+    viewers = [Viewer(name="anna"), Viewer(name="bob", playlists=("Gone",))]
+    rows = viewer_rows(Worded(), viewers, PlaylistListing(["X"], []), routes)
+    assert [r.tag for r in rows] == ["", "1 missing, no CrossWatch route"]
+
+
+def test_without_route_facts_nobody_is_tagged():
+    rows = viewer_rows(Worded(), [Viewer(name="anna")], PlaylistListing(["X"], []), None)
+    assert rows[0].tag == ""
+
+
+def test_no_routes_at_all_tags_everyone():
+    rows = viewer_rows(Worded(), [Viewer(name="anna")], PlaylistListing(["X"], []), RouteFacts(0, frozenset()))
+    assert rows[0].tag == "no CrossWatch route"
+
+
+def _paired(tmp_path, token="tok") -> FakeKodi:
+    return FakeKodi(
+        root=str(tmp_path), settings={"webhook_base_url": "http://cw:8787/webhook/kodiwatcher", "webhook_token": token}
+    )
+
+
+def test_current_routes_reads_the_facts_of_this_pairing(tmp_path):
+    kodi = _paired(tmp_path)
+    RouteStore(paths.routes_path(kodi)).save(config_fingerprint("tok"), RouteFacts(1, frozenset({"anna"})))
+    assert current_routes(kodi) == RouteFacts(1, frozenset({"anna"}))
+
+
+def test_current_routes_ignores_an_earlier_pairing(tmp_path):
+    kodi = _paired(tmp_path, token="new")
+    RouteStore(paths.routes_path(kodi)).save(config_fingerprint("old"), RouteFacts(1, frozenset({"anna"})))
+    assert current_routes(kodi) is None
+
+
+def test_current_routes_is_nothing_when_not_paired(tmp_path):
+    assert current_routes(FakeKodi(root=str(tmp_path))) is None
+
+
+def test_the_viewer_list_carries_the_route_tag(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")])
+    kodi = ScriptedKodi([], lists=[("close", "")])
+    run_dialog(kodi, store, memory, RouteFacts(1, frozenset({"anna"})))
+    assert [r.tag for r in kodi.lists_shown[0].rows] == ["", f"#{VIEWERS_NO_ROUTE}"]

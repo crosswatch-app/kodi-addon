@@ -31,6 +31,7 @@ from resources.lib.constants import (
     VIEWERS_MISSING_COUNT,
     VIEWERS_NAME_PROMPT,
     VIEWERS_NO_PLAYLISTS,
+    VIEWERS_NO_ROUTE,
     VIEWERS_NOTHING,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_ONE_PROFILE,
@@ -47,8 +48,10 @@ from resources.lib.constants import (
 from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.log import get_logger
 from resources.lib.models import Viewer
+from resources.lib.outbox import config_fingerprint
 from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared_type
-from resources.lib.storage import JsonViewerStore, PromptMemory, ViewerStore
+from resources.lib.routes import RouteFacts
+from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
 
 _log = get_logger("config")
@@ -172,7 +175,7 @@ def setup_text(kodi: KodiApi, viewer: Viewer) -> str:
     return ", ".join(parts) or _text(kodi, VIEWERS_NOTHING)
 
 
-def flag_text(kodi: KodiApi, viewer: Viewer, listing: PlaylistListing) -> str:
+def flag_text(kodi: KodiApi, viewer: Viewer, listing: PlaylistListing, routes: RouteFacts | None = None) -> str:
     """What needs fixing, shown where someone comes to fix it: the service cannot name a
     playlist in Kodi's shared log, by design."""
     parts = []
@@ -182,13 +185,27 @@ def flag_text(kodi: KodiApi, viewer: Viewer, listing: PlaylistListing) -> str:
     wrong = unusable_playlists(viewer, listing.unusable)
     if wrong:
         parts.append(_text(kodi, VIEWERS_UNUSABLE_COUNT, len(wrong)))
+    # Only what CrossWatch said about this pairing: without a reply there is no claim.
+    if routes is not None and viewer.name not in routes.accepted:
+        parts.append(_text(kodi, VIEWERS_NO_ROUTE))
     return ", ".join(parts)
 
 
-def viewer_rows(kodi: KodiApi, viewers: list[Viewer], listing: PlaylistListing) -> tuple[ListRow, ...]:
+def viewer_rows(
+    kodi: KodiApi, viewers: list[Viewer], listing: PlaylistListing, routes: RouteFacts | None = None
+) -> tuple[ListRow, ...]:
     return tuple(
-        ListRow(key=v.name, title=v.name, detail=setup_text(kodi, v), tag=flag_text(kodi, v, listing)) for v in viewers
+        ListRow(key=v.name, title=v.name, detail=setup_text(kodi, v), tag=flag_text(kodi, v, listing, routes))
+        for v in viewers
     )
+
+
+def current_routes(kodi: KodiApi) -> RouteFacts | None:
+    """What CrossWatch last said about its routes, for the current pairing only."""
+    settings = read_settings(kodi)
+    if settings.webhook_url() is None:
+        return None
+    return RouteStore(paths.routes_path(kodi)).load(config_fingerprint(settings.webhook_token))
 
 
 def summary_text(kodi: KodiApi, viewer: Viewer) -> str:
@@ -391,7 +408,7 @@ def _viewer_page(
             return viewers
 
 
-def run_dialog(kodi: KodiApi, store: ViewerStore, memory: PromptMemory) -> None:
+def run_dialog(kodi: KodiApi, store: ViewerStore, memory: PromptMemory, routes: RouteFacts | None = None) -> None:
     viewers = store.viewers()
     # Once per screen: each is a directory or profile listing over JSON-RPC.
     listing = available_playlists(kodi)
@@ -411,7 +428,7 @@ def run_dialog(kodi: KodiApi, store: ViewerStore, memory: PromptMemory) -> None:
         add = _text(kodi, VIEWERS_ADD)
         request = ListRequest(
             heading=_text(kodi, VIEWERS_HEADING),
-            rows=viewer_rows(kodi, viewers, listing),
+            rows=viewer_rows(kodi, viewers, listing, routes),
             count_one=_text(kodi, VIEWERS_ONE_VIEWER),
             count_all=_text(kodi, VIEWERS_COUNT),
             bulk_all=add,
@@ -437,4 +454,6 @@ def main() -> None:
     # A separate interpreter with its own module state: without this every line below is
     # written to a no-op sink and a failure here is invisible everywhere.
     logmod.configure(log_dir=paths.log_dir(kodi), debug=settings.debug_logging, sink=kodi.log)
-    run_dialog(kodi, JsonViewerStore(paths.viewers_path(kodi)), PromptMemory(paths.prompts_path(kodi)))
+    run_dialog(
+        kodi, JsonViewerStore(paths.viewers_path(kodi)), PromptMemory(paths.prompts_path(kodi)), current_routes(kodi)
+    )
