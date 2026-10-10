@@ -4,6 +4,9 @@ site_description = "A Kodi add-on that reports what you watch, and who watched i
 site_url = "https://crosswatch-app.github.io/kodi-addon/"
 repo_url = "https://github.com/crosswatch-app/kodi-addon"
 repo_name = "crosswatch-app/kodi-addon"
+edit_uri = "edit/main/docs/"
+copyright = "CrossWatch for Kodi, GPL-2.0-only"
+extra_css = ["stylesheets/extra.css"]
 docs_dir = "docs"
 # Under build/, which git ignores, so a local build never lands in a commit or the zip.
 site_dir = "build/site"
@@ -25,6 +28,46 @@ nav = [
     { "What the add-on sends" = "what-is-sent.md" },
   ] },
 ]
+
+[project.theme]
+language = "en"
+logo = "assets/icon.png"
+favicon = "assets/icon.png"
+features = [
+  "content.action.edit",
+  "content.code.copy",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "search.suggest",
+]
+
+# Dark first, as CrossWatch and the add-on's own windows are; light is one click away.
+[[project.theme.palette]]
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to dark mode"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/crosswatch-app/kodi-addon"
+
+[project.plugins.glightbox]
+auto_caption = false
 
 # The payload contract is CrossWatch's maintainer's document for developers, not a user
 # page; it stays in docs/ and is read on GitHub.
