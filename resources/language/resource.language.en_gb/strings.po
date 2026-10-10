@@ -378,3 +378,43 @@ msgstr ""
 msgctxt "#30128"
 msgid "Change"
 msgstr ""
+
+msgctxt "#30129"
+msgid "Ask for a rating"
+msgstr ""
+
+msgctxt "#30130"
+msgid "Off"
+msgstr ""
+
+msgctxt "#30131"
+msgid "Films"
+msgstr ""
+
+msgctxt "#30132"
+msgid "Episodes"
+msgstr ""
+
+msgctxt "#30133"
+msgid "Films and episodes"
+msgstr ""
+
+msgctxt "#30134"
+msgid "When to ask"
+msgstr ""
+
+msgctxt "#30135"
+msgid "After each watch"
+msgstr ""
+
+msgctxt "#30136"
+msgid "At the end, for everything watched"
+msgstr ""
+
+msgctxt "#30137"
+msgid "Shared rating"
+msgstr ""
+
+msgctxt "#30138"
+msgid "Write the rating to Kodi's library"
+msgstr ""

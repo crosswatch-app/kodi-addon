@@ -1,3 +1,5 @@
+import pytest
+
 from resources.lib.config import Settings, read_settings, split_token, write_back_pasted_url
 from tests.fakes import FakeKodi
 
@@ -97,3 +99,26 @@ def test_settings_is_frozen():
     except Exception:
         return
     raise AssertionError("Settings must be immutable")
+
+
+def test_rating_is_off_by_default():
+    settings = read_settings(FakeKodi())
+    assert settings.rating_kinds == frozenset()
+    assert settings.rating_at_end is False
+    assert settings.rating_shared is False
+    assert settings.rating_write_library is False
+
+
+@pytest.mark.parametrize(
+    ("value", "kinds"),
+    [("0", set()), ("1", {"movie"}), ("2", {"episode"}), ("3", {"movie", "episode"}), ("9", set())],
+)
+def test_ask_for_a_rating_maps_to_kinds(value, kinds):
+    kodi = FakeKodi(settings={"rating_ask": value})
+    assert read_settings(kodi).rating_kinds == frozenset(kinds)
+
+
+def test_when_to_ask_and_the_rating_toggles_are_read():
+    kodi = FakeKodi(settings={"rating_when": "1", "rating_shared": "true", "rating_write_library": "true"})
+    settings = read_settings(kodi)
+    assert settings.rating_at_end and settings.rating_shared and settings.rating_write_library

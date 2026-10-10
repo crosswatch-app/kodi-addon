@@ -23,6 +23,13 @@ KEY_MOVIE_PROMPTS = "movie_prompts"
 KEY_SKIP_PKC = "skip_pkc"
 KEY_INDEX_TTL = "index_ttl_minutes"
 KEY_DEBUG = "debug_logging"
+KEY_RATING_ASK = "rating_ask"
+KEY_RATING_WHEN = "rating_when"
+KEY_RATING_SHARED = "rating_shared"
+KEY_RATING_WRITE_LIBRARY = "rating_write_library"
+
+# The "Ask for a rating" choice, by its position in settings.xml: Off, Films, Episodes, both.
+_RATING_KINDS = {1: frozenset({"movie"}), 2: frozenset({"episode"}), 3: frozenset({"movie", "episode"})}
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,10 @@ class Settings:
     skip_pkc: bool = True
     index_ttl_seconds: int = DEFAULT_INDEX_TTL_SECONDS
     debug_logging: bool = False
+    rating_kinds: frozenset[str] = frozenset()
+    rating_at_end: bool = False
+    rating_shared: bool = False
+    rating_write_library: bool = False
 
     def webhook_url(self) -> str | None:
         """The endpoint, never carrying the token. None until both halves are set."""
@@ -105,4 +116,8 @@ def read_settings(kodi: KodiApi) -> Settings:
         skip_pkc=_bool(kodi, KEY_SKIP_PKC, True),
         index_ttl_seconds=ttl_minutes * 60,
         debug_logging=_bool(kodi, KEY_DEBUG, False),
+        rating_kinds=_RATING_KINDS.get(_int(kodi, KEY_RATING_ASK, 0), frozenset()),
+        rating_at_end=_int(kodi, KEY_RATING_WHEN, 0) == 1,
+        rating_shared=_bool(kodi, KEY_RATING_SHARED, False),
+        rating_write_library=_bool(kodi, KEY_RATING_WRITE_LIBRARY, False),
     )
