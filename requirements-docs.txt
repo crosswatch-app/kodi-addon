@@ -1,0 +1,13 @@
+# The docs site's build tool, pinned. Edit this file, then regenerate the lock:
+#
+#   uv pip compile requirements-docs.txt --python-version 3.12 --generate-hashes \
+#       --no-header --exclude-newer <cutoff> -o requirements-docs.lock
+#
+# uv leaves out every version published after <cutoff>. Choose it so nothing in the lock
+# is less than 48 hours old, freshly published versions being where compromised releases
+# surface; 2026-10-08T16:00:00Z for zensical 0.0.69.
+#
+# Kept apart from the dev lock so the gates' venv never mixes with the docs build's
+# Markdown and Pygments stack. CI installs from requirements-docs.lock with
+# --require-hashes. Neither file is packaged into the addon zip.
+zensical==0.0.69

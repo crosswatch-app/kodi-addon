@@ -26,3 +26,16 @@ jobs:
       - run: pyright
       - run: vulture
       - run: pytest -q
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # Its own job and interpreter: the docs lock's Markdown stack must not mix with the
+      # dev lock the gates run from.
+      - run: "pip install --require-hashes --only-binary :all: -r requirements-docs.lock"
+      # A PR that breaks a link, an anchor or an image fails here, before it reaches main.
+      - run: zensical build --clean --strict

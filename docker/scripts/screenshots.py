@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture every CrossWatch window into screenshots/<screen>/, cropped to the window.
+"""Capture every CrossWatch window into docs/screenshots/<screen>/, cropped to the window.
 
 Runs against the Flatpak Kodi on an X display (the test rig): installs this checkout and a
 development-only helper add-on (screenshot_helper/), restarts Kodi so new strings and the
@@ -34,7 +34,7 @@ SCRIPTS = ROOT / "docker" / "scripts"
 HELPER = SCRIPTS / "screenshot_helper"
 HELPER_ID = "script.crosswatch.screenshots"
 WINDOWS = ROOT / "resources" / "skins" / "Default" / "1080i"
-OUT = ROOT / "screenshots"
+OUT = ROOT / "docs" / "screenshots"
 KODI_DATA = Path.home() / ".var" / "app" / "tv.kodi.Kodi" / "data"
 # Space kept around the window's panel, so its rounded corners and border are not clipped.
 MARGIN = 24
