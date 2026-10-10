@@ -44,7 +44,8 @@
             </control>
             <control type="edit" id="30">
                 <left>50</left><top>146</top><width>560</width><height>72</height>
-                <aligny>center</aligny>
+                <!-- Explicit: a skin's own default for edit controls applies here otherwise. -->
+                <align>left</align><aligny>center</aligny>
                 <textoffsetx>24</textoffsetx>
                 <font>font30_title</font>
                 <textcolor>FFF1F3F5</textcolor>
