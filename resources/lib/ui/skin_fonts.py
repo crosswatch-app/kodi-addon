@@ -31,6 +31,7 @@ Logging (logger 'ui'):
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import re
@@ -312,13 +313,15 @@ def substitute_fonts(xml_text: str, font_map: dict[str, str]) -> str:
 
 
 def cache_key(skin_id: str, skin_version: str, fontset: str,
-              addon_version: str, font_mtime: int) -> str:
+              addon_version: str, font_mtime: int, shipped: str = "") -> str:
     """Stable identity for a generated set (invalidates on any component change).
 
     Includes the skin Font.xml mtime so a hand-edited or forked skin font file
-    invalidates the cache without a per-open full content hash.
+    invalidates the cache without a per-open full content hash, and a digest of
+    the shipped windows so a window added or changed without a version bump is
+    not left out of a set built before it.
     """
-    return f"{skin_id}@{skin_version}|{fontset}|addon@{addon_version}|font@{font_mtime}"
+    return f"{skin_id}@{skin_version}|{fontset}|addon@{addon_version}|font@{font_mtime}|ship@{shipped}"
 
 
 _RES_REL = os.path.join("resources", "skins", "Default")
@@ -329,6 +332,25 @@ _MARKER = ".built-for"
 # rejected separately below.
 _VALID_ID = re.compile(r"^[A-Za-z0-9_.-]+\Z")
 _LOCK_STALE_SECS = 30
+
+
+def _shipped_digest(shipped_path: str) -> str:
+    """A short digest of the shipped window XML and the names of the shipped media.
+
+    The window files are a few KB, and this runs only on the expensive probe (a memo
+    miss), so reading them is cheap next to the skin directory scan beside it.
+    """
+    digest = hashlib.sha256()
+    xml_dir = os.path.join(shipped_path, _XML_DIR)
+    for name in sorted(os.listdir(xml_dir)):
+        if name.endswith(".xml"):
+            digest.update(name.encode())
+            with open(os.path.join(xml_dir, name), "rb") as fh:
+                digest.update(fh.read())
+    for root, _dirs, files in sorted(os.walk(os.path.join(shipped_path, _MEDIA_DIR))):
+        for name in sorted(files):
+            digest.update(os.path.relpath(os.path.join(root, name), shipped_path).encode())
+    return digest.hexdigest()[:16]
 
 
 def _safe_shipped(addon_id: str) -> str:
@@ -595,7 +617,7 @@ def _compute_generated_path(addon_id: str, skin_id: str) -> str:
         pass
     font_mtime = int(max(mtimes))
     key = cache_key(skin_id, skin_version, fontset,
-                    addon.getAddonInfo('version'), font_mtime)
+                    addon.getAddonInfo('version'), font_mtime, _shipped_digest(shipped))
 
     out_base = xbmcvfs.translatePath(
         f"special://profile/addon_data/{addon_id}/skingen")

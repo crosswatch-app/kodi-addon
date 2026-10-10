@@ -271,8 +271,10 @@ class ListDialog(CrossWatchDialog):
         if self._shown:
             self.setFocusId(LIST_ROWS)
         else:
-            # An empty list cannot take focus, and no direction leads out of it.
-            self.setFocusId(LIST_FILTER if self._request.filters else LIST_SEARCH)
+            # An empty list cannot take focus, and no direction leads out of it. Not the
+            # viewer button: its visibility follows a property set in this same call, and Kodi
+            # only re-evaluates it on the next frame, so focusing it here fails.
+            self.setFocusId(LIST_SEARCH)
 
     def onAction(self, action: Any) -> None:
         super().onAction(action)

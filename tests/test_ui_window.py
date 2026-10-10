@@ -467,14 +467,10 @@ def test_forget_does_nothing_when_not_offered():
     dialog.onClick(BUTTON_FORGET)
     assert dialog.closed == 0
 
-def test_a_list_that_opens_empty_focuses_the_filter_so_the_household_is_not_stuck():
-    """An empty list cannot take focus, and no direction leads out of nothing."""
+def test_a_list_that_opens_empty_focuses_the_search_so_the_household_is_not_stuck():
+    """An empty list cannot take focus, and no direction leads out of nothing. The search box
+    has no visibility condition, so it can take focus in the same call that fills the
+    window; the viewer button only becomes visible on Kodi's next frame."""
     dialog, _, _ = _list(ListState(search="zzz"))
-    dialog.onInit()
-    assert dialog.focused == LIST_FILTER
-
-
-def test_a_list_without_filters_that_opens_empty_focuses_the_search():
-    dialog, _, _ = _list(ListState(search="zzz"), filters=())
     dialog.onInit()
     assert dialog.focused == LIST_SEARCH
