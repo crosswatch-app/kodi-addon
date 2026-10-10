@@ -247,11 +247,11 @@ none of its viewers is configured any more. A tag appears where one applies:
 - "not stable": the answer was stored against Kodi's database id, and that id now points at a
   different show.
 
-The search box at the top narrows the list: press OK on it and type with Kodi's keyboard. The
-list narrows as you type and matches show titles and viewer names. The Viewer button next to
-it cycles with OK through All, each configured viewer, and "will ask again" (shows nobody is
-remembered for). Search and viewer combine. A count shows how many shows are listed ("12
-shows", or "3 of 12" when the list is narrowed).
+The search box at the top narrows the list: press OK on it, type with Kodi's keyboard and
+confirm. It matches show titles and viewer names. The Viewer button next to it cycles with
+OK through All, each configured viewer, and "will ask again" (shows nobody is remembered
+for). Search and viewer combine. A count shows how many shows are listed ("12 shows", or "3
+of 12" when the list is narrowed).
 
 OK on a show opens the who-watched window with the current answer ticked and no countdown,
 plus a Forget button. Done saves the new answer. Forget, or Done with nobody ticked, forgets
