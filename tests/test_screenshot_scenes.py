@@ -24,9 +24,23 @@ def test_every_scene_names_a_shipped_window():
         assert (WINDOWS / scene["window"]).is_file(), name
 
 
+# One folder per screen, so the images of a window sit together.
+GROUPS = {"who-watched", "remembered", "playlists", "viewers"}
+
+
+def test_every_scene_belongs_to_a_screen_folder():
+    for name, scene in SCENES.items():
+        assert scene.get("group") in GROUPS, name
+
+
 def test_every_scene_has_a_committed_screenshot():
-    for name in SCENES:
-        assert (ROOT / "screenshots" / f"{name}.png").is_file(), f"run docker/scripts/screenshots.py for {name}"
+    for name, scene in SCENES.items():
+        path = ROOT / "screenshots" / scene["group"] / f"{name}.png"
+        assert path.is_file(), f"run docker/scripts/screenshots.py for {name}"
+
+
+def test_no_screenshot_is_left_outside_a_screen_folder():
+    assert sorted(p.name for p in (ROOT / "screenshots").glob("*.png")) == []
 
 
 def test_scene_names_are_file_and_argument_safe():
