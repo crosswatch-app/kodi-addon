@@ -34,6 +34,7 @@ from resources.lib.log import get_logger, is_debug, redact
 from resources.lib.models import Device, PingEvent, PlaybackEvent
 from resources.lib.outbox import Outbox
 from resources.lib.payload import build_payload
+from resources.lib.routes import RouteFacts, parse_routes
 
 _log = get_logger("reporter")
 
@@ -159,6 +160,7 @@ class HttpReporter:
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], bool] | None = None,
         on_instance: Callable[[str], None] | None = None,
+        on_routes: Callable[[RouteFacts], None] | None = None,
     ) -> None:
         target = target_of(url)
         self._scheme = target.scheme
@@ -175,6 +177,9 @@ class HttpReporter:
         # Called on the worker thread with the instance name a ping's reply carries, which is
         # how a Link, which hands over no name, learns what it connected to.
         self._on_instance = on_instance
+        # Likewise with the routes the reply lists, so the viewer list can mark a viewer no
+        # route takes.
+        self._on_routes = on_routes
         self._headers = {"Content-Type": "application/json"}
         if token:
             # The header only: a token in the query string ends up in proxy and access logs.
@@ -307,6 +312,13 @@ class HttpReporter:
             except Exception as exc:
                 # Cosmetic: a failure to show the name must not turn a delivery into a failure.
                 _log.warning("reporter.instance_not_noted", error=str(exc))
+        facts = parse_routes(parsed) if kind == "ping" and self._on_routes is not None else None
+        if facts is not None and self._on_routes is not None:
+            try:
+                self._on_routes(facts)
+            except Exception as exc:
+                # As for the instance: a hint for the settings screen, never a delivery failure.
+                _log.warning("reporter.routes_not_noted", error=str(exc))
         return True
 
 

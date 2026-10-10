@@ -1051,3 +1051,33 @@ def test_replace_back_to_no_lane_stops_storing(tmp_path):
     queue.submit(_watched())
     queue.stop(deadline=2.0)
     assert store.pending() == 0
+
+
+def test_a_ping_reply_hands_its_route_facts_on(reporter_factory):
+    from resources.lib.routes import RouteFacts
+
+    seen: list = []
+    reporter = reporter_factory(
+        "http://host/hook",
+        connection_factory=_replying(b'{"ok": true, "routes": [{"label": "Trakt A", "viewers": ["anna"]}]}'),
+        on_routes=seen.append,
+    )
+    assert reporter.report(PING, DEVICE) is True
+    assert seen == [RouteFacts(count=1, accepted=frozenset({"anna"}))]
+
+
+def test_a_ping_reply_without_routes_hands_no_route_facts_on(reporter_factory):
+    seen: list = []
+    reporter = reporter_factory("http://host/hook", connection_factory=_replying(b'{"ok": true}'), on_routes=seen.append)
+    assert reporter.report(PING, DEVICE) is True
+    assert seen == []
+
+
+def test_a_failing_route_callback_does_not_fail_the_delivery(reporter_factory):
+    def broken(facts) -> None:
+        raise RuntimeError("disk full")
+
+    reporter = reporter_factory(
+        "http://host/hook", connection_factory=_replying(b'{"ok": true, "routes": []}'), on_routes=broken
+    )
+    assert reporter.report(PING, DEVICE) is True

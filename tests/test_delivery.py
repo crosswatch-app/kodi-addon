@@ -4,7 +4,9 @@ from resources.lib.config import KEY_STATUS, Settings
 from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED
 from resources.lib.outbox import Outbox, config_fingerprint
 from resources.lib.reporter import HttpReporter, LogReporter
+from resources.lib.routes import RouteFacts
 from resources.lib.service.delivery import Delivery
+from resources.lib.storage import RouteStore
 from tests.fakes import FakeKodi
 
 URL = "http://nas:8787/webhook/kodiwatcher"
@@ -121,3 +123,29 @@ def test_publish_without_a_reply_writes_nothing(tmp_path):
     delivery.build(_settings())
     delivery.publish_status()
     assert kodi.writes == []
+
+
+def _routed(tmp_path):
+    store = RouteStore(str(tmp_path / "routes.json"))
+    return Delivery(FakeKodi(), str(tmp_path / "outbox.json"), threading.Event(), routes=store), store
+
+
+def test_route_facts_are_saved_for_the_current_pairing_on_publish(tmp_path):
+    delivery, store = _routed(tmp_path)
+    sink, _ = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter) and sink._on_routes is not None
+    sink._on_routes(RouteFacts(count=1, accepted=frozenset({"anna"})))  # the worker thread
+    assert store.load(config_fingerprint("tok")) is None
+    delivery.publish_status()
+    assert store.load(config_fingerprint("tok")) == RouteFacts(count=1, accepted=frozenset({"anna"}))
+
+
+def test_route_facts_from_a_replaced_connection_are_ignored(tmp_path):
+    delivery, store = _routed(tmp_path)
+    old, _ = delivery.build(_settings())
+    delivery.build(_settings(token="new"))
+    assert isinstance(old, HttpReporter) and old._on_routes is not None
+    old._on_routes(RouteFacts(count=1, accepted=frozenset({"anna"})))
+    delivery.publish_status()
+    assert store.load(config_fingerprint("tok")) is None
+    assert store.load(config_fingerprint("new")) is None

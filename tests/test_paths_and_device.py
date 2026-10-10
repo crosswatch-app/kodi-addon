@@ -14,6 +14,7 @@ def test_paths_all_hang_off_one_profile_directory():
         paths.prompts_path(kodi),
         paths.device_path(kodi),
         paths.outbox_path(kodi),
+        paths.routes_path(kodi),
         paths.log_dir(kodi),
     )
     for path in every:
