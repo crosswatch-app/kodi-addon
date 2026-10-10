@@ -39,6 +39,7 @@ def install_kodi_stubs() -> None:
     xbmc.log = lambda message, level=1: None
     xbmc.getInfoLabel = lambda key: ""
     xbmc.executeJSONRPC = lambda request: '{"result":{}}'
+    xbmc.getSkinDir = lambda: "skin.estuary"
 
     xbmcgui: Any = types.ModuleType("xbmcgui")
 
@@ -50,6 +51,32 @@ def install_kodi_stubs() -> None:
 
     xbmcgui.Dialog = _Dialog
     xbmcgui.getCurrentWindowDialogId = lambda: 9999
+
+    class _ListItem:
+        def __init__(self, label: str = "", *args, **kwargs) -> None:
+            self._label = label
+            self._properties: dict[str, str] = {}
+        def getLabel(self) -> str: return self._label
+        def setProperty(self, key: str, value: str) -> None: self._properties[key.lower()] = value
+        def getProperty(self, key: str) -> str: return self._properties.get(key.lower(), "")
+
+    class _WindowXMLDialog:
+        """Records properties and closes; tests attach controls with set_control."""
+        def __init__(self, *args, **kwargs) -> None:
+            self._properties: dict[str, str] = {}
+            self._controls: dict[int, Any] = {}
+            self.closed = 0
+            self.focused: int | None = None
+        def set_control(self, control_id: int, control: Any) -> None: self._controls[control_id] = control
+        def getControl(self, control_id: int) -> Any: return self._controls[control_id]
+        def setProperty(self, key: str, value: str) -> None: self._properties[key.lower()] = value
+        def getProperty(self, key: str) -> str: return self._properties.get(key.lower(), "")
+        def setFocusId(self, control_id: int) -> None: self.focused = control_id
+        def close(self) -> None: self.closed += 1
+        def doModal(self) -> None: ...
+
+    xbmcgui.ListItem = _ListItem
+    xbmcgui.WindowXMLDialog = _WindowXMLDialog
 
     xbmcvfs: Any = types.ModuleType("xbmcvfs")
     xbmcvfs.translatePath = lambda path: path
