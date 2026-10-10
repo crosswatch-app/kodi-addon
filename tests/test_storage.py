@@ -86,9 +86,25 @@ def test_forget_removes_one_answer_and_keeps_the_rest(tmp_path):
     assert list(PromptMemory(path).entries()) == ["show:tvdb:2"]
 
 
-def test_forget_all_clears_every_remembered_answer(tmp_path):
+def test_forget_many_removes_those_answers_in_one_write(tmp_path, monkeypatch):
+    from resources.lib import storage
+
     path = str(tmp_path / "prompts.json")
     memory = PromptMemory(path)
+    for n in ("1", "2", "3"):
+        memory.remember(f"show:tvdb:{n}", ("anna",))
+    writes = []
+    real = storage._write_json
+    monkeypatch.setattr(storage, "_write_json", lambda p, v: writes.append(p) or real(p, v))
+    assert memory.forget_many(["show:tvdb:1", "show:tvdb:3", "show:tvdb:9"]) is True
+    assert list(PromptMemory(path).entries()) == ["show:tvdb:2"]
+    assert len(writes) == 1
+
+
+def test_forget_many_reports_a_failed_write(tmp_path, monkeypatch):
+    from resources.lib import storage
+
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
     memory.remember("show:tvdb:1", ("anna",))
-    memory.forget_all()
-    assert PromptMemory(path).recall("show:tvdb:1") is None
+    monkeypatch.setattr(storage, "_write_json", lambda p, v: False)
+    assert memory.forget_many(["show:tvdb:1"]) is False

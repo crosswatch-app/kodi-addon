@@ -352,3 +352,14 @@ def test_the_screen_marks_covered_shows(memory):
     kodi = PlaylistKodi()
     remembered.run(kodi, memory, [ANNA_LISTED, BOB])
     assert kodi.list_window_calls[0][0].rows[0].tag == f"#{REMEMBERED_COVERED}"
+
+
+def test_a_failed_bulk_write_is_not_logged_as_forgotten(memory, monkeypatch):
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda msg, level: captured.append(msg))
+    memory.remember("show:tvdb:100", ("anna",))
+    monkeypatch.setattr(memory, "forget_many", lambda keys: False)
+    remembered.run(ScriptedKodi(lists=[_bulk("show:tvdb:100")], confirms=[True]), memory, VIEWERS)
+    assert not any("config.remembered_forgot_all" in line for line in captured)

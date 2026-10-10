@@ -248,9 +248,7 @@ def run(kodi: KodiApi, memory: PromptMemory, viewers: list[Viewer]) -> None:
                 _log.info("config.remembered_forgotten")
         elif result.action == "bulk":
             keys = [key for key in result.keys if key in rows]
-            if keys and _forget_confirmed(kodi, len(keys)):
-                for key in keys:
-                    memory.forget(key)
+            if keys and _forget_confirmed(kodi, len(keys)) and memory.forget_many(keys):
                 _log.info("config.remembered_forgot_all", count=len(keys), shown=len(keys) != len(rows))
         elif result.action == "close":
             return
