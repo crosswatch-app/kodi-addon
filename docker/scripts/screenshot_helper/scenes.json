@@ -227,7 +227,7 @@
   },
   "remembered-split-will-ask": {
     "window": "crosswatch-remembered.xml",
-    "key": "show:tvdb:6",
+    "key": "show:tvdb:2",
     "search": "",
     "keys": [],
     "group": "remembered"
