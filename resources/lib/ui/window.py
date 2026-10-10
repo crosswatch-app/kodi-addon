@@ -15,8 +15,9 @@ from typing import Any
 
 import xbmcgui
 
-from resources.lib.constants import PROMPT_EVERYONE, WHO_WATCHED_QUESTION, WINDOW_CLOSES_IN
+from resources.lib.constants import PROMPT_EVERYONE, WHO_WATCHED_QUESTION, WINDOW_CLOSES_IN, WINDOW_VIEWER
 from resources.lib.log import get_logger
+from resources.lib.ui import list_window as lw
 from resources.lib.ui import who_watched as ww
 
 _log = get_logger("ui")
@@ -29,6 +30,7 @@ WHO_WATCHED_XML = "crosswatch-who.xml"
 LIST_VIEWERS = 200
 BUTTON_DONE = 20
 BUTTON_SKIP = 21
+BUTTON_FORGET = 22
 
 Localised = Callable[[int], str]
 
@@ -161,6 +163,7 @@ class WhoWatchedDialog(CrossWatchDialog):
                 "CW.Subtitle": request.subtitle,
                 "CW.Poster": request.poster,
                 "CW.Question": localised(WHO_WATCHED_QUESTION),
+                "CW.OfferForget": "true" if request.offer_forget else "",
             },
             request.autoclose_seconds,
             request.close_on_playback,
@@ -184,6 +187,9 @@ class WhoWatchedDialog(CrossWatchDialog):
             self._show_ticks()
         elif controlId == BUTTON_DONE:
             self.finish("done", ww.answer(names, self._ticked))
+        elif controlId == BUTTON_FORGET and self._request.offer_forget:
+            # The same answer as Done with nobody ticked, which the screen treats as forget.
+            self.finish("forget", ())
         elif controlId == BUTTON_SKIP:
             self.finish("skip")
 
@@ -193,3 +199,133 @@ class WhoWatchedDialog(CrossWatchDialog):
         rows.getListItem(ww.EVERYONE_ROW).setProperty("chosen", "true" if ww.everyone(names, self._ticked) else "")
         for row, name in enumerate(names, start=1):
             rows.getListItem(row).setProperty("chosen", "true" if name in self._ticked else "")
+
+
+CONFIRM_XML = "crosswatch-confirm.xml"
+BUTTON_YES = 10
+BUTTON_NO = 11
+
+
+class ConfirmDialog(CrossWatchDialog):
+    name = "confirm"
+
+    def prepare(self, heading: str, message: str, localised: Localised) -> None:
+        self.configure(
+            localised,
+            {"CW.Heading": heading, "CW.Message": message},
+            autoclose_seconds=0,
+            close_on_playback=False,
+            is_playing=lambda: False,
+            wait_for_abort=lambda _: False,
+        )
+
+    def fill(self) -> None:
+        # No first: the question always guards something that cannot be undone.
+        self.setFocusId(BUTTON_NO)
+
+    def onClick(self, controlId: int) -> None:
+        if controlId == BUTTON_YES:
+            self.finish("yes", True)
+        elif controlId == BUTTON_NO:
+            self.finish("no", False)
+
+
+LIST_XML = "crosswatch-list.xml"
+# Not 2, 3 or 4: WindowXML keeps those ids for its own view and sort buttons.
+LIST_SEARCH = 30
+LIST_FILTER = 31
+LIST_ROWS = 100
+BUTTON_BULK = 20
+BUTTON_CLOSE = 21
+
+
+class ListDialog(CrossWatchDialog):
+    """A searchable list: the screen acts on what comes back, then reopens it."""
+
+    name = "list"
+
+    def prepare(self, request: lw.ListRequest, state: lw.ListState, localised: Localised) -> None:
+        self._request = request
+        self._search = state.search
+        in_range = 0 <= state.filter_index < len(request.filters)
+        self._filter_index = state.filter_index if in_range else 0
+        self._position = state.position
+        self._shown: list[lw.ListRow] = []
+        self.configure(
+            localised,
+            {"CW.Heading": request.heading},
+            autoclose_seconds=0,
+            close_on_playback=False,
+            is_playing=lambda: False,
+            wait_for_abort=lambda _: False,
+        )
+
+    def state(self) -> lw.ListState:
+        rows: Any = self.getControl(LIST_ROWS)
+        return lw.ListState(self._search, self._filter_index, int(rows.getSelectedPosition()))
+
+    def fill(self) -> None:
+        search: Any = self.getControl(LIST_SEARCH)
+        search.setText(self._search)
+        self._show(self._position)
+        if self._shown:
+            self.setFocusId(LIST_ROWS)
+        else:
+            # An empty list cannot take focus, and no direction leads out of it. Not the
+            # viewer button: its visibility follows a property set in this same call, and Kodi
+            # only re-evaluates it on the next frame, so focusing it here fails.
+            self.setFocusId(LIST_SEARCH)
+
+    def onAction(self, action: Any) -> None:
+        super().onAction(action)
+        # Kodi reports no text change, so the search box is read after every key press
+        # while it has focus.
+        try:
+            focused = self.getFocusId()
+        except RuntimeError:
+            return
+        if focused == LIST_SEARCH:
+            self._read_search()
+
+    def onClick(self, controlId: int) -> None:
+        if controlId == LIST_SEARCH:
+            self._read_search()  # after Kodi's keyboard closes
+        elif controlId == LIST_FILTER and self._request.filters:
+            self._filter_index = (self._filter_index + 1) % len(self._request.filters)
+            self._show(0)
+        elif controlId == LIST_ROWS:
+            position = self.state().position
+            if 0 <= position < len(self._shown):
+                self.finish("open", lw.ListResult("open", self.state(), key=self._shown[position].key))
+        elif controlId == BUTTON_BULK and self._shown:
+            keys = tuple(row.key for row in self._shown)
+            self.finish("bulk", lw.ListResult("bulk", self.state(), keys=keys))
+        elif controlId == BUTTON_CLOSE:
+            self.finish("close", lw.ListResult("close", self.state()))
+
+    def _read_search(self) -> None:
+        search: Any = self.getControl(LIST_SEARCH)
+        text = str(search.getText())
+        if text != self._search:
+            self._search = text
+            self._show(0)
+
+    def _show(self, position: int) -> None:
+        request = self._request
+        row_filter = request.filters[self._filter_index] if request.filters else None
+        self._shown = lw.visible(request.rows, self._search, row_filter)
+        rows: Any = self.getControl(LIST_ROWS)
+        rows.reset()
+        for row in self._shown:
+            item = xbmcgui.ListItem(row.title)
+            item.setArt({"thumb": row.thumb})
+            item.setProperty("detail", row.detail)
+            item.setProperty("tag", row.tag)
+            rows.addItem(item)
+        if self._shown:
+            rows.selectItem(min(max(position, 0), len(self._shown) - 1))
+        label = self._localised(WINDOW_VIEWER).replace("%s", row_filter.label) if row_filter else ""
+        self.setProperty("CW.Filter", label)
+        self.setProperty("CW.Count", lw.count_text(self._localised, len(self._shown), len(request.rows)))
+        self.setProperty("CW.Bulk", lw.bulk_label(request, len(self._shown)))
+        self.setProperty("CW.Empty", "" if self._shown else "true")

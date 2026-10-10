@@ -802,3 +802,17 @@ def test_find_skin_font_xml_searches_one_level_down(tmp_path, monkeypatch):
 def test_find_skin_font_xml_without_one_is_none(tmp_path, monkeypatch):
     monkeypatch.setattr(sf.xbmcvfs, "translatePath", lambda p: str(tmp_path / "missing"))
     assert sf._find_skin_font_xml() is None
+
+
+def test_a_changed_or_added_window_rebuilds_the_set_without_a_version_bump(skin_env):
+    """The marker must change with the shipped windows, not only with the add-on version: a
+    set built before a window existed would otherwise be reused, and that window then fails
+    to load under every skin that needs adapting."""
+    (skin_env["skin"] / "Font.xml").write_text(_OTHER_SKIN_XML)
+    assert sf._compute_generated_path("service.crosswatch", "skin.example") == skin_env["out"]
+    shipped = os.path.join(skin_env["ship"], "resources", "skins", "Default", "1080i")
+    with open(os.path.join(shipped, "crosswatch-new.xml"), "w", encoding="utf-8") as fh:
+        fh.write("<window><control><font>font12</font></control></window>")
+    sf._compute_generated_path("service.crosswatch", "skin.example")
+    built = os.path.join(skin_env["out"], "resources", "skins", "Default", "1080i")
+    assert "crosswatch-new.xml" in os.listdir(built)

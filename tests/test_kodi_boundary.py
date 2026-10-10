@@ -58,3 +58,21 @@ def test_who_watched_records_the_request_and_returns_the_scripted_answer():
     request = WhoWatchedRequest(title="t", subtitle="", poster="", names=("anna", "bob"))
     assert kodi.who_watched(request) == ("anna",)
     assert kodi.who_watched_calls == [request]
+
+
+def test_confirm_window_records_and_answers():
+    kodi = FakeKodi(confirm_window_answer=True)
+    assert kodi.confirm_window("h", "m") is True
+    assert kodi.confirm_window_calls == [("h", "m")]
+
+
+def test_list_window_returns_scripted_results_then_close():
+    from resources.lib.ui.list_window import ListRequest, ListResult, ListState
+
+    request = ListRequest("h", (), (), "a", "s")
+    opened = ListResult("open", ListState(), key="k")
+    kodi = FakeKodi()
+    kodi.list_window_results = [opened]
+    assert kodi.list_window(request, ListState()) == opened
+    assert kodi.list_window(request, ListState(search="x")) == ListResult("close", ListState(search="x"))
+    assert kodi.list_window_calls == [(request, ListState()), (request, ListState(search="x"))]

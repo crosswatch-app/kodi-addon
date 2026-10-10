@@ -38,6 +38,8 @@ def test_scene_names_are_file_and_argument_safe():
 def test_a_scene_takes_a_library_item_or_gives_its_own_text():
     """A "library" scene gets title and poster from Kodi's library at capture time."""
     for name, scene in SCENES.items():
+        if scene["window"] != "crosswatch-who.xml":
+            continue
         if "library" in scene:
             assert scene["library"] in {"tvshow", "movie"}, name
             assert "title" not in scene and "poster" not in scene, name

@@ -38,17 +38,30 @@ def test_every_texture_ships():
         assert (SKIN / "media" / name).is_file(), name
 
 
-def test_focus_starts_on_the_viewer_list():
+def test_the_window_opens_on_a_control_that_can_take_focus():
+    """The viewer list is empty until Python fills it in onInit, so Kodi cannot focus it when
+    the window opens and logs an error each time; Skip can, and onInit then moves focus to
+    the list."""
     default = _root().find("defaultcontrol")
-    assert default is not None and default.text == "200"
+    assert default is not None and default.text == "21"
 
 
-def test_down_from_the_list_reaches_done_and_both_buttons_return():
+def test_the_buttons_sit_in_one_row_below_the_list():
+    """A grouplist, so a hidden Forget leaves no gap and no dead end for left and right."""
+    row = _root().find(".//control[@type='grouplist']")
+    assert row is not None and row.findtext("orientation") == "horizontal"
+    assert [c.get("id") for c in row.findall("control")] == ["20", "22", "21"]
     assert _control("200").findtext("ondown") == "20"
-    assert _control("20").findtext("onup") == "200"
-    assert _control("21").findtext("onup") == "200"
-    assert _control("20").findtext("onright") == "21"
-    assert _control("21").findtext("onleft") == "20"
+    for button in ("20", "21", "22"):
+        assert _control(button).findtext("onup") == "200"
+
+
+def test_forget_shows_only_when_offered_and_its_label_comes_from_strings_po():
+    from resources.lib.constants import REMEMBERED_FORGET
+
+    forget = _control("22")
+    assert forget.findtext("visible") == "String.IsEqual(Window.Property(CW.OfferForget),true)"
+    assert forget.findtext("label") == f"$ADDON[{ADDON_ID} {REMEMBERED_FORGET}]"
 
 
 def test_button_labels_come_from_strings_po():
@@ -71,3 +84,40 @@ def test_the_viewer_list_shows_when_there_are_more_rows():
     scrollbar = _control(page)
     assert scrollbar.get("type") == "scrollbar"
     assert scrollbar.findtext("showonepage") == "false"
+
+
+CONFIRM = SKIN / "1080i" / "crosswatch-confirm.xml"
+
+
+def test_confirm_starts_on_no_and_labels_come_from_strings_po():
+    from resources.lib.constants import WINDOW_NO, WINDOW_YES
+
+    root = ET.parse(CONFIRM).getroot()
+    assert root.findtext("defaultcontrol") == "11"
+    yes = root.find(".//control[@id='10']")
+    no = root.find(".//control[@id='11']")
+    assert yes is not None and no is not None
+    assert yes.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_YES}]"
+    assert no.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_NO}]"
+    CONFIRM.read_text(encoding="ascii")
+
+
+LIST = SKIN / "1080i" / "crosswatch-list.xml"
+
+
+def test_the_list_window_navigates_between_search_rows_and_buttons():
+    root = ET.parse(LIST).getroot()
+
+    def control(control_id: str) -> ET.Element:
+        found = root.find(f".//control[@id='{control_id}']")
+        assert found is not None, control_id
+        return found
+
+    # Close, not the list: the list is empty until Python fills it, see the who-watched test.
+    assert root.findtext("defaultcontrol") == "21"
+    assert control("100").findtext("onup") == "30" and control("100").findtext("ondown") == "20"
+    assert control("30").get("type") == "edit" and control("30").findtext("ondown") == "100"
+    assert control("30").findtext("onright") == "31" and control("31").findtext("onleft") == "30"
+    assert control("20").findtext("onright") == "21" and control("21").findtext("onleft") == "20"
+    assert control("100").findtext("pagecontrol") == "101"
+    LIST.read_text(encoding="ascii")

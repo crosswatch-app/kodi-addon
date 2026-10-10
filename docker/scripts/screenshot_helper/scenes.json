@@ -99,5 +99,48 @@
     ],
     "autoclose_seconds": 0,
     "keys": []
+  },
+  "remembered-confirm": {
+    "window": "crosswatch-confirm.xml",
+    "heading": "Remembered answers",
+    "message": "Forget who watched 3 shows? Each will be asked again.",
+    "keys": []
+  },
+  "remembered-list": {
+    "window": "crosswatch-list.xml",
+    "rows": "library",
+    "search": "",
+    "filter": 0,
+    "keys": []
+  },
+  "remembered-list-filtered": {
+    "window": "crosswatch-list.xml",
+    "rows": "library",
+    "search": "e",
+    "filter": 1,
+    "keys": []
+  },
+  "remembered-list-nothing-matches": {
+    "window": "crosswatch-list.xml",
+    "rows": "library",
+    "search": "zzzz",
+    "filter": 0,
+    "keys": []
+  },
+  "remembered-change-forget": {
+    "window": "crosswatch-who.xml",
+    "library": "tvshow",
+    "subtitle": "{year}",
+    "names": [
+      "Anna",
+      "Ben",
+      "Chloe"
+    ],
+    "preselect": [
+      "Anna"
+    ],
+    "autoclose_seconds": 0,
+    "offer_forget": true,
+    "keys": []
   }
 }

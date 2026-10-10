@@ -162,6 +162,13 @@ class PromptMemory:
                 del data[key]
                 _write_json(self._path, data)
 
-    def forget_all(self) -> None:
+    def forget_many(self, keys: list[str]) -> bool:
+        """One write for any number of answers: a long list is cleared in one go on slow
+        storage, and a failed write leaves every answer as it was."""
         with self._lock:
-            _write_json(self._path, {})
+            data = _read_json(self._path, {})
+            if not isinstance(data, dict):
+                data = {}
+            for key in keys:
+                data.pop(key, None)
+            return _write_json(self._path, data)
