@@ -262,3 +262,47 @@ msgstr ""
 msgctxt "#30085"
 msgid "Closes in %s s"
 msgstr ""
+
+msgctxt "#30086"
+msgid "Search"
+msgstr ""
+
+msgctxt "#30087"
+msgid "Viewer: %s"
+msgstr ""
+
+msgctxt "#30088"
+msgid "All"
+msgstr ""
+
+msgctxt "#30089"
+msgid "Nothing matches"
+msgstr ""
+
+msgctxt "#30090"
+msgid "%s shows"
+msgstr ""
+
+msgctxt "#30091"
+msgid "%s of %s"
+msgstr ""
+
+msgctxt "#30092"
+msgid "Forget all"
+msgstr ""
+
+msgctxt "#30093"
+msgid "Forget %s shown"
+msgstr ""
+
+msgctxt "#30094"
+msgid "Yes"
+msgstr ""
+
+msgctxt "#30095"
+msgid "No"
+msgstr ""
+
+msgctxt "#30096"
+msgid "Close"
+msgstr ""
