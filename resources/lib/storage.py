@@ -20,6 +20,7 @@ from typing import Any, Protocol
 
 from resources.lib.log import get_logger
 from resources.lib.models import Viewer
+from resources.lib.routes import RouteFacts
 
 _log = get_logger("storage")
 
@@ -209,3 +210,29 @@ class PromptMemory:
             if changed:
                 _write_json(self._path, data)
             return changed, forgotten
+
+
+class RouteStore:
+    """The last route facts, for the settings screen, which runs in its own interpreter.
+
+    Tied to the pairing by a token fingerprint, so facts from an earlier pairing are never
+    read as this one's.
+    """
+
+    def __init__(self, path: str) -> None:
+        self._path = path
+
+    def save(self, fingerprint: str, facts: RouteFacts) -> bool:
+        return _write_json(
+            self._path, {"fingerprint": fingerprint, "routes": facts.count, "accepted": sorted(facts.accepted)}
+        )
+
+    def load(self, fingerprint: str) -> RouteFacts | None:
+        data = _read_json(self._path, None)
+        if not isinstance(data, dict) or data.get("fingerprint") != fingerprint:
+            return None
+        count = data.get("routes")
+        names = data.get("accepted")
+        if not isinstance(count, int) or not isinstance(names, list):
+            return None
+        return RouteFacts(count, frozenset(str(n) for n in names if isinstance(n, str)))
