@@ -1,3 +1,4 @@
+import itertools
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -115,9 +116,94 @@ def test_the_list_window_navigates_between_search_rows_and_buttons():
 
     # Close, not the list: the list is empty until Python fills it, see the who-watched test.
     assert root.findtext("defaultcontrol") == "21"
-    assert control("100").findtext("onup") == "30" and control("100").findtext("ondown") == "20"
+    assert control("100").findtext("onup") == "30"
     assert control("30").get("type") == "edit" and control("30").findtext("ondown") == "100"
     assert control("30").findtext("onright") == "31" and control("31").findtext("onleft") == "30"
-    assert control("20").findtext("onright") == "21" and control("21").findtext("onleft") == "20"
+    assert control("20").findtext("onright") == "21"
     assert control("100").findtext("pagecontrol") == "101"
     LIST.read_text(encoding="ascii")
+
+
+def _navigation(control: ET.Element, key: str) -> list[tuple[str | None, str]]:
+    return [(nav.get("condition"), (nav.text or "").strip()) for nav in control.findall(key)]
+
+
+def test_the_bulk_button_hides_and_down_reaches_close_when_nothing_is_shown():
+    """Kodi takes the first navigation whose condition holds, so the unconditioned Close
+    comes last; a hidden bulk button would otherwise swallow Down."""
+    root = ET.parse(LIST).getroot()
+    rows = root.find(".//control[@id='100']")
+    bulk = root.find(".//control[@id='20']")
+    close = root.find(".//control[@id='21']")
+    assert rows is not None and bulk is not None and close is not None
+    shown = "!String.IsEmpty(Window.Property(CW.Bulk))"
+    assert bulk.findtext("visible") == shown
+    assert _navigation(rows, "ondown")[-2:] == [(shown, "20"), (None, "21")]
+    assert _navigation(close, "onleft")[-1] == (shown, "20")
+
+
+def test_the_close_label_comes_from_a_property_so_a_pick_list_can_say_cancel():
+    root = ET.parse(LIST).getroot()
+    close = root.find(".//control[@id='21']")
+    assert close is not None and close.findtext("label") == "$INFO[Window.Property(CW.Close)]"
+
+
+PICK = "String.IsEqual(Window.Property(CW.Pick),true)"
+
+
+def test_a_pick_list_has_an_accent_done_button_where_the_bulk_button_sits():
+    root = ET.parse(LIST).getroot()
+    done = root.find(".//control[@id='22']")
+    bulk = root.find(".//control[@id='20']")
+    assert done is not None and bulk is not None
+    assert done.findtext("visible") == PICK
+    assert done.findtext("label") == f"$ADDON[{ADDON_ID} {WHO_WATCHED_DONE}]"
+    assert done.findtext("texturenofocus") == "crosswatch/box_accent.png"
+    assert done.findtext("texturefocus") == "crosswatch/box_accent_focus.png"
+    assert (done.findtext("left"), done.findtext("top")) == (bulk.findtext("left"), bulk.findtext("top"))
+    assert done.findtext("onup") == "100" and done.findtext("onright") == "21"
+
+
+def test_down_from_a_pick_list_reaches_done_first():
+    root = ET.parse(LIST).getroot()
+    rows = root.find(".//control[@id='100']")
+    close = root.find(".//control[@id='21']")
+    assert rows is not None and close is not None
+    assert _navigation(rows, "ondown")[0] == (PICK, "22")
+    assert _navigation(close, "onleft")[0] == (PICK, "22")
+
+
+def test_pick_rows_show_a_tick_and_hide_the_thumbnail():
+    root = ET.parse(LIST).getroot()
+    for layout in ("itemlayout", "focusedlayout"):
+        found = root.find(f".//control[@id='100']/{layout}")
+        assert found is not None
+        images = found.findall("control[@type='image']")
+        ticks = [i for i in images if i.findtext("texture") == "crosswatch/tick.png"]
+        assert len(ticks) == 1 and ticks[0].findtext("visible") == "String.IsEqual(ListItem.Property(chosen),true)"
+        assert (ticks[0].findtext("width"), ticks[0].findtext("height")) == ("48", "48")
+        thumbs = [i for i in images if "thumb" in (i.findtext("texture") or "") or "poster_empty" in (i.findtext("texture") or "")]
+        assert thumbs and all(i.findtext("visible") == f"!{PICK}" for i in thumbs)
+        chosen = [i for i in images if (i.findtext("texture") or "").startswith("crosswatch/box_chosen")]
+        assert chosen
+
+
+def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping():
+    """Real playlist names run long ("EasyTV - TVShow - Season Premieres"), and a row also
+    carries the Also line, the tag and the tick."""
+    root = ET.parse(LIST).getroot()
+    for layout in ("itemlayout", "focusedlayout"):
+        found = root.find(f".//control[@id='100']/{layout}")
+        assert found is not None
+        spans = {}
+        for control in found.findall("control"):
+            visible = control.findtext("visible") or ""
+            label = control.findtext("label") or control.findtext("texture") or ""
+            if visible == PICK or "tick.png" in label:
+                left, width = int(control.findtext("left") or 0), int(control.findtext("width") or 0)
+                spans[label] = (left, left + width)
+        title = spans["$INFO[ListItem.Label]"]
+        assert title[1] - title[0] >= 600
+        ordered = sorted(spans.values())
+        assert len(ordered) == 4  # title, detail, tag, tick
+        assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered

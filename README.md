@@ -172,10 +172,11 @@ The add-on works out who was watching, first match wins:
 A show (for an episode) or a film is credited to every viewer whose playlist contains it.
 Playlists are video smart playlists from Kodi's playlists folder, of shows or of films;
 playlists of episodes or music videos are not used. The playlist picker only offers playlists
-of shows or films. If a viewer already had a playlist of another type, it stays in their list,
-marked "not a TV show or film playlist" (and the viewer shows "unusable" in the viewer list).
-It never credits anyone and is simply ignored: the viewer's other playlists still count.
-Untick it in the picker to remove it.
+of shows or films. If a viewer already had a playlist of another type, it is not listed in
+the picker, and it stays in their list until you press Done, which removes it from that
+viewer (Cancel or Back leaves it). Until it is removed, the viewer list still shows that
+viewer as "unusable". It never credits anyone and is simply ignored: the viewer's other
+playlists still count. Playlists of the wrong type are never offered to anyone.
 
 - Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
 - Avoid playlists whose membership follows from playback itself, such as "Continue Watching"
@@ -260,10 +261,10 @@ answer unchanged. A show marked "not stable" can only be forgotten, so OK on it 
 confirmation instead.
 
 The button below the list reads "Forget all", or "Forget N shown" while a search or viewer
-narrows the list. It forgets exactly the shows listed, after a Yes/No confirmation (No is
-preselected). After each change the list comes back with the same search, viewer and
-position; when nothing is left the screen closes with a short notice. Changes apply from the
-next playback, no restart needed.
+narrows the list. When a search or viewer filter matches nothing, the button is hidden. It
+forgets exactly the shows listed, after a Yes/No confirmation (No is preselected). After each
+change the list comes back with the same search, viewer and position; when nothing is left the
+screen closes with a short notice. Changes apply from the next playback, no restart needed.
 
 Playlist membership is checked first, so it overrides a remembered answer to the prompt. The
 Remembered answers screen marks such a show "covered by playlist": its answer is kept, and
@@ -275,6 +276,29 @@ should describe what that person watches, not what they just happened to play.
 "Configure viewers and playlists" lists the viewers, with "Add viewer" to add one. Adding a
 viewer asks for its name ("Viewer name, as CrossWatch routes it"), then which playlists are
 theirs. Each viewer in the list offers Edit playlists, Edit Kodi profiles and Remove viewer.
+
+Edit playlists, and the playlist step of Add viewer, open a CrossWatch window titled
+"Playlists for <viewer name>". It lists Kodi's smart playlists of TV shows or films. Press OK
+on a playlist to tick or untick it; the viewer's current playlists start ticked. "Done" keeps
+the ticked playlists. "Cancel" or Back leaves the viewer's playlists exactly as they were.
+
+A search box at the top narrows the list by playlist name: press OK on it, type with Kodi's
+keyboard and confirm. A ticked playlist the search hides stays ticked and is kept when you
+press Done. A count shows how many playlists are listed ("7 playlists", or "1 of 7" while
+searching).
+
+A playlist that another viewer already has shows "Also <names>" next to it (for example "Also
+Ben, Chloe"). Giving a playlist to two viewers credits both of them for everything in it.
+
+A playlist the viewer has that was deleted or renamed is listed at the end, ticked, tagged
+"missing". Untick it and press Done to remove it from that viewer; leave it ticked and it is
+kept, so it counts again if the playlist comes back. A playlist the viewer has that is not a
+TV show or film playlist is not listed (see "Smart playlists" above). Playlists of the wrong
+type are never offered to anyone.
+
+When Kodi has no smart playlists of TV shows or films at all, a message says so ("Kodi has
+no smart playlists of TV shows or films yet. Make one under Videos, Playlists, then come
+back here.") and no list opens. The viewer's playlists stay as they were.
 
 ## Settings reference
 
@@ -338,9 +362,16 @@ that still exists.
 
 **A playlist shows as unusable**
 
-The playlist is not a TV show or film playlist, so it can never credit anyone. Edit that
-viewer's playlists and untick it, or change the playlist's type in Kodi to shows or films.
-The viewer's other playlists keep working in the meantime.
+The playlist is not a TV show or film playlist, so it can never credit anyone. It is not
+listed in the picker, so there is nothing to untick: open Edit playlists for that viewer and
+press Done to remove it, or change the playlist's type in Kodi to shows or films. The
+viewer's other playlists keep working in the meantime.
+
+If Kodi has no TV show or film smart playlists at all, Edit playlists shows the "Kodi has no
+smart playlists of TV shows or films yet" message instead of the list, so Done is not
+available. In that case, make a TV show or film smart playlist (Edit playlists then opens, and
+Done removes the unusable one), change the unusable playlist's type in Kodi to shows or films,
+or remove the viewer and add them again.
 
 ### Logs
 

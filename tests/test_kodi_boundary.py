@@ -40,12 +40,6 @@ def test_no_dialog_open_reports_the_invalid_window_id():
     assert FakeKodi().topmost_dialog_id() == WINDOW_INVALID
 
 
-def test_multiselect_records_preselect_and_autoclose():
-    kodi = FakeKodi(multiselect_answer=[1])
-    kodi.multiselect("Who watched?", ["anna", "bob"], preselect=[0], autoclose=120)
-    assert kodi.multiselect_calls == [("Who watched?", ["anna", "bob"], [0], 120)]
-
-
 def test_read_text_honours_a_size_cap():
     kodi = FakeKodi(files={"special://profile/advancedsettings.xml": "x" * 100})
     assert kodi.read_text("special://profile/advancedsettings.xml", max_bytes=10) == "x" * 10
@@ -69,7 +63,7 @@ def test_confirm_window_records_and_answers():
 def test_list_window_returns_scripted_results_then_close():
     from resources.lib.ui.list_window import ListRequest, ListResult, ListState
 
-    request = ListRequest("h", (), (), "a", "s")
+    request = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", bulk_all="a", bulk_shown="s")
     opened = ListResult("open", ListState(), key="k")
     kodi = FakeKodi()
     kodi.list_window_results = [opened]

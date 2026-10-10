@@ -4,10 +4,12 @@ from typing import Any
 from resources.lib.constants import (
     PROMPT_EVERYONE,
     WHO_WATCHED_QUESTION,
+    WINDOW_CANCEL,
+    WINDOW_CLOSE,
     WINDOW_CLOSES_IN,
-    WINDOW_COUNT_ALL,
     WINDOW_COUNT_SOME,
     WINDOW_NO,
+    WINDOW_SEARCH,
     WINDOW_VIEWER,
     WINDOW_YES,
 )
@@ -19,6 +21,7 @@ from resources.lib.ui.window import (
     BUTTON_DONE,
     BUTTON_FORGET,
     BUTTON_NO,
+    BUTTON_PICK_DONE,
     BUTTON_SKIP,
     BUTTON_YES,
     LIST_FILTER,
@@ -27,6 +30,7 @@ from resources.lib.ui.window import (
     LIST_VIEWERS,
     ConfirmDialog,
     ListDialog,
+    PickListDialog,
     WhoWatchedDialog,
 )
 
@@ -284,7 +288,7 @@ def test_confirm_yes_is_true_and_no_or_back_is_not():
     assert back.result is None
     assert back._thread is None  # no countdown, no playback watch
 
-LIST_TEXTS = {WINDOW_COUNT_ALL: "%s shows", WINDOW_COUNT_SOME: "%s of %s", WINDOW_VIEWER: "Viewer: %s"}
+LIST_TEXTS = {WINDOW_COUNT_SOME: "%s of %s", WINDOW_VIEWER: "Viewer: %s", WINDOW_SEARCH: "Search", WINDOW_CLOSE: "Close"}
 SHOWS = tuple(
     ListRow(key=k, title=t, detail=", ".join(n) or "will ask again", thumb=f"image://{k}/", names=n)
     for k, t, n in [("a", "Alpha", ("anna",)), ("b", "Beta", ("bob",)), ("c", "Gamma", ("anna", "bob")), ("d", "Delta", ())]
@@ -311,6 +315,7 @@ class FakeRows(FakeList):
 class FakeEdit:
     def __init__(self) -> None:
         self.text = ""
+        self.input_type: tuple[int, str] | None = None
 
     def getText(self) -> str:
         return self.text
@@ -318,12 +323,23 @@ class FakeEdit:
     def setText(self, text: str) -> None:
         self.text = text
 
+    def setType(self, input_type: int, heading: str) -> None:
+        self.input_type = (input_type, heading)
+
 
 START = ListState()
 
 
 def _list(state=START, filters=FILTERS) -> tuple[Any, FakeRows, FakeEdit]:
-    request = ListRequest("Remembered answers", SHOWS, filters, "Forget all", "Forget %s shown")
+    request = ListRequest(
+        heading="Remembered answers",
+        rows=SHOWS,
+        count_one="1 show",
+        count_all="%s shows",
+        filters=filters,
+        bulk_all="Forget all",
+        bulk_shown="Forget %s shown",
+    )
     dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
     dialog.prepare(request, state, lambda i: LIST_TEXTS.get(i, ""))
     rows, edit = FakeRows(), FakeEdit()
@@ -485,3 +501,135 @@ def test_the_bulk_button_does_nothing_when_nothing_is_shown():
     dialog.onAction(Action(0))
     dialog.onClick(BUTTON_BULK)
     assert dialog.closed == 0 and dialog.result is None
+
+
+def test_nothing_shown_empties_the_bulk_label_so_the_button_hides():
+    dialog, _, edit = _list()
+    dialog.onInit()
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "zzz"
+    dialog.onAction(Action(0))
+    assert dialog.getProperty("CW.Bulk") == ""
+
+
+def test_the_search_keyboard_is_headed_search_not_kodis_enter_value():
+    dialog, _, edit = _list()
+    dialog.onInit()
+    assert edit.input_type == (0, "Search")  # xbmcgui.INPUT_TYPE_TEXT
+
+
+def test_the_close_button_reads_close_on_a_plain_list():
+    dialog, _, _ = _list()
+    dialog.onInit()
+    assert dialog.getProperty("CW.Close") == "Close"
+
+
+PICK_TEXTS = {**LIST_TEXTS, WINDOW_CANCEL: "Cancel"}
+PLAYLISTS = tuple(
+    ListRow(key=name, title=name, detail=detail, tag=tag)
+    for name, detail, tag in [
+        ("Anna TV", "", ""),
+        ("Cartoons", "Also bob", ""),
+        ("Films", "", ""),
+        ("Eps", "", "not a TV show or film playlist"),
+    ]
+)
+
+
+def _pick(ticked=("Cartoons", "Eps"), state=START) -> tuple[Any, FakeRows, FakeEdit]:
+    request = ListRequest(
+        heading="Playlists for anna",
+        rows=PLAYLISTS,
+        count_one="1 playlist",
+        count_all="%s playlists",
+        pick=True,
+        ticked=ticked,
+    )
+    dialog: Any = PickListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, state, lambda i: PICK_TEXTS.get(i, ""))
+    rows, edit = FakeRows(), FakeEdit()
+    dialog.set_control(LIST_ROWS, rows)
+    dialog.set_control(LIST_SEARCH, edit)
+    return dialog, rows, edit
+
+
+def test_a_pick_list_opens_with_its_ticks_and_says_cancel():
+    dialog, rows, _ = _pick()
+    dialog.onInit()
+    assert _chosen(rows) == ["", "true", "", "true"]
+    assert dialog.getProperty("CW.Pick") == "true"
+    assert dialog.getProperty("CW.Close") == "Cancel"
+    assert dialog.getProperty("CW.Bulk") == ""
+    assert dialog.getProperty("CW.Filter") == ""
+    assert dialog.getProperty("CW.Count") == "4 playlists"
+    assert dialog.focused == LIST_ROWS
+
+
+def test_ok_on_a_row_ticks_it_in_place_without_closing():
+    dialog, rows, _ = _pick()
+    dialog.onInit()
+    rows.position = 2
+    first = rows.items[0]
+    dialog.onClick(LIST_ROWS)
+    assert _chosen(rows) == ["", "true", "true", "true"]
+    assert rows.items[0] is first and rows.position == 2  # not refilled, not moved
+    assert dialog.closed == 0
+    dialog.onClick(LIST_ROWS)
+    assert _chosen(rows) == ["", "true", "", "true"]
+
+
+def test_ticks_survive_a_search():
+    dialog, rows, edit = _pick()
+    dialog.onInit()
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "a"  # Anna TV, Cartoons
+    dialog.onAction(Action(0))
+    assert _titles(rows) == ["Anna TV", "Cartoons"]
+    assert _chosen(rows) == ["", "true"]
+
+
+def test_done_returns_ticked_rows_the_search_hides():
+    dialog, rows, edit = _pick()
+    dialog.onInit()
+    dialog.setFocusId(LIST_SEARCH)
+    edit.text = "anna"
+    dialog.onAction(Action(0))
+    rows.position = 0
+    dialog.onClick(LIST_ROWS)  # tick Anna TV
+    dialog.onClick(BUTTON_PICK_DONE)
+    assert dialog.result.action == "done"
+    assert dialog.result.keys == ("Anna TV", "Cartoons", "Eps")  # row order, hidden ones kept
+    assert dialog.close_reason == "done"
+
+
+def test_done_with_nothing_ticked_returns_no_keys():
+    dialog, _, _ = _pick(ticked=())
+    dialog.onInit()
+    dialog.onClick(BUTTON_PICK_DONE)
+    assert dialog.result.action == "done" and dialog.result.keys == ()
+
+
+def test_cancel_and_back_return_no_choice():
+    dialog, _, _ = _pick()
+    dialog.onInit()
+    dialog.onClick(BUTTON_CLOSE)
+    assert dialog.result.action == "close" and dialog.result.keys == ()
+    back, _, _ = _pick()
+    back.onInit()
+    back.onAction(Action(92))
+    assert back.result is None and back.close_reason == "back"
+
+
+def test_the_bulk_button_does_nothing_on_a_pick_list():
+    dialog, _, _ = _pick()
+    dialog.onInit()
+    dialog.onClick(BUTTON_BULK)
+    assert dialog.closed == 0
+
+
+def test_ok_on_a_row_of_a_plain_list_still_opens_it():
+    """The pick override must not leak into the list it extends."""
+    dialog, rows, _ = _list()
+    dialog.onInit()
+    dialog.onClick(LIST_ROWS)
+    assert dialog.result.action == "open" and dialog.getProperty("CW.Pick") == ""

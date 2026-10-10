@@ -151,7 +151,8 @@ def test_every_button_can_be_reached(window):
     targets = {(root.findtext("defaultcontrol") or "").strip()}
     for control in root.iter("control"):
         for key in ("onup", "ondown", "onleft", "onright"):
-            targets.add((control.findtext(key) or "").strip())
+            # A key can have several entries, each with a condition; any of them is a route.
+            targets |= {(nav.text or "").strip() for nav in control.findall(key)}
     # A grouplist moves focus between its own children.
     for group in root.iter("control"):
         if group.get("type") == "grouplist":

@@ -4,19 +4,23 @@ from resources.lib import viewer_config
 from resources.lib.constants import (
     LABEL_BACK,
     VIEWERS_ADD,
+    VIEWERS_ALSO,
     VIEWERS_EDIT_PLAYLISTS,
     VIEWERS_EDIT_PROFILES,
     VIEWERS_HEADING,
+    VIEWERS_MISSING,
     VIEWERS_MISSING_COUNT,
+    VIEWERS_NO_PLAYLISTS,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_PLAYLISTS,
+    VIEWERS_PLAYLISTS_FOR,
     VIEWERS_REMOVE,
-    VIEWERS_UNUSABLE,
     VIEWERS_UNUSABLE_COUNT,
 )
 from resources.lib.models import Viewer
 from resources.lib.playlist_index import PLAYLIST_DIR
 from resources.lib.storage import JsonViewerStore
+from resources.lib.ui.list_window import ListResult, ListState
 from resources.lib.viewer_config import (
     apply_edit,
     available_playlists,
@@ -99,26 +103,6 @@ def test_a_viewer_with_an_unusable_playlist_is_flagged_but_not_as_missing():
     assert f"#{VIEWERS_MISSING_COUNT}" not in labels[0]
 
 
-def test_an_unusable_playlist_is_offered_only_to_the_viewer_who_has_it():
-    kodi = FakeKodi()
-    kodi.multiselect_answer = []
-    viewer_config._edit_playlists(kodi, Viewer(name="bob"), ["Anna TV"], ["Eps"])
-    _heading, options, _preselect, _autoclose = kodi.multiselect_calls[0]
-    assert options == ["Anna TV"]
-
-
-def test_an_unusable_playlist_is_shown_ticked_and_kept_under_its_real_name():
-    """Like a missing one: dropping it unseen would look like the user's own edit."""
-    kodi = FakeKodi()
-    kodi.multiselect_answer = [0, 1]
-    viewer = Viewer(name="anna", playlists=("Eps", "Anna TV"))
-    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"], ["Eps"])
-    _heading, options, preselect, _autoclose = kodi.multiselect_calls[0]
-    assert options[1] == f"Eps (! #{VIEWERS_UNUSABLE})"
-    assert preselect == [0, 1]
-    assert kept == ("Anna TV", "Eps")
-
-
 def test_adding_a_viewer_appends_it():
     assert apply_edit([], "anna", ("Anna TV",), ("Anna",)) == [
         Viewer(name="anna", playlists=("Anna TV",), profiles=("Anna",))
@@ -153,14 +137,14 @@ def test_a_valid_name_is_returned_trimmed():
 # --- the dialog flow -------------------------------------------------------
 
 class ScriptedKodi(FakeKodi):
-    """Answers a scripted sequence of select/input/multiselect calls."""
+    """Answers a scripted sequence of select, input and pick-window calls."""
 
-    def __init__(self, playlists, selects, inputs=None, multiselects=None, confirms=None) -> None:
+    def __init__(self, playlists, selects, inputs=None, picks=None, confirms=None) -> None:
         files = [{"label": n, "file": f"special://profile/playlists/video/{n}.xsp"} for n in playlists]
         super().__init__(rpc_handlers={"Files.GetDirectory": lambda params: {"files": files}})
         self._selects = list(selects)
         self._inputs = list(inputs or [])
-        self._multiselects = list(multiselects or [])
+        self._picks = list(picks or [])
         self._confirms = list(confirms or [])
         self.select_headings: list[str] = []
         self.select_options: list[list[str]] = []
@@ -176,9 +160,12 @@ class ScriptedKodi(FakeKodi):
     def text_input(self, heading, default=""):
         return self._inputs.pop(0) if self._inputs else ""
 
-    def multiselect(self, heading, options, preselect=None, autoclose=0):
-        self.multiselect_calls.append((heading, list(options), preselect, autoclose))
-        return self._multiselects.pop(0) if self._multiselects else None
+    def list_window(self, request, state):
+        self.list_window_calls.append((request, state))
+        keys = self._picks.pop(0) if self._picks else None
+        if keys is None:
+            return ListResult("close", state)
+        return ListResult("done", state, keys=tuple(keys))
 
     def confirm(self, heading, message, autoclose=0):
         return self._confirms.pop(0) if self._confirms else False
@@ -187,7 +174,7 @@ class ScriptedKodi(FakeKodi):
 def test_a_viewer_can_be_added_on_a_fresh_install(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     # menu is [Add viewer]; after the add it is [anna, Add viewer]; Cancel closes it
-    kodi = ScriptedKodi(["Anna TV"], selects=[0, -1], inputs=["anna"], multiselects=[[0]])
+    kodi = ScriptedKodi(["Anna TV"], selects=[0, -1], inputs=["anna"], picks=[["Anna TV"]])
     run_dialog(kodi, store)
     assert store.viewers() == [Viewer(name="anna", playlists=("Anna TV",))]
 
@@ -196,16 +183,16 @@ def test_editing_preselects_the_current_playlists(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save([Viewer(name="anna", playlists=("Bob TV",))])
     # pick viewer 0 -> Edit playlists -> keep -> Cancel
-    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], multiselects=[[1]])
+    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], picks=[["Bob TV"]])
     run_dialog(kodi, store)
-    assert kodi.multiselect_calls[0][2] == [1]
+    assert kodi.list_window_calls[0][0].ticked == ("Bob TV",)
     assert store.viewers()[0].playlists == ("Bob TV",)
 
 
 def test_cancelling_the_playlist_dialog_leaves_the_mapping_alone(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save([Viewer(name="anna", playlists=("Bob TV",))])
-    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], multiselects=[None])
+    kodi = ScriptedKodi(["Anna TV", "Bob TV"], selects=[0, 0, -1], picks=[None])
     run_dialog(kodi, store)
     assert store.viewers()[0].playlists == ("Bob TV",)
 
@@ -268,36 +255,6 @@ def test_a_viewer_with_no_playlists_is_not_flagged():
     assert "!" not in labels[0]
 
 
-def test_editing_a_viewer_shows_the_playlist_that_no_longer_exists():
-    """Preselect intersects with what exists, so a vanished name is invisible and silently
-    dropped on confirm. Listing it, ticked, makes the removal something the user chose."""
-    kodi = FakeKodi()
-    kodi.multiselect_answer = []
-    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
-    viewer_config._edit_playlists(kodi, viewer, ["Anna TV"])
-    heading, options, preselect, _autoclose = kodi.multiselect_calls[0]
-    assert any("Gone" in option for option in options)
-    assert preselect is not None and len(preselect) == 2
-
-
-def test_keeping_a_missing_playlist_stores_its_real_name_not_the_decorated_label():
-    """It may come back: a share can be offline, or a profile not yet loaded. Forcing the
-    removal would be worse than keeping it. But storing "Gone (! missing)" would mean the
-    configuration never matches the file again even once it returns."""
-    kodi = FakeKodi()
-    kodi.multiselect_answer = [0, 1]
-    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
-    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"])
-    assert kept == ("Anna TV", "Gone")
-
-
-def test_unticking_a_missing_playlist_removes_it():
-    kodi = FakeKodi()
-    kodi.multiselect_answer = [0]
-    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
-    assert viewer_config._edit_playlists(kodi, viewer, ["Anna TV"]) == ("Anna TV",)
-
-
 # --- translated labels ----------------------------------------------------
 
 
@@ -332,3 +289,150 @@ def test_one_playlist_reads_in_the_singular():
     assert one == [f"anna (#{VIEWERS_ONE_PLAYLIST})"]
     assert two == [f"anna (#{VIEWERS_PLAYLISTS})"]
 
+
+# --- the playlist picker ---------------------------------------------------
+
+def _picking(keys=None) -> FakeKodi:
+    """A Kodi whose pick window answers Done with these keys, or Cancel for None."""
+    kodi = FakeKodi()
+    if keys is not None:
+        kodi.list_window_results.append(ListResult("done", ListState(), keys=tuple(keys)))
+    return kodi
+
+
+class WordedKodi(FakeKodi):
+    """FakeKodi's '#id' strings have no placeholder, which would hide the names."""
+
+    def localised(self, string_id: int) -> str:
+        return "Also %s" if string_id == VIEWERS_ALSO else super().localised(string_id)
+
+
+def test_the_picker_is_a_pick_list_with_the_viewers_playlists_ticked():
+    kodi = _picking(["Anna TV"])
+    viewer = Viewer(name="anna", playlists=("Anna TV",))
+    viewer_config._edit_playlists(kodi, viewer, ["Anna TV", "Bob TV"], (), [viewer])
+    request, state = kodi.list_window_calls[0]
+    assert request.pick and request.ticked == ("Anna TV",)
+    assert request.heading == f"#{VIEWERS_PLAYLISTS_FOR}".replace("%s", "anna")
+    assert request.filters == () and request.bulk_all == ""
+    assert [row.key for row in request.rows] == ["Anna TV", "Bob TV"]
+    assert state == ListState()
+
+
+def test_done_returns_the_picked_playlists():
+    viewer = Viewer(name="anna", playlists=("Anna TV",))
+    kept = viewer_config._edit_playlists(_picking(["Bob TV"]), viewer, ["Anna TV", "Bob TV"])
+    assert kept == ("Bob TV",)
+
+
+def test_cancel_keeps_the_mapping():
+    viewer = Viewer(name="anna", playlists=("Anna TV",))
+    assert viewer_config._edit_playlists(_picking(None), viewer, ["Anna TV"]) is None
+
+
+def test_an_unusable_playlist_is_offered_to_nobody():
+    rows = viewer_config.playlist_rows(FakeKodi(), Viewer(name="bob"), ["Anna TV"], ["Eps"], [])
+    assert [row.key for row in rows] == ["Anna TV"]
+
+
+def test_missing_playlists_come_last_ticked_under_their_real_names_with_a_tag():
+    """Listed, because it may come back (a share offline, a rename): a removal is then
+    something the household chose. The real name keeps the configuration matching the file
+    when it returns."""
+    kodi = _picking(["Anna TV", "Gone"])
+    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
+    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"], [], [viewer])
+    request, _ = kodi.list_window_calls[0]
+    assert [(row.key, row.title, row.tag) for row in request.rows] == [
+        ("Anna TV", "Anna TV", ""),
+        ("Gone", "Gone", f"#{VIEWERS_MISSING}"),
+    ]
+    assert kept == ("Anna TV", "Gone")
+
+
+def test_an_unusable_playlist_is_not_listed_and_done_drops_it():
+    """It can never credit anyone, so there is nothing to choose; the viewer list already
+    marks the viewer unusable before the picker opens."""
+    kodi = _picking(["Anna TV"])
+    viewer = Viewer(name="anna", playlists=("Eps", "Anna TV"))
+    kept = viewer_config._edit_playlists(kodi, viewer, ["Anna TV"], ["Eps"], [viewer])
+    request, _ = kodi.list_window_calls[0]
+    assert [row.key for row in request.rows] == ["Anna TV"]
+    assert kept == ("Anna TV",)
+
+
+def test_cancel_keeps_an_unusable_playlist():
+    viewer = Viewer(name="anna", playlists=("Eps", "Anna TV"))
+    assert viewer_config._edit_playlists(_picking(None), viewer, ["Anna TV"], ["Eps"]) is None
+
+
+def test_an_unusable_playlist_is_not_mistaken_for_a_missing_one():
+    viewer = Viewer(name="anna", playlists=("Eps",))
+    rows = viewer_config.playlist_rows(FakeKodi(), viewer, ["Anna TV"], ["Eps"], [viewer])
+    assert [row.key for row in rows] == ["Anna TV"]
+
+
+def test_a_viewer_with_only_missing_playlists_still_gets_the_window_to_untick_them():
+    kodi = _picking([])
+    viewer = Viewer(name="anna", playlists=("Gone",))
+    assert viewer_config._edit_playlists(kodi, viewer, [], ["Eps"]) == ()
+    assert kodi.ok_calls == [] and len(kodi.list_window_calls) == 1
+
+
+def test_unticking_a_missing_playlist_removes_it():
+    viewer = Viewer(name="anna", playlists=("Gone", "Anna TV"))
+    assert viewer_config._edit_playlists(_picking(["Anna TV"]), viewer, ["Anna TV"]) == ("Anna TV",)
+
+
+def test_also_names_the_other_viewers_with_that_playlist_in_configuration_order():
+    anna = Viewer(name="anna", playlists=("Shared",))
+    viewers = [Viewer(name="chloe", playlists=("Shared",)), anna, Viewer(name="bob", playlists=("Shared", "Bob TV"))]
+    rows = viewer_config.playlist_rows(WordedKodi(), anna, ["Shared", "Bob TV", "Free"], [], viewers)
+    assert [row.detail for row in rows] == ["Also chloe, bob", "Also bob", ""]
+
+
+def test_also_leaves_out_the_viewer_being_edited_whatever_the_case():
+    anna = Viewer(name="anna", playlists=("Shared",))
+    rows = viewer_config.playlist_rows(WordedKodi(), anna, ["Shared"], [], [Viewer(name="ANNA", playlists=("Shared",))])
+    assert rows[0].detail == ""
+
+
+def test_no_playlists_at_all_shows_a_notice_and_no_window():
+    kodi = FakeKodi()
+    assert viewer_config._edit_playlists(kodi, Viewer(name="anna"), []) is None
+    assert kodi.list_window_calls == []
+    assert kodi.ok_calls == [(f"#{VIEWERS_PLAYLISTS_FOR}".replace("%s", "anna"), f"#{VIEWERS_NO_PLAYLISTS}")]
+
+
+def test_a_failed_listing_keeps_the_mapping():
+    """available_playlists returns nothing on an RPC failure. A window then would list none
+    of the viewer's playlists, and Done would drop them all."""
+    kodi = FakeKodi()
+    viewer = Viewer(name="anna", playlists=("Anna TV",))
+    assert viewer_config._edit_playlists(kodi, viewer, [], []) is None
+    assert kodi.list_window_calls == []
+
+
+def test_adding_a_viewer_shows_who_else_has_each_playlist(tmp_path):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="bob", playlists=("Shared",))])
+    # [bob, Add viewer] -> Add -> name -> pick -> [bob, chloe, Add] -> Cancel
+    kodi = ScriptedKodi(["Shared"], selects=[1, -1], inputs=["chloe"], picks=[["Shared"]])
+    run_dialog(kodi, store)
+    request, _ = kodi.list_window_calls[0]
+    assert request.rows[0].detail == f"#{VIEWERS_ALSO}"
+    assert store.viewers()[1] == Viewer(name="chloe", playlists=("Shared",))
+
+
+def test_the_picker_logs_no_names(tmp_path):
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="anna", playlists=("Secret list",))])
+    # [anna, Add] -> anna -> Edit playlists -> Done -> Cancel
+    run_dialog(ScriptedKodi(["Secret list"], selects=[0, 0, -1], picks=[["Secret list"]]), store)
+    viewer_config._edit_playlists(FakeKodi(), Viewer(name="anna"), [])
+    assert captured
+    assert not any(word in line for line in captured for word in ("Secret list", "anna"))

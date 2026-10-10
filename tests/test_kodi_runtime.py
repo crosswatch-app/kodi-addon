@@ -58,33 +58,6 @@ def test_a_failed_position_read_still_reports_the_duration():
     assert got == (None, 120_000)
 
 
-def test_multiselect_converts_the_autoclose_to_milliseconds(runtime, monkeypatch):
-    seen = {}
-
-    class Dialog:
-        def multiselect(self, heading, options, autoclose=0, preselect=None, useDetails=False):
-            seen.update(heading=heading, autoclose=autoclose, preselect=preselect)
-            return [0]
-
-    monkeypatch.setattr(runtime._xbmcgui, "Dialog", Dialog)
-    runtime.multiselect("Who watched?", ["anna"], preselect=[0], autoclose=90)
-    assert seen["autoclose"] == 90_000
-    assert seen["preselect"] == [0]
-
-
-def test_multiselect_passes_an_empty_preselect_rather_than_none(runtime, monkeypatch):
-    seen = {}
-
-    class Dialog:
-        def multiselect(self, heading, options, autoclose=0, preselect=None, useDetails=False):
-            seen["preselect"] = preselect
-            return None
-
-    monkeypatch.setattr(runtime._xbmcgui, "Dialog", Dialog)
-    runtime.multiselect("Who watched?", ["anna"])
-    assert seen["preselect"] == []
-
-
 def test_jsonrpc_raises_on_an_error_body(runtime, monkeypatch):
     monkeypatch.setattr(
         runtime._xbmc, "executeJSONRPC", lambda request: '{"error": {"code": -32601}}'
@@ -188,7 +161,7 @@ def test_confirm_window_back_and_failure_are_no(runtime, monkeypatch):
     monkeypatch.setattr(window_mod, "ConfirmDialog", broken)
     assert runtime.confirm_window("h", "m") is False
 
-LIST_REQUEST = ListRequest("h", (), (), "Forget all", "Forget %s shown")
+LIST_REQUEST = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", bulk_all="Forget all", bulk_shown="Forget %s shown")
 
 
 def test_list_window_returns_what_the_window_returned(runtime, monkeypatch):
@@ -209,3 +182,36 @@ def test_list_window_back_or_failure_is_close_with_the_state_kept(runtime, monke
     monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
     state = ListState(search="a")
     assert runtime.list_window(LIST_REQUEST, state) == ListResult("close", state)
+
+
+PICK_REQUEST = ListRequest(heading="h", rows=(), count_one="1", count_all="%s", pick=True)
+
+
+def test_list_window_opens_the_pick_window_for_a_pick_request(runtime, monkeypatch):
+    opened = []
+
+    class Pick(window_mod.PickListDialog):
+        def doModal(self) -> None:
+            opened.append(type(self))
+            self.finish("done", ListResult("done", ListState(), keys=("a",)))
+
+    monkeypatch.setattr(window_mod, "PickListDialog", Pick)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.list_window(PICK_REQUEST, ListState()) == ListResult("done", ListState(), keys=("a",))
+    assert opened == [Pick]
+
+
+def test_a_failed_pick_window_is_a_logged_close(runtime, monkeypatch):
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no skin file")
+
+    monkeypatch.setattr(window_mod, "PickListDialog", broken)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.list_window(PICK_REQUEST, ListState()) == ListResult("close", ListState())
+    line = next(m for m in captured if "ui.window_failed" in m)
+    assert "pick_list" in line and "RuntimeError" in line

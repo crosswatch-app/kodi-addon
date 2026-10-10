@@ -15,7 +15,15 @@ from typing import Any
 
 import xbmcgui
 
-from resources.lib.constants import PROMPT_EVERYONE, WHO_WATCHED_QUESTION, WINDOW_CLOSES_IN, WINDOW_VIEWER
+from resources.lib.constants import (
+    PROMPT_EVERYONE,
+    WHO_WATCHED_QUESTION,
+    WINDOW_CANCEL,
+    WINDOW_CLOSE,
+    WINDOW_CLOSES_IN,
+    WINDOW_SEARCH,
+    WINDOW_VIEWER,
+)
 from resources.lib.log import get_logger
 from resources.lib.ui import list_window as lw
 from resources.lib.ui import who_watched as ww
@@ -237,6 +245,7 @@ LIST_FILTER = 31
 LIST_ROWS = 100
 BUTTON_BULK = 20
 BUTTON_CLOSE = 21
+BUTTON_PICK_DONE = 22
 
 
 class ListDialog(CrossWatchDialog):
@@ -253,7 +262,7 @@ class ListDialog(CrossWatchDialog):
         self._shown: list[lw.ListRow] = []
         self.configure(
             localised,
-            {"CW.Heading": request.heading},
+            {"CW.Heading": request.heading, "CW.Close": localised(WINDOW_CLOSE)},
             autoclose_seconds=0,
             close_on_playback=False,
             is_playing=lambda: False,
@@ -266,6 +275,8 @@ class ListDialog(CrossWatchDialog):
 
     def fill(self) -> None:
         search: Any = self.getControl(LIST_SEARCH)
+        # Kodi heads its keyboard "Enter value" unless the edit control is told otherwise.
+        search.setType(xbmcgui.INPUT_TYPE_TEXT, self._localised(WINDOW_SEARCH))
         search.setText(self._search)
         self._show(self._position)
         if self._shown:
@@ -297,7 +308,7 @@ class ListDialog(CrossWatchDialog):
             position = self.state().position
             if 0 <= position < len(self._shown):
                 self.finish("open", lw.ListResult("open", self.state(), key=self._shown[position].key))
-        elif controlId == BUTTON_BULK and self._shown:
+        elif controlId == BUTTON_BULK and lw.bulk_label(self._request, len(self._shown)):
             keys = tuple(row.key for row in self._shown)
             self.finish("bulk", lw.ListResult("bulk", self.state(), keys=keys))
         elif controlId == BUTTON_CLOSE:
@@ -326,6 +337,40 @@ class ListDialog(CrossWatchDialog):
             rows.selectItem(min(max(position, 0), len(self._shown) - 1))
         label = self._localised(WINDOW_VIEWER).replace("%s", row_filter.label) if row_filter else ""
         self.setProperty("CW.Filter", label)
-        self.setProperty("CW.Count", lw.count_text(self._localised, len(self._shown), len(request.rows)))
+        self.setProperty("CW.Count", lw.count_text(request, self._localised, len(self._shown)))
         self.setProperty("CW.Bulk", lw.bulk_label(request, len(self._shown)))
         self.setProperty("CW.Empty", "" if self._shown else "true")
+
+
+class PickListDialog(ListDialog):
+    """A list to tick rows in. OK ticks a row in place; Done returns every ticked row, also
+    those a search hides; Cancel and Back change nothing."""
+
+    name = "pick_list"
+
+    def prepare(self, request: lw.ListRequest, state: lw.ListState, localised: Localised) -> None:
+        super().prepare(request, state, localised)
+        self._ticked = frozenset(request.ticked)
+        self._window_properties["CW.Pick"] = "true"
+        self._window_properties["CW.Close"] = localised(WINDOW_CANCEL)
+
+    def onClick(self, controlId: int) -> None:
+        if controlId == LIST_ROWS:
+            position = self.state().position
+            if 0 <= position < len(self._shown):
+                key = self._shown[position].key
+                self._ticked = lw.toggle(self._ticked, key)
+                # In place: refilling the list would move the household off the row.
+                rows: Any = self.getControl(LIST_ROWS)
+                rows.getListItem(position).setProperty("chosen", "true" if key in self._ticked else "")
+        elif controlId == BUTTON_PICK_DONE:
+            keys = lw.picked(self._request.rows, self._ticked)
+            self.finish("done", lw.ListResult("done", self.state(), keys=keys))
+        else:
+            super().onClick(controlId)
+
+    def _show(self, position: int) -> None:
+        super()._show(position)
+        rows: Any = self.getControl(LIST_ROWS)
+        for index, row in enumerate(self._shown):
+            rows.getListItem(index).setProperty("chosen", "true" if row.key in self._ticked else "")

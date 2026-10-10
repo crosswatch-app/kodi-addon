@@ -15,7 +15,6 @@ class FakeKodi:
         rpc_handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] | None = None,
         settings: dict[str, str] | None = None,
         files: dict[str, str] | None = None,
-        multiselect_answer: list[int] | None = None,
         who_watched_answer: tuple[str, ...] | None = None,
         confirm_window_answer: bool = False,
         select_answer: int = -1,
@@ -34,7 +33,6 @@ class FakeKodi:
         self.rpc_handlers = dict(rpc_handlers or {})
         self.settings = dict(settings or {})
         self.files = dict(files or {})
-        self.multiselect_answer = multiselect_answer
         self.who_watched_answer = who_watched_answer
         self.who_watched_calls: list[Any] = []
         self.confirm_window_answer = confirm_window_answer
@@ -56,7 +54,6 @@ class FakeKodi:
         self.info_labels = dict(info_labels or {})
         self.root = root
         self.calls: list[tuple[str, dict[str, Any]]] = []
-        self.multiselect_calls: list[tuple[str, list[str], list[int] | None, int]] = []
         self.notifications: list[tuple[str, str]] = []
         self.confirm_calls: list[tuple[str, str, int]] = []
         self.ok_calls: list[tuple[str, str]] = []
@@ -108,12 +105,6 @@ class FakeKodi:
 
     def topmost_dialog_id(self) -> int:
         return self.dialog_id
-
-    def multiselect(
-        self, heading: str, options: list[str], preselect: list[int] | None = None, autoclose: int = 0
-    ) -> list[int] | None:
-        self.multiselect_calls.append((heading, list(options), preselect, autoclose))
-        return self.multiselect_answer
 
     def who_watched(self, request: Any) -> tuple[str, ...] | None:
         self.who_watched_calls.append(request)
