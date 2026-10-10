@@ -37,6 +37,10 @@ jobs:
 
   deploy:
     needs: build
+    # Pages is enabled for this repository only once the site is meant to be live; until the
+    # PAGES_ENABLED repository variable is set to true, the deploy is skipped rather than
+    # failing on a Pages site that does not exist yet.
+    if: vars.PAGES_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write
