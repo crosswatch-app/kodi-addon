@@ -63,14 +63,6 @@ msgctxt "#30031"
 msgid "Playlist could not be read, so viewer identification is reduced: %s"
 msgstr ""
 
-msgctxt "#30032"
-msgid "Who watched %s?"
-msgstr ""
-
-msgctxt "#30033"
-msgid "Who watched this?"
-msgstr ""
-
 msgctxt "#30034"
 msgid "Everyone"
 msgstr ""
@@ -249,4 +241,24 @@ msgstr ""
 
 msgctxt "#30080"
 msgid "not a TV show or film playlist"
+msgstr ""
+
+msgctxt "#30081"
+msgid "Who watched it?"
+msgstr ""
+
+msgctxt "#30082"
+msgid "Done"
+msgstr ""
+
+msgctxt "#30083"
+msgid "Skip"
+msgstr ""
+
+msgctxt "#30084"
+msgid "Season %s, episode %s"
+msgstr ""
+
+msgctxt "#30085"
+msgid "Closes in %s s"
 msgstr ""

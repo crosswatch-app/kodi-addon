@@ -34,20 +34,23 @@ LIBRARY = {
 class ScriptedKodi(FakeKodi):
     """Answers each dialog from a queue, in the order the screen asks."""
 
-    def __init__(self, selects=(), multiselects=(), confirms=(), library=None) -> None:
-        super().__init__(rpc_handlers={"VideoLibrary.GetTVShows": lambda params: LIBRARY if library is None else library})
+    def __init__(self, selects=(), answers=(), confirms=(), library=None) -> None:
+        super().__init__(rpc_handlers={
+            "VideoLibrary.GetTVShows": lambda params: LIBRARY if library is None else library,
+            "VideoLibrary.GetTVShowDetails": lambda params: {"tvshowdetails": {"art": {"poster": "image://alpha/"}}},
+        })
         self.selects = list(selects)
-        self.multiselects = list(multiselects)
+        self.answers = list(answers)
         self.confirms = list(confirms)
         self.select_calls: list[tuple[str, list[str]]] = []
+
+    def who_watched(self, request):
+        self.who_watched_calls.append(request)
+        return self.answers.pop(0) if self.answers else None
 
     def select(self, heading, options):
         self.select_calls.append((heading, list(options)))
         return self.selects.pop(0) if self.selects else -1
-
-    def multiselect(self, heading, options, preselect=None, autoclose=0):
-        self.multiselect_calls.append((heading, list(options), preselect, autoclose))
-        return self.multiselects.pop(0) if self.multiselects else None
 
     def confirm(self, heading, message, autoclose=0):
         return self.confirms.pop(0) if self.confirms else False
@@ -137,30 +140,41 @@ def test_nothing_remembered_says_so_and_closes(memory):
 def test_change_saves_the_new_answer_and_keeps_the_title(memory):
     memory.remember("show:tvdb:100", ("anna",), title="Alpha", year=2008)
     # Pick the show, then Change, then tick bob (row 0 is Everyone), then leave the list.
-    kodi = ScriptedKodi(selects=[0, 0, -1], multiselects=[[2]])
+    kodi = ScriptedKodi(selects=[0, 0, -1], answers=[("bob",)])
     remembered.run(kodi, memory, VIEWERS)
     assert memory.recall("show:tvdb:100") == RememberedAnswer(viewers=("bob",), title="Alpha", year=2008)
-    assert kodi.multiselect_calls[0][2] == [1], "the current answer is pre-ticked"
+    request = kodi.who_watched_calls[0]
+    assert request.preselect == ("anna",), "the current answer is pre-ticked"
+    assert (request.title, request.subtitle, request.poster) == ("Alpha", "2008", "image://alpha/")
+    assert request.autoclose_seconds == 0 and request.close_on_playback is False
 
 
 def test_change_fills_in_a_title_an_older_answer_lacked(memory):
     memory.remember("show:tvdb:100", ("anna",))
-    kodi = ScriptedKodi(selects=[0, 0, -1], multiselects=[[1, 2]])
+    kodi = ScriptedKodi(selects=[0, 0, -1], answers=[("anna", "bob")])
     remembered.run(kodi, memory, VIEWERS)
     assert memory.recall("show:tvdb:100") == RememberedAnswer(viewers=("anna", "bob"), title="Alpha", year=2008)
 
 
 def test_change_with_nobody_ticked_forgets(memory):
     memory.remember("show:tvdb:100", ("anna",))
-    remembered.run(ScriptedKodi(selects=[0, 0], multiselects=[[]]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(selects=[0, 0], answers=[()]), memory, VIEWERS)
     assert memory.recall("show:tvdb:100") is None
 
 
 def test_cancelling_the_change_leaves_the_answer_alone(memory):
     memory.remember("show:tvdb:100", ("anna",))
-    remembered.run(ScriptedKodi(selects=[0, 0, -1], multiselects=[None]), memory, VIEWERS)
+    remembered.run(ScriptedKodi(selects=[0, 0, -1], answers=[None]), memory, VIEWERS)
     answer = memory.recall("show:tvdb:100")
     assert answer is not None and answer.viewers == ("anna",)
+
+
+def test_change_for_a_show_missing_from_the_library_has_no_poster(memory):
+    memory.remember("show:tvdb:999", ("anna",), title="Gone", year=2001)
+    kodi = ScriptedKodi(selects=[0, 0, -1], answers=[("bob",)])
+    remembered.run(kodi, memory, VIEWERS)
+    request = kodi.who_watched_calls[0]
+    assert (request.title, request.subtitle, request.poster) == ("Gone", "2001", "")
 
 
 def test_forget_removes_only_that_show(memory):
@@ -198,7 +212,7 @@ def test_log_lines_carry_no_titles_or_names(memory, tmp_path):
     logmod.configure(log_dir=None, debug=False, sink=lambda msg, level: captured.append(msg))
     try:
         memory.remember("show:tvdb:100", ("anna",))
-        remembered.run(ScriptedKodi(selects=[0, 0, -1], multiselects=[[2]]), memory, VIEWERS)
+        remembered.run(ScriptedKodi(selects=[0, 0, -1], answers=[("bob",)]), memory, VIEWERS)
     finally:
         logmod.reset()
     assert captured

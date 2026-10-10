@@ -6,7 +6,8 @@ clock, the monotonic source and the id generator are injected for the same reaso
 
 Everything here runs on the service thread, including the callbacks: Kodi queues them and
 executes them from Monitor.waitForAbort. There is therefore no concurrency to guard, and no
-locks. The reporter worker is the only other thread and it touches only its own queue.
+locks. Callbacks can however arrive nested: the prompt window's doModal runs them too, in the
+middle of _flush_pending, which is written for that. The reporter worker is the only other thread and it touches only its own queue.
 """
 
 from __future__ import annotations
@@ -323,20 +324,21 @@ class Controller:
         session = self._pending_stop
         if session is None:
             return
+        # Taken out of the slot before the prompt: the prompt window's doModal runs this
+        # thread's queued player callbacks while it is open, so a nested on_av_started must
+        # not find this stop and send it a second time, and a stop parked meanwhile by a
+        # nested on_stopped must stay parked rather than be cleared on the way out.
+        self._pending_stop = None
         try:
             if allow_prompt and not session.identity.viewers:
                 self._attribute_by_prompt(session)
         finally:
-            # The slot is cleared only once the emission has returned. Clearing it first
-            # would mean an exception from _emit loses the stop with no state to recover it.
             try:
                 queued = self._emit("stop", session)
                 if not queued:
                     _log.warning("service.stop_not_queued", session_id=session.session_id)
             except Exception as exc:
                 _log.error("service.stop_emit_failed", session_id=session.session_id, error=str(exc))
-            finally:
-                self._pending_stop = None
 
     def _attribute_by_prompt(self, session: PlaybackSession) -> None:
         try:

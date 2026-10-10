@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A plain background in CrossWatch's own colour, so a screenshot's margin shows no home screen. -->
+<window>
+    <controls>
+        <control type="image">
+            <left>0</left><top>0</top><width>1920</width><height>1080</height>
+            <texture colordiffuse="FF090A0D">special://home/addons/service.crosswatch/resources/skins/Default/media/crosswatch/white.png</texture>
+        </control>
+    </controls>
+</window>

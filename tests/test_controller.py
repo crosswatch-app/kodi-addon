@@ -465,7 +465,7 @@ def test_pause_state_does_not_survive_into_the_next_playback(tmp_path):
 def test_a_new_playback_flushes_a_parked_stop_without_prompting(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [0]
+    kodi.who_watched_answer = ("anna", "bob")
     viewers = [Viewer(name="anna"), Viewer(name="bob")]
     controller = _controller(tmp_path, kodi, viewers, collector)
     controller.on_av_started()
@@ -473,7 +473,7 @@ def test_a_new_playback_flushes_a_parked_stop_without_prompting(tmp_path):
     controller.on_stopped(completed=False)
     controller.on_av_started()
     assert collector.kinds() == ["start", "stop", "start"]
-    assert kodi.multiselect_calls == []
+    assert kodi.who_watched_calls == []
     assert collector.playback()[1].viewers == ()
 
 
@@ -490,14 +490,14 @@ def test_abort_emits_a_stop_for_an_open_session(tmp_path):
 def test_abort_flushes_a_parked_stop_without_prompting(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [0]
+    kodi.who_watched_answer = ("anna", "bob")
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
     controller.on_stopped(completed=False)
     controller.on_abort()
     assert collector.kinds() == ["start", "stop"]
-    assert kodi.multiselect_calls == []
+    assert kodi.who_watched_calls == []
 
 
 def test_abort_with_nothing_playing_emits_nothing(tmp_path):
@@ -512,7 +512,7 @@ def test_abort_with_nothing_playing_emits_nothing(tmp_path):
 def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [2]  # row 0 is Everyone
+    kodi.who_watched_answer = ("bob",)
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -527,7 +527,7 @@ def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(t
 def test_the_answer_is_remembered_under_a_stable_key(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [2]  # row 0 is Everyone
+    kodi.who_watched_answer = ("bob",)
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -540,7 +540,7 @@ def test_the_answer_is_remembered_under_a_stable_key(tmp_path):
 def test_a_dismissed_prompt_still_emits_the_stop_with_no_viewers(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = None
+    kodi.who_watched_answer = None
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -558,7 +558,7 @@ def test_a_raising_prompt_still_emits_the_stop(tmp_path):
     def boom(*args, **kwargs):
         raise RuntimeError("window is gone")
 
-    kodi.multiselect = boom  # type: ignore[method-assign]
+    kodi.who_watched = boom  # type: ignore[method-assign]
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
@@ -578,19 +578,19 @@ def test_a_remembered_answer_is_used_without_asking(tmp_path):
     controller.on_stopped(completed=False)
     controller.on_tick()
     assert collector.playback()[-1].viewers == ("anna",)
-    assert kodi.multiselect_calls == []
+    assert kodi.who_watched_calls == []
 
 
 def test_the_prompt_carries_an_autoclose(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
-    kodi.multiselect_answer = [0]
+    kodi.who_watched_answer = ("anna", "bob")
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     controller.on_tick()
     controller.on_stopped(completed=False)
     controller.on_tick()
-    assert kodi.multiselect_calls[0][3] > 0
+    assert kodi.who_watched_calls[0].autoclose_seconds > 0
 
 
 # --- cadence and resilience ------------------------------------------------
@@ -940,3 +940,48 @@ def test_a_playlist_that_breaks_again_after_recovering_notifies_again(tmp_path):
     controller.invalidate_index()
     _warm_index(controller, kodi)
     assert len(kodi.notifications) == 2
+
+
+def test_a_new_item_starting_while_the_window_is_open_sends_the_stop_once(tmp_path):
+    """The window's doModal runs this thread's queued player callbacks while it is open, so
+    on_av_started can arrive nested inside the prompt. The finished item's stop must still go
+    out exactly once, with the answer."""
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+
+    def answer_after_the_next_item_starts(request):
+        controller.on_av_started()
+        return ("bob",)
+
+    kodi.who_watched = answer_after_the_next_item_starts  # type: ignore[method-assign]
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    stops = [event for event in collector.playback() if event.kind == "stop"]
+    assert len(stops) == 1
+    assert stops[0].viewers == ("bob",)
+
+
+def test_a_stop_parked_while_the_window_is_open_is_kept(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+
+    def next_item_plays_and_stops_while_open(request):
+        controller.on_av_started()
+        controller.on_tick()
+        controller.on_stopped(completed=False)
+        return None
+
+    kodi.who_watched = next_item_plays_and_stops_while_open  # type: ignore[method-assign]
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    kodi.who_watched = lambda request: None  # type: ignore[method-assign]
+    controller.on_tick()
+    stops = [event for event in collector.playback() if event.kind == "stop"]
+    assert len(stops) == 2
+    assert stops[0].session_id != stops[1].session_id

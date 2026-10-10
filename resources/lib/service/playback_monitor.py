@@ -2,8 +2,8 @@
 """Forwards Kodi's player callbacks to the controller.
 
 Kodi queues these and executes them on this addon's own service thread, from inside
-Monitor.waitForAbort, so they are not running on a Kodi thread and there is no concurrency
-here. The reason to keep them trivial is different: this thread is the only thing that
+Monitor.waitForAbort and from a window's doModal (the who-watched question), so they are not
+running on a Kodi thread and there is no concurrency here. The reason to keep them trivial is different: this thread is the only thing that
 delivers callbacks and observes abort, so parking it stalls everything.
 """
 

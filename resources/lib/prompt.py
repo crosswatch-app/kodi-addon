@@ -13,19 +13,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from resources.lib.advanced_settings import Thresholds
-from resources.lib.constants import PROMPT_EVERYONE, PROMPT_HEADING, PROMPT_HEADING_UNTITLED
 from resources.lib.identity import Identity
 from resources.lib.kodi import WINDOW_INVALID, KodiApi
 from resources.lib.log import get_logger
 from resources.lib.models import MediaItem, Viewer
 from resources.lib.storage import PromptMemory
+from resources.lib.ui.who_watched import WhoWatchedRequest, episode_subtitle, movie_poster, show_poster, year_subtitle
 
 _log = get_logger("prompt")
 
 # Ordered by preference: the first present wins, so the key is stable across id ordering.
 _ID_PREFERENCE = ("tvdb", "tmdb", "imdb")
-
-_EVERYONE_ROW = 0
 
 
 def show_key(media: MediaItem) -> str | None:
@@ -128,36 +126,45 @@ def gate(
     return GateDecision(ask=True)
 
 
-def heading_for(kodi: KodiApi, title: str | None) -> str:
-    if title:
-        # replace rather than %: a translation that drops the placeholder must not raise.
-        return kodi.localised(PROMPT_HEADING).replace("%s", title)
-    return kodi.localised(PROMPT_HEADING_UNTITLED)
-
-
 def choose_viewers(
-    kodi: KodiApi, heading: str, viewers: list[Viewer], preselect: tuple[str, ...] = (), autoclose: int = 0
+    kodi: KodiApi,
+    viewers: list[Viewer],
+    title: str,
+    subtitle: str,
+    poster: str,
+    preselect: tuple[str, ...] = (),
+    autoclose: int = 0,
+    close_on_playback: bool = False,
 ) -> tuple[str, ...] | None:
-    """The Everyone row, then each viewer. None when cancelled, () when nobody was ticked.
+    """None when cancelled, () when Done with nobody ticked, else the names.
 
     The two differ for the settings screen: cancel leaves an answer alone, while confirming
     with nobody ticked is a deliberate request to forget it.
     """
-    names = [v.name for v in viewers]
-    options = [kodi.localised(PROMPT_EVERYONE), *names]
-    ticked = [i + 1 for i, name in enumerate(names) if name in preselect]
-    chosen = kodi.multiselect(heading, options, preselect=ticked or None, autoclose=autoclose)
-    if chosen is None:
-        return None
-    if _EVERYONE_ROW in chosen:
-        # Expanded to names now rather than remembered as "everyone", so a viewer added
-        # later is not credited with shows the household watched before they existed.
-        return tuple(names)
-    return tuple(names[i - 1] for i in chosen if 1 <= i <= len(names))
+    request = WhoWatchedRequest(
+        title=title,
+        subtitle=subtitle,
+        poster=poster,
+        names=tuple(v.name for v in viewers),
+        preselect=preselect,
+        autoclose_seconds=autoclose,
+        close_on_playback=close_on_playback,
+    )
+    return kodi.who_watched(request)
 
 
 def ask(kodi: KodiApi, viewers: list[Viewer], media: MediaItem, autoclose: int) -> tuple[str, ...]:
-    answer = choose_viewers(kodi, heading_for(kodi, media.title), viewers, autoclose=autoclose)
+    if media.media_type == "episode":
+        subtitle = episode_subtitle(kodi, media.season, media.episode)
+        poster = show_poster(kodi, media.show_library_id)
+    else:
+        subtitle = year_subtitle(media.year)
+        poster = movie_poster(kodi, media.library_id)
+    # Closes when playback starts: the household has moved on, and an open window would
+    # otherwise sit over the next item.
+    answer = choose_viewers(
+        kodi, viewers, media.title or "", subtitle, poster, autoclose=autoclose, close_on_playback=True
+    )
     if not answer:
         _log.info("prompt.dismissed", media_type=media.media_type, library_id=media.library_id)
         return ()

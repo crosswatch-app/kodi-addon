@@ -35,8 +35,9 @@ from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.media import clean_ids
 from resources.lib.models import Viewer
 from resources.lib.playlist_index import IndexBuilder
-from resources.lib.prompt import LIBRARY_KEY_PREFIX, choose_viewers, heading_for, key_for_show
+from resources.lib.prompt import LIBRARY_KEY_PREFIX, choose_viewers, key_for_show
 from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer
+from resources.lib.ui.who_watched import show_poster, year_subtitle
 
 _log = logmod.get_logger("config")
 
@@ -156,19 +157,27 @@ def build_rows(
 
 
 def _change(kodi: KodiApi, memory: PromptMemory, row: Row, library: Library | None, viewers: list[Viewer]) -> None:
-    picked = choose_viewers(kodi, heading_for(kodi, row.title), viewers, preselect=row.viewers)
+    stored = memory.recall(row.key) or RememberedAnswer(viewers=())
+    found = library.get(row.key) if library is not None else None
+    year = stored.year if stored.title else (found.year if found else None)
+    # No countdown and no closing on playback: this screen was opened on purpose.
+    picked = choose_viewers(
+        kodi,
+        viewers,
+        title=row.title or _fallback_name(kodi, row.key),
+        subtitle=year_subtitle(year),
+        poster=show_poster(kodi, found.library_id if found else None),
+        preselect=row.viewers,
+    )
     if picked is None:
         return
     if not picked:
         memory.forget(row.key)
         _log.info("config.remembered_forgotten")
         return
-    stored = memory.recall(row.key) or RememberedAnswer(viewers=())
-    found = library.get(row.key) if library is not None else None
     # Keep the stored identity; fill it in from the library only where an older answer
     # had none. A library-id answer reaches here only when it still matches its show.
     title = stored.title or (found.title if found else None)
-    year = stored.year if stored.title else (found.year if found else None)
     memory.remember(row.key, picked, title=title, year=year)
     _log.info("config.remembered_changed", viewers_count=len(picked))
 
