@@ -1062,8 +1062,9 @@ def test_a_ping_reply_hands_its_route_facts_on(reporter_factory):
         connection_factory=_replying(b'{"ok": true, "routes": [{"label": "Trakt A", "viewers": ["anna"]}]}'),
         on_routes=seen.append,
     )
-    assert reporter.report(PING, DEVICE) is True
-    assert seen == [RouteFacts(count=1, accepted=frozenset({"anna"}))]
+    ping = PingEvent(event_id="p-2", sent_at="2026-10-06T20:00:00Z", viewers=("anna", "bob"))
+    assert reporter.report(ping, DEVICE) is True
+    assert seen == [RouteFacts(count=1, accepted=frozenset({"anna"}), asked=frozenset({"anna", "bob"}))]
 
 
 def test_a_ping_reply_without_routes_hands_no_route_facts_on(reporter_factory):

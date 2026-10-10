@@ -148,6 +148,15 @@ def open_connection(scheme: str, host: str, port: int | None, timeout: float) ->
     return http.client.HTTPConnection(host, port, timeout=timeout)
 
 
+def _asked(body: bytes) -> tuple[str, ...]:
+    """The viewer names a ping carried: what CrossWatch's route list answers for."""
+    try:
+        names = json.loads(body.decode("utf-8")).get("viewers")
+    except (ValueError, AttributeError):
+        return ()
+    return tuple(n for n in names if isinstance(n, str)) if isinstance(names, list) else ()
+
+
 class HttpReporter:
     def __init__(
         self,
@@ -287,9 +296,9 @@ class HttpReporter:
             # helps nobody and delays every event behind it.
             _log.warning("reporter.rejected", url=self._safe_url, event=kind, status=status)
             return False
-        return self._accepted(kind, raw)
+        return self._accepted(kind, raw, body)
 
-    def _accepted(self, kind: str, raw: bytes) -> bool:
+    def _accepted(self, kind: str, raw: bytes, body: bytes) -> bool:
         try:
             parsed = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
@@ -312,7 +321,7 @@ class HttpReporter:
             except Exception as exc:
                 # Cosmetic: a failure to show the name must not turn a delivery into a failure.
                 _log.warning("reporter.instance_not_noted", error=str(exc))
-        facts = parse_routes(parsed) if kind == "ping" and self._on_routes is not None else None
+        facts = parse_routes(parsed, _asked(body)) if kind == "ping" and self._on_routes is not None else None
         if facts is not None and self._on_routes is not None:
             try:
                 self._on_routes(facts)

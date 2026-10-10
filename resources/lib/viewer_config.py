@@ -186,7 +186,7 @@ def flag_text(kodi: KodiApi, viewer: Viewer, listing: PlaylistListing, routes: R
     if wrong:
         parts.append(_text(kodi, VIEWERS_UNUSABLE_COUNT, len(wrong)))
     # Only what CrossWatch said about this pairing: without a reply there is no claim.
-    if routes is not None and viewer.name not in routes.accepted:
+    if routes is not None and viewer.name in routes.asked and viewer.name not in routes.accepted:
         parts.append(_text(kodi, VIEWERS_NO_ROUTE))
     return ", ".join(parts)
 
@@ -408,7 +408,14 @@ def _viewer_page(
             return viewers
 
 
-def run_dialog(kodi: KodiApi, store: ViewerStore, memory: PromptMemory, routes: RouteFacts | None = None) -> None:
+def run_dialog(
+    kodi: KodiApi,
+    store: ViewerStore,
+    memory: PromptMemory,
+    routes: Callable[[], RouteFacts | None] = lambda: None,
+) -> None:
+    """routes is read on every pass: the service pings within a tick of a change, and the
+    open screen should catch up with what CrossWatch answered."""
     viewers = store.viewers()
     # Once per screen: each is a directory or profile listing over JSON-RPC.
     listing = available_playlists(kodi)
@@ -428,7 +435,7 @@ def run_dialog(kodi: KodiApi, store: ViewerStore, memory: PromptMemory, routes: 
         add = _text(kodi, VIEWERS_ADD)
         request = ListRequest(
             heading=_text(kodi, VIEWERS_HEADING),
-            rows=viewer_rows(kodi, viewers, listing, routes),
+            rows=viewer_rows(kodi, viewers, listing, routes()),
             count_one=_text(kodi, VIEWERS_ONE_VIEWER),
             count_all=_text(kodi, VIEWERS_COUNT),
             bulk_all=add,
@@ -455,5 +462,8 @@ def main() -> None:
     # written to a no-op sink and a failure here is invisible everywhere.
     logmod.configure(log_dir=paths.log_dir(kodi), debug=settings.debug_logging, sink=kodi.log)
     run_dialog(
-        kodi, JsonViewerStore(paths.viewers_path(kodi)), PromptMemory(paths.prompts_path(kodi)), current_routes(kodi)
+        kodi,
+        JsonViewerStore(paths.viewers_path(kodi)),
+        PromptMemory(paths.prompts_path(kodi)),
+        lambda: current_routes(kodi),
     )

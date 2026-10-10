@@ -224,7 +224,13 @@ class RouteStore:
 
     def save(self, fingerprint: str, facts: RouteFacts) -> bool:
         return _write_json(
-            self._path, {"fingerprint": fingerprint, "routes": facts.count, "accepted": sorted(facts.accepted)}
+            self._path,
+            {
+                "fingerprint": fingerprint,
+                "routes": facts.count,
+                "accepted": sorted(facts.accepted),
+                "asked": sorted(facts.asked),
+            },
         )
 
     def load(self, fingerprint: str) -> RouteFacts | None:
@@ -233,6 +239,11 @@ class RouteStore:
             return None
         count = data.get("routes")
         names = data.get("accepted")
-        if not isinstance(count, int) or not isinstance(names, list):
+        asked = data.get("asked")
+        if not isinstance(count, int) or not isinstance(names, list) or not isinstance(asked, list):
             return None
-        return RouteFacts(count, frozenset(str(n) for n in names if isinstance(n, str)))
+        return RouteFacts(
+            count,
+            frozenset(str(n) for n in names if isinstance(n, str)),
+            frozenset(str(n) for n in asked if isinstance(n, str)),
+        )

@@ -291,12 +291,13 @@ playlist" or "nothing set up"). When something needs fixing, the row also carrie
 "1 missing" or "1 unusable". A viewer is tagged "no CrossWatch route" when no CrossWatch route
 accepts their name. CrossWatch reports its routes for this Kodi, and the names each route
 accepts, when it answers the add-on's regular check-in (every five minutes, and straight away
-when the viewer names change). The tag only appears after CrossWatch has answered for the
-current pairing: when the add-on is not paired, or CrossWatch does not send its routes, no
-viewer is tagged. A count shows how many viewers are listed ("3 viewers"), and a search box
-narrows the list by name. Below the list are "Add viewer", which is always available (also when
-a search finds nobody), and "Close". With no viewers configured yet, the screen starts straight
-at Add viewer.
+when the viewer names change). The tag only appears once CrossWatch has answered with its
+routes for the current pairing, and only for names it was asked about: when the add-on is not
+paired, or CrossWatch has never sent its routes, no viewer is tagged, and a viewer just added
+or renamed is not tagged until CrossWatch's next answer. A count shows how many viewers are
+listed ("3 viewers"), and a search box narrows the list by name. Below the list are "Add
+viewer", which is always available (also when a search finds nobody), and "Close". With no
+viewers configured yet, the screen starts straight at Add viewer.
 
 Every change is saved straight away, so there is no need to close the screen, and it applies
 from the next playback.
@@ -423,9 +424,9 @@ order:
 3. Whether the viewer was just renamed. The whitelist may still have the old name: change it
    to the new one.
 
-A route with an empty whitelist accepts every viewer. The tag can take a moment to clear: it
-updates when CrossWatch answers the add-on's next check-in (every five minutes, and straight
-away when the viewer names change).
+A route with an empty whitelist accepts every viewer, unless a CrossWatch profile is set on
+that route. The tag can take a moment to clear: it updates when CrossWatch answers the add-on's
+next check-in (every five minutes, and straight away when the viewer names change).
 
 **A playlist shows as unusable**
 

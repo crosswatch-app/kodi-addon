@@ -586,7 +586,7 @@ def test_the_screens_log_no_names(tmp_path):
 # --- CrossWatch routes -----------------------------------------------------
 
 def test_a_viewer_no_crosswatch_route_takes_is_tagged():
-    routes = RouteFacts(count=1, accepted=frozenset({"anna"}))
+    routes = RouteFacts(count=1, accepted=frozenset({"anna"}), asked=frozenset({"anna", "bob"}))
     viewers = [Viewer(name="anna"), Viewer(name="bob", playlists=("Gone",))]
     rows = viewer_rows(Worded(), viewers, PlaylistListing(["X"], []), routes)
     assert [r.tag for r in rows] == ["", "1 missing, no CrossWatch route"]
@@ -598,7 +598,8 @@ def test_without_route_facts_nobody_is_tagged():
 
 
 def test_no_routes_at_all_tags_everyone():
-    rows = viewer_rows(Worded(), [Viewer(name="anna")], PlaylistListing(["X"], []), RouteFacts(0, frozenset()))
+    no_routes = RouteFacts(0, frozenset(), frozenset({"anna"}))
+    rows = viewer_rows(Worded(), [Viewer(name="anna")], PlaylistListing(["X"], []), no_routes)
     assert rows[0].tag == "no CrossWatch route"
 
 
@@ -610,13 +611,14 @@ def _paired(tmp_path, token="tok") -> FakeKodi:
 
 def test_current_routes_reads_the_facts_of_this_pairing(tmp_path):
     kodi = _paired(tmp_path)
-    RouteStore(paths.routes_path(kodi)).save(config_fingerprint("tok"), RouteFacts(1, frozenset({"anna"})))
-    assert current_routes(kodi) == RouteFacts(1, frozenset({"anna"}))
+    facts = RouteFacts(1, frozenset({"anna"}), frozenset({"anna"}))
+    RouteStore(paths.routes_path(kodi)).save(config_fingerprint("tok"), facts)
+    assert current_routes(kodi) == facts
 
 
 def test_current_routes_ignores_an_earlier_pairing(tmp_path):
     kodi = _paired(tmp_path, token="new")
-    RouteStore(paths.routes_path(kodi)).save(config_fingerprint("old"), RouteFacts(1, frozenset({"anna"})))
+    RouteStore(paths.routes_path(kodi)).save(config_fingerprint("old"), RouteFacts(1, frozenset({"anna"}), frozenset({"anna"})))
     assert current_routes(kodi) is None
 
 
@@ -627,5 +629,25 @@ def test_current_routes_is_nothing_when_not_paired(tmp_path):
 def test_the_viewer_list_carries_the_route_tag(tmp_path):
     store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")])
     kodi = ScriptedKodi([], lists=[("close", "")])
-    run_dialog(kodi, store, memory, RouteFacts(1, frozenset({"anna"})))
+    run_dialog(kodi, store, memory, lambda: RouteFacts(1, frozenset({"anna"}), frozenset({"anna", "bob"})))
     assert [r.tag for r in kodi.lists_shown[0].rows] == ["", f"#{VIEWERS_NO_ROUTE}"]
+
+
+def test_a_viewer_the_last_ping_never_named_is_not_tagged():
+    """Added or renamed since: CrossWatch has not been asked about them yet, so no claim."""
+    routes = RouteFacts(1, frozenset({"anna"}), frozenset({"anna"}))
+    rows = viewer_rows(Worded(), [Viewer(name="anna"), Viewer(name="dan")], PlaylistListing(["X"], []), routes)
+    assert [r.tag for r in rows] == ["", ""]
+
+
+def test_the_viewer_list_rereads_the_route_facts_on_every_pass(tmp_path):
+    """The service pings within a tick of a change; the open screen should catch up."""
+    store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")])
+    answers = iter([
+        RouteFacts(1, frozenset({"anna"}), frozenset({"anna", "bob"})),
+        RouteFacts(1, frozenset({"anna", "bob"}), frozenset({"anna", "bob"})),
+    ])
+    kodi = ScriptedKodi([], lists=[("open", "anna"), ("close", "")], pages=["back"])
+    run_dialog(kodi, store, memory, lambda: next(answers))
+    assert [r.tag for r in kodi.lists_shown[0].rows] == ["", f"#{VIEWERS_NO_ROUTE}"]
+    assert [r.tag for r in kodi.lists_shown[1].rows] == ["", ""]
