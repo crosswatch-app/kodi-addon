@@ -199,9 +199,9 @@ When neither of the above answered, Kodi asks who watched when playback stops, n
 start, so it never delays playback.
 
 The question is a CrossWatch window, not the skin's standard dialog. It shows the title of the
-show or film with its poster (a plain placeholder if there is none), plus "Season N, episode
-M" for an episode or the year for a film. Below that is an "Everyone" row, then each
-configured viewer; focus starts on Everyone.
+show or film with its poster (if there is none, a placeholder in the CrossWatch colours reading
+"No poster"), plus "Season N, episode M" for an episode or the year for a film. Below that is
+an "Everyone" row, then each configured viewer; focus starts on Everyone.
 
 - OK on a viewer ticks or unticks that viewer. You can tick more than one.
 - OK on Everyone ticks every viewer, or clears them all when all are already ticked.

@@ -310,3 +310,7 @@ msgstr ""
 msgctxt "#30100"
 msgid "Kodi has no smart playlists of TV shows or films yet. Make one under Videos, Playlists, then come back here."
 msgstr ""
+
+msgctxt "#30101"
+msgid "No poster"
+msgstr ""
