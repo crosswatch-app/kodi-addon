@@ -2,14 +2,19 @@ import pytest
 
 from resources.lib import remembered
 from resources.lib.constants import (
+    REMEMBERED_ANSWER,
     REMEMBERED_CONFIRM_FORGET_ALL,
     REMEMBERED_CONFIRM_FORGET_ONE,
-    REMEMBERED_COVERED,
+    REMEMBERED_COVERED_BY,
+    REMEMBERED_GONE,
     REMEMBERED_HEADING,
     REMEMBERED_LIBRARY_ID,
+    REMEMBERED_NO_TITLE,
     REMEMBERED_NONE_YET,
-    REMEMBERED_NOT_IN_LIBRARY,
-    REMEMBERED_NOT_STABLE,
+    REMEMBERED_NOT_IN_LIBRARY_HEAD,
+    REMEMBERED_NOT_STABLE_HEAD,
+    REMEMBERED_PLAYLIST_OF,
+    REMEMBERED_POINTS_AT,
     REMEMBERED_WILL_ASK,
     WINDOW_ALL,
     WINDOW_FORGET_ALL,
@@ -18,6 +23,7 @@ from resources.lib.constants import (
 from resources.lib.models import Viewer
 from resources.lib.storage import PromptMemory, RememberedAnswer
 from resources.lib.ui.list_window import ListResult, ListState
+from resources.lib.ui.panel import PanelLine, slot_properties
 from tests.fakes import FakeKodi
 
 ANNA = Viewer(name="anna")
@@ -96,13 +102,13 @@ def test_a_removed_viewer_is_left_out_and_nobody_left_reads_as_asking_again(memo
 
 def test_a_show_no_longer_in_the_library_keeps_its_stored_title(memory):
     memory.remember("show:tvdb:999", ("anna",), title="Gone Show", year=2001)
-    assert _shown(memory) == [("Gone Show", f"#{REMEMBERED_NOT_IN_LIBRARY}", "anna")]
+    assert _shown(memory) == [("Gone Show", f"#{REMEMBERED_NOT_IN_LIBRARY_HEAD}", "anna")]
     assert _rows(memory)[0].thumb == ""
 
 
 def test_a_show_with_neither_library_entry_nor_title_shows_its_id(memory):
     memory.remember("show:tvdb:999", ("anna",))
-    assert _shown(memory) == [("tvdb 999", f"#{REMEMBERED_NOT_IN_LIBRARY}", "anna")]
+    assert _shown(memory) == [("tvdb 999", f"#{REMEMBERED_NOT_IN_LIBRARY_HEAD}", "anna")]
 
 
 def test_a_library_id_answer_that_still_matches_is_listed_normally(memory):
@@ -116,8 +122,8 @@ def test_a_library_id_answer_that_no_longer_matches_is_marked_and_cannot_be_chan
     memory.remember("tvshow:7", ("bob",))
     assert sorted((r.name, r.tag, r.changeable) for r in _rows(memory)) == sorted(
         [
-            (f"#{REMEMBERED_LIBRARY_ID}", f"#{REMEMBERED_NOT_STABLE}", False),
-            ("Old Name", f"#{REMEMBERED_NOT_STABLE}", False),
+            (f"#{REMEMBERED_LIBRARY_ID}", f"#{REMEMBERED_NOT_STABLE_HEAD}", False),
+            ("Old Name", f"#{REMEMBERED_NOT_STABLE_HEAD}", False),
         ]
     )
 
@@ -321,9 +327,10 @@ def test_a_show_a_playlist_covers_is_marked_so(memory):
     memory.remember("show:tvdb:100", ("bob",))
     kodi = PlaylistKodi()
     library = remembered.library_shows(kodi)
-    covered = remembered.covered_by_playlist(kodi, [ANNA_LISTED, BOB], library)
-    rows = remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covered)
-    assert [(row.name, row.tag, row.detail) for row in rows] == [("Alpha", f"#{REMEMBERED_COVERED}", "bob")]
+    covers = remembered.covering_playlists(kodi, [ANNA_LISTED, BOB], library)
+    assert covers == {"show:tvdb:100": (("anna", "Anna TV"),)}
+    rows = remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covers)
+    assert [(row.name, row.tag, row.detail) for row in rows] == [("Alpha", f"#{REMEMBERED_COVERED_BY}", "bob")]
     # Still changeable: the answer applies again if the show leaves the playlist.
     assert rows[0].changeable
 
@@ -332,26 +339,26 @@ def test_a_show_no_playlist_covers_is_not_marked(memory):
     memory.remember("show:tvdb:100", ("bob",))
     kodi = PlaylistKodi(members=({"id": 42, "type": "tvshow"},))
     library = remembered.library_shows(kodi)
-    covered = remembered.covered_by_playlist(kodi, [ANNA_LISTED, BOB], library)
-    rows = remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covered)
+    covers = remembered.covering_playlists(kodi, [ANNA_LISTED, BOB], library)
+    rows = remembered.build_rows(memory.entries(), library, [ANNA_LISTED, BOB], kodi, covers)
     assert [(row.name, row.tag, row.detail) for row in rows] == [("Alpha", "", "bob")]
 
 
 def test_an_unreadable_playlist_marks_nothing(memory):
     kodi = PlaylistKodi()
     del kodi.files["special://profile/playlists/video/Anna TV.xsp"]
-    assert remembered.covered_by_playlist(kodi, [ANNA_LISTED], remembered.library_shows(kodi)) == frozenset()
+    assert remembered.covering_playlists(kodi, [ANNA_LISTED], remembered.library_shows(kodi)) == {}
 
 
 def test_without_a_library_nothing_is_marked():
-    assert remembered.covered_by_playlist(PlaylistKodi(), [ANNA_LISTED], None) == frozenset()
+    assert remembered.covering_playlists(PlaylistKodi(), [ANNA_LISTED], None) == {}
 
 
 def test_the_screen_marks_covered_shows(memory):
     memory.remember("show:tvdb:100", ("bob",))
     kodi = PlaylistKodi()
     remembered.run(kodi, memory, [ANNA_LISTED, BOB])
-    assert kodi.list_window_calls[0][0].rows[0].tag == f"#{REMEMBERED_COVERED}"
+    assert kodi.list_window_calls[0][0].rows[0].tag == f"#{REMEMBERED_COVERED_BY}"
 
 
 def test_a_failed_bulk_write_is_not_logged_as_forgotten(memory, monkeypatch):
@@ -363,3 +370,109 @@ def test_a_failed_bulk_write_is_not_logged_as_forgotten(memory, monkeypatch):
     monkeypatch.setattr(memory, "forget_many", lambda keys: False)
     remembered.run(ScriptedKodi(lists=[_bulk("show:tvdb:100")], confirms=[True]), memory, VIEWERS)
     assert not any("config.remembered_forgot_all" in line for line in captured)
+
+
+# --- the panel ------------------------------------------------------------------
+
+
+def _lines(memory, kodi=None, viewers=VIEWERS, covers=None):
+    kodi = kodi or ScriptedKodi()
+    rows = remembered.build_rows(memory.entries(), remembered.library_shows(kodi), viewers, kodi, covers or {})
+    return {row.key: row for row in rows}
+
+
+def test_the_panel_names_the_year_and_the_answer(memory):
+    memory.remember("show:tvdb:100", ("anna", "bob"))
+    row = _lines(memory)["show:tvdb:100"]
+    assert row.lines == (
+        PanelLine("2008", heading=True),
+        PanelLine(f"#{REMEMBERED_ANSWER}", heading=True),
+        PanelLine("anna, bob"),
+    )
+    assert not row.warn
+
+
+def test_an_answer_for_nobody_configured_reads_will_ask_again(memory):
+    memory.remember("show:tvdb:100", ("carol",))
+    assert _lines(memory)["show:tvdb:100"].lines[-1] == PanelLine(f"#{REMEMBERED_WILL_ASK}")
+
+
+class Worded(ScriptedKodi):
+    TEXTS = {REMEMBERED_PLAYLIST_OF: "%s's playlist '%s'", REMEMBERED_POINTS_AT: "the id now points at %s"}
+
+    def localised(self, string_id: int) -> str:
+        return self.TEXTS.get(string_id, super().localised(string_id))
+
+
+def test_a_covered_show_names_each_viewer_and_playlist(memory):
+    memory.remember("show:tvdb:100", ("bob",))
+    covers = {"show:tvdb:100": (("anna", "Anna TV"), ("bob", "Shared"))}
+    row = _lines(memory, Worded(), covers=covers)["show:tvdb:100"]
+    assert row.lines[-3:] == (
+        PanelLine(f"#{REMEMBERED_COVERED_BY}", heading=True),
+        PanelLine("anna's playlist 'Anna TV'"),
+        PanelLine("bob's playlist 'Shared'"),
+    )
+    assert not row.warn  # nothing is wrong: the playlist takes precedence
+
+
+def test_many_covering_playlists_are_cut_with_and_n_more(memory):
+    memory.remember("show:tvdb:100", ("bob",))
+    covers = {"show:tvdb:100": tuple(("anna", f"List {n}") for n in range(12))}
+    row = _lines(memory, Worded(), covers=covers)["show:tvdb:100"]
+    props = slot_properties(row.lines, "and %s more", remembered.REMEMBERED_SLOTS)
+    assert props[f"slot{remembered.REMEMBERED_SLOTS}"] == "and 7 more"  # year, Answer, bob, Covered by, 5 of 12
+
+
+def test_a_show_gone_from_the_library_says_so_and_warns(memory):
+    memory.remember("show:tvdb:999", ("anna",), title="Gone Show", year=2001)
+    row = _lines(memory)["show:tvdb:999"]
+    assert row.lines[-2:] == (
+        PanelLine(f"#{REMEMBERED_NOT_IN_LIBRARY_HEAD}", heading=True, warn=True),
+        PanelLine(f"#{REMEMBERED_GONE}", warn=True),
+    )
+    assert row.warn and row.lines[0] == PanelLine("2001", heading=True)
+
+
+def test_a_not_stable_answer_names_the_show_its_id_now_points_at(memory):
+    memory.remember("tvshow:42", ("anna",), title="Old Name", year=2019)
+    row = _lines(memory, Worded())["tvshow:42"]
+    assert row.lines[-2:] == (
+        PanelLine(f"#{REMEMBERED_NOT_STABLE_HEAD}", heading=True, warn=True),
+        PanelLine("the id now points at No Ids", warn=True),
+    )
+    assert row.warn and row.lines[0] == PanelLine("2019", heading=True), "the answer's year, not the other show's"
+
+
+def test_a_library_id_answer_whose_show_is_gone_is_not_in_library_not_unstable(memory):
+    """Not stable means the id now holds another show or cannot be checked; an id with
+    nothing at it is a show that left the library."""
+    memory.remember("tvshow:7", ("bob",), title="Lost", year=2010)
+    row = _lines(memory)["tvshow:7"]
+    assert row.lines[-1] == PanelLine(f"#{REMEMBERED_GONE}", warn=True) and row.changeable
+
+
+def test_a_not_stable_answer_without_a_title_says_it_cannot_be_checked(memory):
+    memory.remember("tvshow:7", ("bob",))
+    row = _lines(memory)["tvshow:7"]
+    assert row.lines[-1] == PanelLine(f"#{REMEMBERED_NO_TITLE}", warn=True) and not row.changeable
+
+
+def test_an_unreadable_library_judges_nothing(memory):
+    memory.remember("show:tvdb:100", ("anna",), title="Alpha", year=2008)
+
+    def boom(params):
+        raise RuntimeError("rpc down")
+
+    kodi = ScriptedKodi()
+    kodi.rpc_handlers["VideoLibrary.GetTVShows"] = boom
+    row = _lines(memory, kodi)["show:tvdb:100"]
+    assert not row.warn and all(not line.warn for line in row.lines)
+
+
+def test_a_rows_panel_and_flags_ride_on_its_list_row(memory):
+    memory.remember("tvshow:7", ("bob",))
+    row = _lines(memory)["tvshow:7"]
+    props = dict(remembered._list_row(row, "and %s more").properties)
+    assert props["warn"] == "true" and props["changeable"] == ""
+    assert props["slot1_head"] == f"#{REMEMBERED_ANSWER}"
