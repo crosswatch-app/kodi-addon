@@ -940,3 +940,48 @@ def test_a_playlist_that_breaks_again_after_recovering_notifies_again(tmp_path):
     controller.invalidate_index()
     _warm_index(controller, kodi)
     assert len(kodi.notifications) == 2
+
+
+def test_a_new_item_starting_while_the_window_is_open_sends_the_stop_once(tmp_path):
+    """The window's doModal runs this thread's queued player callbacks while it is open, so
+    on_av_started can arrive nested inside the prompt. The finished item's stop must still go
+    out exactly once, with the answer."""
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+
+    def answer_after_the_next_item_starts(request):
+        controller.on_av_started()
+        return ("bob",)
+
+    kodi.who_watched = answer_after_the_next_item_starts  # type: ignore[method-assign]
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    stops = [event for event in collector.playback() if event.kind == "stop"]
+    assert len(stops) == 1
+    assert stops[0].viewers == ("bob",)
+
+
+def test_a_stop_parked_while_the_window_is_open_is_kept(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+
+    def next_item_plays_and_stops_while_open(request):
+        controller.on_av_started()
+        controller.on_tick()
+        controller.on_stopped(completed=False)
+        return None
+
+    kodi.who_watched = next_item_plays_and_stops_while_open  # type: ignore[method-assign]
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    controller.on_tick()
+    kodi.who_watched = lambda request: None  # type: ignore[method-assign]
+    controller.on_tick()
+    stops = [event for event in collector.playback() if event.kind == "stop"]
+    assert len(stops) == 2
+    assert stops[0].session_id != stops[1].session_id
