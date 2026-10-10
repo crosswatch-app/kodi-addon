@@ -1,0 +1,103 @@
+{
+  "who-watched-episode": {
+    "window": "crosswatch-who.xml",
+    "library": "tvshow",
+    "subtitle": "Season 1, episode 5",
+    "names": [
+      "Anna",
+      "Ben",
+      "Chloe"
+    ],
+    "preselect": [
+      "Ben"
+    ],
+    "autoclose_seconds": 120,
+    "keys": []
+  },
+  "who-watched-everyone-ticked": {
+    "window": "crosswatch-who.xml",
+    "library": "tvshow",
+    "subtitle": "Season 1, episode 5",
+    "names": [
+      "Anna",
+      "Ben",
+      "Chloe"
+    ],
+    "preselect": [],
+    "autoclose_seconds": 120,
+    "keys": [
+      "Select"
+    ]
+  },
+  "who-watched-film": {
+    "window": "crosswatch-who.xml",
+    "library": "movie",
+    "subtitle": "{year}",
+    "names": [
+      "Anna",
+      "Ben"
+    ],
+    "preselect": [
+      "Anna",
+      "Ben"
+    ],
+    "autoclose_seconds": 120,
+    "keys": []
+  },
+  "who-watched-no-poster": {
+    "window": "crosswatch-who.xml",
+    "title": "Untitled Home Video",
+    "subtitle": "",
+    "poster": "",
+    "names": [
+      "Anna",
+      "Ben"
+    ],
+    "preselect": [],
+    "autoclose_seconds": 120,
+    "keys": []
+  },
+  "who-watched-many-viewers-done": {
+    "window": "crosswatch-who.xml",
+    "library": "tvshow",
+    "subtitle": "Season 1, episode 1",
+    "names": [
+      "Anna",
+      "Ben",
+      "Chloe",
+      "David",
+      "Emma",
+      "Finn"
+    ],
+    "preselect": [
+      "Chloe",
+      "Finn"
+    ],
+    "autoclose_seconds": 120,
+    "keys": [
+      "Down",
+      "Down",
+      "Down",
+      "Down",
+      "Down",
+      "Down",
+      "Down"
+    ]
+  },
+  "remembered-change": {
+    "window": "crosswatch-who.xml",
+    "library": "tvshow",
+    "subtitle": "{year}",
+    "names": [
+      "Anna",
+      "Ben",
+      "Chloe"
+    ],
+    "preselect": [
+      "Anna",
+      "Chloe"
+    ],
+    "autoclose_seconds": 0,
+    "keys": []
+  }
+}
