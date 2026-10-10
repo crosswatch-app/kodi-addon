@@ -195,8 +195,22 @@ viewer is credited. Profiles are entered comma separated under "Edit Kodi profil
 ### The question at the end
 
 When neither of the above answered, Kodi asks who watched when playback stops, never at the
-start, so it never delays playback. The dialog offers an "Everyone" row plus each viewer,
-lets you pick more than one, and closes by itself after 120 seconds with no answer.
+start, so it never delays playback.
+
+The question is a CrossWatch window, not the skin's standard dialog. It shows the title of the
+show or film with its poster (a plain placeholder if there is none), plus "Season N, episode
+M" for an episode or the year for a film. Below that is an "Everyone" row, then each
+configured viewer; focus starts on Everyone.
+
+- OK on a viewer ticks or unticks that viewer. You can tick more than one.
+- OK on Everyone ticks every viewer, or clears them all when all are already ticked.
+- Done, below the list, sends the watch with the ticked viewers.
+- Skip or Back sends the watch with no viewer. Nothing is remembered, so the question comes
+  back next time. Done with nobody ticked does the same.
+
+A countdown in the corner ("Closes in N s") runs from 120 seconds; at zero the window closes
+as if you had skipped. It also closes straight away, as if skipped, when playback starts
+again while it is open.
 
 It is not asked:
 
@@ -225,8 +239,10 @@ whitelist.
 
 The add-on settings have a Remembered answers entry under Viewers, next to Configure
 viewers and playlists. It lists every show with a remembered answer and who it is for, with
-Change (the who-watched picker, current answer ticked) and Forget (asks again next
-episode). Forget all remembered answers, at the bottom, clears everything after a
+Change and Forget (asks again next episode). Change opens the same who-watched window with
+the current answer ticked, without the countdown, and it does not close when playback starts.
+Done with nobody ticked forgets the answer, like Forget; Skip or Back leaves the answer
+unchanged. Forget all remembered answers, at the bottom, clears everything after a
 confirmation; changes apply from the next playback, no restart needed.
 
 Playlist membership is checked first, so it overrides a remembered answer to the prompt. The
