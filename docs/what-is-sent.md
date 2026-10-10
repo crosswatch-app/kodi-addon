@@ -12,15 +12,16 @@ have set up there:
 - Viewer names, and how they were found (playlist, profile, or the question, which includes
   an answer remembered from it; nothing when the only viewer is
   credited because they are the only one).
-- Title, year, season, episode and episode title; the ids Kodi's library has for it (such as
+- Title, year, season, episode and episode title; the ids Kodi has for it (such as
   TMDb, TVDb, IMDb); duration, playback position and progress; the file path, with any user
   name, password and query string removed; and the Plex rating key for
   PlexKodiConnect playback, which is only reported when "Skip PlexKodiConnect playback" is off
   (it is on by default, see [Settings](settings.md#viewers)).
 
 Only episodes and films are reported, and only when Kodi knows at least one real id for them
-(such as TMDb, TVDb or IMDb); music, live TV, and files Kodi has not scraped into its library
-send nothing.
+(such as TMDb, TVDb or IMDb). The ids can come from Kodi's library or from the add-on that plays
+the item, so an episode or film played from an add-on that supplies its ids is reported too.
+Music, live TV, and a file Kodi knows nothing about send nothing.
 
 The webhook token travels only in a request header, never in a URL. Nothing is sent anywhere
 other than your own CrossWatch.

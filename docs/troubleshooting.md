@@ -15,8 +15,8 @@ Problems listed by what you see, with what to check.
   and the log shows `reporter.rejected` with `status=401`. Turn it on in CrossWatch and pair
   again. Completed watches still waiting for delivery are then dropped, because the token
   changed.
-- Only episodes and films that Kodi has in its library with an id are reported; see
-  [What the add-on sends](what-is-sent.md).
+- Only episodes and films with an id are reported, from Kodi's library or from an add-on that
+  supplies the ids; see [What the add-on sends](what-is-sent.md).
 - When CrossWatch was down, only completed watches are sent later; everything else is dropped
   after two minutes (see [When CrossWatch cannot be
   reached](what-is-sent.md#when-crosswatch-cannot-be-reached)).
