@@ -492,3 +492,10 @@ def test_a_rows_panel_and_flags_ride_on_its_list_row(memory):
     props = dict(remembered._list_row(row, "and %s more").properties)
     assert props["warn"] == "true" and props["changeable"] == ""
     assert props["slot1_head"] == f"#{REMEMBERED_ANSWER}"
+
+
+def test_a_not_stable_answer_shows_no_poster_of_the_show_now_at_its_id(memory):
+    library = {"tvshows": [{"tvshowid": 42, "title": "No Ids", "year": 2020, "uniqueid": {}, "art": {"poster": "image://other/"}}]}
+    memory.remember("tvshow:42", ("anna",), title="Old Name", year=2019)
+    row = _lines(memory, ScriptedKodi(library=library))["tvshow:42"]
+    assert not row.changeable and row.thumb == ""

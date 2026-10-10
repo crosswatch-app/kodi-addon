@@ -166,7 +166,8 @@ def _row(
         key=key,
         name=title or _fallback_name(kodi, key),
         title=title,
-        thumb=found.poster if found is not None else "",
+        # A not-stable answer's id holds another show: its poster would contradict the title.
+        thumb=found.poster if found is not None and changeable else "",
         viewers=current,
         changeable=changeable,
         lines=lines,
