@@ -46,7 +46,7 @@ class KodiApi(Protocol):
     def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
     def confirm_window(self, heading: str, message: str) -> bool: ...
     def list_window(self, request: ListRequest, state: ListState) -> ListResult: ...
-    def select(self, heading: str, options: list[str]) -> int: ...
+    def viewer_window(self, heading: str, summary: str) -> str: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
     def notify(self, heading: str, message: str) -> None: ...
@@ -226,12 +226,19 @@ class KodiRuntime:
             return ListResult("close", state)
         return dialog.result
 
-    def select(self, heading: str, options: list[str]) -> int:
-        # Kodi declares the options list as List[str | ListItem], and list is invariant, so
-        # a list[str] is rejected although Kodi accepts it. Widen at the call rather than in
-        # the protocol: ListItem is a Kodi type and must not leak past this boundary.
-        choices: list[Any] = list(options)
-        return int(self._xbmcgui.Dialog().select(heading, choices))
+    def viewer_window(self, heading: str, summary: str) -> str:
+        """The button pressed; Back and a failed window are both "back"."""
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.ViewerDialog(window.VIEWER_XML, path, "Default", "1080i")
+            dialog.prepare(heading, summary, self.localised)
+            return dialog
+
+        dialog = self._modal("viewer", make)
+        result = dialog.result if dialog is not None else None
+        return result if isinstance(result, str) else "back"
 
     def text_input(self, heading: str, default: str = "") -> str:
         return str(self._xbmcgui.Dialog().input(heading, default) or "")

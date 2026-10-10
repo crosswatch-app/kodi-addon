@@ -108,3 +108,62 @@ def test_forget_many_reports_a_failed_write(tmp_path, monkeypatch):
     memory.remember("show:tvdb:1", ("anna",))
     monkeypatch.setattr(storage, "_write_json", lambda p, v: False)
     assert memory.forget_many(["show:tvdb:1"]) is False
+
+
+def _memory(tmp_path, data):
+    path = tmp_path / "prompts.json"
+    path.write_text(json.dumps(data))
+    return PromptMemory(str(path)), path
+
+
+def test_rename_viewer_moves_every_answer_to_the_new_name(tmp_path):
+    memory, path = _memory(tmp_path, {
+        "show:tvdb:1": {"viewers": ["anna", "bob"], "title": "A", "year": 2020},
+        "show:tvdb:2": {"viewers": ["bob"], "title": "B", "year": None},
+    })
+    assert memory.rename_viewer("anna", "annie") == 1
+    data = json.loads(path.read_text())
+    assert data["show:tvdb:1"] == {"viewers": ["annie", "bob"], "title": "A", "year": 2020}
+    assert data["show:tvdb:2"]["viewers"] == ["bob"]
+
+
+def test_rename_viewer_keeps_an_old_format_answer(tmp_path):
+    memory, path = _memory(tmp_path, {"show:tvdb:1": ["anna"]})
+    assert memory.rename_viewer("anna", "Anna") == 1
+    assert json.loads(path.read_text()) == {"show:tvdb:1": ["Anna"]}
+
+
+def test_rename_viewer_leaves_a_name_that_differs_in_case(tmp_path):
+    memory, _ = _memory(tmp_path, {"show:tvdb:1": {"viewers": ["Anna"]}})
+    assert memory.rename_viewer("anna", "annie") == 0
+
+
+def test_rename_viewer_writes_nothing_when_nobody_matches(tmp_path, monkeypatch):
+    memory, _ = _memory(tmp_path, {"show:tvdb:1": {"viewers": ["bob"]}})
+    writes = []
+    monkeypatch.setattr("resources.lib.storage._write_json", lambda *a: writes.append(a) or True)
+    assert memory.rename_viewer("anna", "annie") == 0
+    assert writes == []
+
+
+def test_drop_viewer_forgets_an_answer_left_with_nobody(tmp_path):
+    memory, path = _memory(tmp_path, {"show:tvdb:1": {"viewers": ["anna"]}, "show:tvdb:2": ["anna"]})
+    assert memory.drop_viewer("anna") == (2, 2)
+    assert json.loads(path.read_text()) == {}
+
+
+def test_drop_viewer_keeps_an_answer_someone_else_shares(tmp_path):
+    memory, path = _memory(tmp_path, {"show:tvdb:1": {"viewers": ["anna", "bob"], "title": "A", "year": 1}})
+    assert memory.drop_viewer("anna") == (1, 0)
+    assert json.loads(path.read_text())["show:tvdb:1"] == {"viewers": ["bob"], "title": "A", "year": 1}
+
+
+def test_drop_viewer_writes_once(tmp_path, monkeypatch):
+    memory, _ = _memory(tmp_path, {"a": ["anna"], "b": ["anna", "bob"], "c": ["bob"]})
+    import resources.lib.storage as storage
+
+    real = storage._write_json
+    writes = []
+    monkeypatch.setattr(storage, "_write_json", lambda p, v: writes.append(v) or real(p, v))
+    memory.drop_viewer("anna")
+    assert len(writes) == 1

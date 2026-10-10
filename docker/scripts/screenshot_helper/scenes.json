@@ -164,5 +164,37 @@
     "filter": 0,
     "position": 6,
     "keys": []
+  },
+  "viewer-window": {
+    "window": "crosswatch-viewer.xml",
+    "heading": "Anna",
+    "message": "Playlists: Anna's shows, Cartoons[CR]Profiles: Master user",
+    "keys": []
+  },
+  "viewer-list": {
+    "window": "crosswatch-list.xml",
+    "rows": "viewers",
+    "search": "",
+    "filter": 0,
+    "keys": []
+  },
+  "profile-picker": {
+    "window": "crosswatch-list.xml",
+    "rows": "profiles",
+    "search": "",
+    "filter": 0,
+    "keys": []
+  },
+  "viewer-window-long": {
+    "window": "crosswatch-viewer.xml",
+    "heading": "Anna",
+    "message": "Playlists: EasyTV - TVShow - All Shows, EasyTV - TVShow - Continue Watching, EasyTV - TVShow - Season Premieres, EasyTV - TVShow - Show Premieres, EasyTV - TVShow - Start Fresh, EasyTV - TVShow - Cartoons for the weekend[CR]Profiles: Master user, Kids",
+    "keys": []
+  },
+  "viewer-remove-confirm": {
+    "window": "crosswatch-confirm.xml",
+    "heading": "Remove Anna?",
+    "message": "Remembered answers lose this name. A show nobody else is remembered for is asked again.",
+    "keys": []
   }
 }

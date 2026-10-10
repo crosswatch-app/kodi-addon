@@ -77,6 +77,13 @@ def test_no_index_yet_still_falls_through_to_profile():
     assert resolve(None, [ANNA], _episode(), "Anna") == Identity(("anna",), "profile")
 
 
+def test_a_playlist_name_that_is_no_longer_a_viewer_is_dropped():
+    """The index is built from an earlier viewers.json; a renamed or removed viewer's old
+    name must not be sent."""
+    index = PlaylistIndex({("tvshow", 42): ("anna", "bob")})
+    assert resolve(index, [Viewer(name="Anna"), BOB], _episode(), "") == Identity(("bob",), "playlist")
+
+
 def test_the_only_viewer_is_credited_when_nothing_else_applies():
     """One person in the household: whatever plays is theirs. No mechanism ran, so no
     viewers_source is claimed for it."""

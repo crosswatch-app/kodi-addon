@@ -17,7 +17,6 @@ class FakeKodi:
         files: dict[str, str] | None = None,
         who_watched_answer: tuple[str, ...] | None = None,
         confirm_window_answer: bool = False,
-        select_answer: int = -1,
         input_answer: str = "",
         input_answers: list[str] | None = None,
         confirm_answer: bool = False,
@@ -39,7 +38,8 @@ class FakeKodi:
         self.confirm_window_calls: list[tuple[str, str]] = []
         self.list_window_results: list[Any] = []
         self.list_window_calls: list[tuple[Any, Any]] = []
-        self.select_answer = select_answer
+        self.viewer_window_results: list[str] = []
+        self.viewer_window_calls: list[tuple[str, str]] = []
         self.input_answer = input_answer
         # Consumed in order, for a flow that asks more than one question.
         self.input_answers = list(input_answers or [])
@@ -122,8 +122,9 @@ class FakeKodi:
             return self.list_window_results.pop(0)
         return ListResult("close", state)
 
-    def select(self, heading: str, options: list[str]) -> int:
-        return self.select_answer
+    def viewer_window(self, heading: str, summary: str) -> str:
+        self.viewer_window_calls.append((heading, summary))
+        return self.viewer_window_results.pop(0) if self.viewer_window_results else "back"
 
     def text_input(self, heading: str, default: str = "") -> str:
         self.input_calls.append((heading, default))

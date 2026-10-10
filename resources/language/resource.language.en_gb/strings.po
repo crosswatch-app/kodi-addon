@@ -111,24 +111,8 @@ msgctxt "#30048"
 msgid "Add viewer"
 msgstr ""
 
-msgctxt "#30049"
-msgid "Edit playlists"
-msgstr ""
-
-msgctxt "#30050"
-msgid "Edit Kodi profiles"
-msgstr ""
-
-msgctxt "#30051"
-msgid "Remove viewer"
-msgstr ""
-
 msgctxt "#30052"
 msgid "Playlists for %s"
-msgstr ""
-
-msgctxt "#30053"
-msgid "Kodi profiles for %s, comma separated"
 msgstr ""
 
 msgctxt "#30054"
@@ -313,4 +297,64 @@ msgstr ""
 
 msgctxt "#30101"
 msgid "No poster"
+msgstr ""
+
+msgctxt "#30102"
+msgid "1 viewer"
+msgstr ""
+
+msgctxt "#30103"
+msgid "%s viewers"
+msgstr ""
+
+msgctxt "#30104"
+msgid "nothing set up"
+msgstr ""
+
+msgctxt "#30105"
+msgid "1 profile"
+msgstr ""
+
+msgctxt "#30106"
+msgid "%s profiles"
+msgstr ""
+
+msgctxt "#30107"
+msgid "Playlists"
+msgstr ""
+
+msgctxt "#30108"
+msgid "Profiles"
+msgstr ""
+
+msgctxt "#30109"
+msgid "Rename"
+msgstr ""
+
+msgctxt "#30110"
+msgid "Remove"
+msgstr ""
+
+msgctxt "#30111"
+msgid "Playlists: %s"
+msgstr ""
+
+msgctxt "#30112"
+msgid "Profiles: %s"
+msgstr ""
+
+msgctxt "#30113"
+msgid "none"
+msgstr ""
+
+msgctxt "#30114"
+msgid "Profiles for %s"
+msgstr ""
+
+msgctxt "#30115"
+msgid "Remembered answers lose this name. A show nobody else is remembered for is asked again."
+msgstr ""
+
+msgctxt "#30116"
+msgid "Kodi's profiles could not be read. Try again in a moment."
 msgstr ""

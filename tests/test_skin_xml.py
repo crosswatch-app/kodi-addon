@@ -184,6 +184,7 @@ def test_the_close_label_comes_from_a_property_so_a_pick_list_can_say_cancel():
 
 
 PICK = "String.IsEqual(Window.Property(CW.Pick),true)"
+NO_THUMBS = "String.IsEqual(Window.Property(CW.NoThumbs),true)"
 
 
 def test_a_pick_list_has_an_accent_done_button_where_the_bulk_button_sits():
@@ -218,7 +219,7 @@ def test_pick_rows_show_a_tick_and_hide_the_thumbnail():
         assert len(ticks) == 1 and ticks[0].findtext("visible") == "String.IsEqual(ListItem.Property(chosen),true)"
         assert (ticks[0].findtext("width"), ticks[0].findtext("height")) == ("48", "48")
         thumbs = [i for i in images if "thumb" in (i.findtext("texture") or "") or "poster_empty" in (i.findtext("texture") or "")]
-        assert thumbs and all(i.findtext("visible") == f"!{PICK}" for i in thumbs)
+        assert thumbs and all(i.findtext("visible") == f"!{PICK} + !{NO_THUMBS}" for i in thumbs)
         chosen = [i for i in images if (i.findtext("texture") or "").startswith("crosswatch/box_chosen")]
         assert chosen
 
@@ -242,3 +243,46 @@ def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping
         ordered = sorted(spans.values())
         assert len(ordered) == 4  # title, detail, tag, tick
         assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered
+
+
+VIEWER = SKIN / "1080i" / "crosswatch-viewer.xml"
+
+
+def test_the_viewer_window_buttons_sit_in_one_row_starting_on_playlists():
+    from resources.lib.constants import LABEL_BACK, VIEWER_PLAYLISTS, VIEWER_PROFILES, VIEWER_REMOVE, VIEWER_RENAME
+
+    root = ET.parse(VIEWER).getroot()
+    assert root.findtext("defaultcontrol") == "10"
+    row = root.find(".//control[@type='grouplist']")
+    assert row is not None and row.findtext("orientation") == "horizontal"
+    buttons = row.findall("control")
+    assert [b.get("id") for b in buttons] == ["10", "11", "12", "13", "14"]
+    labels = [VIEWER_PLAYLISTS, VIEWER_PROFILES, VIEWER_RENAME, VIEWER_REMOVE, LABEL_BACK]
+    assert [b.findtext("label") for b in buttons] == [f"$ADDON[{ADDON_ID} {i}]" for i in labels]
+    VIEWER.read_text(encoding="ascii")
+
+
+def test_a_list_without_artwork_starts_its_titles_at_the_left():
+    root = ET.parse(LIST).getroot()
+    for layout in ("itemlayout", "focusedlayout"):
+        found = root.find(f".//control[@id='100']/{layout}")
+        assert found is not None
+        titles = [c for c in found.findall("control") if c.findtext("label") == "$INFO[ListItem.Label]"]
+        bare = [t for t in titles if t.findtext("visible") == f"!{PICK} + {NO_THUMBS}"]
+        assert len(bare) == 1 and bare[0].findtext("left") == "28"
+
+
+def test_the_viewer_summary_keeps_one_line_each_for_playlists_and_profiles():
+    """Kodi does not clip a label to its height, and a wrapping summary pushed the profiles
+    out of sight: one unwrapped line each, cut at the width, keeps both visible."""
+    root = ET.parse(VIEWER).getroot()
+    lines = [
+        c for c in root.iter("control")
+        if c.findtext("label") in ("$INFO[Window.Property(CW.Line1)]", "$INFO[Window.Property(CW.Line2)]")
+    ]
+    assert len(lines) == 2
+    row = root.find(".//control[@type='grouplist']")
+    assert row is not None
+    for line in lines:
+        assert line.get("type") == "label" and line.findtext("wrapmultiline") in (None, "false")
+        assert int(line.findtext("top") or 0) + int(line.findtext("height") or 0) <= int(row.findtext("top") or 0)

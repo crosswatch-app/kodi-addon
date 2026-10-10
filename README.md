@@ -192,7 +192,8 @@ it is fixed: that viewer falls through to profile matching and the end-of-playba
 ### Kodi profile
 
 If the active Kodi profile is one of a viewer's profiles (the name match ignores case), that
-viewer is credited. Profiles are entered comma separated under "Edit Kodi profiles".
+viewer is credited. Profiles are picked from Kodi's own list under the viewer's "Profiles"
+button (see "Viewer list" below).
 
 ### The question at the end
 
@@ -284,14 +285,48 @@ should describe what that person watches, not what they just happened to play.
 
 ### Viewer list
 
-"Configure viewers and playlists" lists the viewers, with "Add viewer" to add one. Adding a
-viewer asks for its name ("Viewer name, as CrossWatch routes it"), then which playlists are
-theirs. Each viewer in the list offers Edit playlists, Edit Kodi profiles and Remove viewer.
+"Configure viewers and playlists" opens a CrossWatch window titled "Viewers" that lists every
+viewer. Each row shows the viewer's name and what is set up ("2 playlists, 1 profile", "1
+playlist" or "nothing set up"). When something needs fixing, the row also carries a tag such
+as "1 missing" or "1 unusable". A count shows how many viewers are listed ("3 viewers"), and a
+search box narrows the list by name. Below the list are "Add viewer", which is always
+available (also when a search finds nobody), and "Close". With no viewers configured yet, the
+screen starts straight at Add viewer.
 
-Edit playlists, and the playlist step of Add viewer, open a CrossWatch window titled
-"Playlists for <viewer name>". It lists Kodi's smart playlists of TV shows or films. Press OK
-on a playlist to tick or untick it; the viewer's current playlists start ticked. "Done" keeps
-the ticked playlists. "Cancel" or Back leaves the viewer's playlists exactly as they were.
+Every change is saved straight away, so there is no need to close the screen, and it applies
+from the next playback.
+
+"Add viewer" asks for the viewer's name ("Viewer name, as CrossWatch routes it"), then which
+playlists are theirs (the playlist window, described below), then opens that viewer's window.
+
+OK on a viewer opens their window. It shows the viewer's name, a summary line "Playlists: ..."
+and a line "Profiles: ..." (each reads "none" when empty), and the buttons "Playlists",
+"Profiles", "Rename", "Remove" and "Back". After each action the window comes back with the
+updated summary; Back returns to the list.
+
+"Profiles" opens a window titled "Profiles for <name>" that lists Kodi's profiles. The list
+comes from Kodi itself, so nothing is typed. Press OK on a profile to tick or untick it; the
+viewer's current profiles start ticked. "Done" keeps the ticked profiles. "Cancel" or Back
+leaves them as they were. A profile the viewer has that Kodi no longer has is listed last,
+ticked, tagged "missing". A profile that another viewer already has shows "Also <names>". If
+Kodi's profiles cannot be read, a message says so ("Kodi's profiles could not be read. Try
+again in a moment.") and nothing changes.
+
+"Rename" opens Kodi's keyboard with the current name filled in. A name that another viewer
+already has is refused and nothing changes; changing only the upper and lower case of the
+viewer's own name is allowed. The viewer's remembered answers move to the new name. Change the
+username whitelist of the CrossWatch route to the new name too, or that route stops receiving
+this viewer's playback.
+
+"Remove" first asks in a CrossWatch window titled "Remove <name>?": "Remembered answers lose
+this name. A show nobody else is remembered for is asked again." No is preselected. Yes
+removes the viewer and takes their name out of every remembered answer. An answer that is left
+with nobody is forgotten, so that show is asked about again at the end of its next episode.
+
+"Playlists", and the playlist step of Add viewer, open a CrossWatch window titled "Playlists
+for <viewer name>". It lists Kodi's smart playlists of TV shows or films. Press OK on a
+playlist to tick or untick it; the viewer's current playlists start ticked. "Done" keeps the
+ticked playlists. "Cancel" or Back leaves the viewer's playlists exactly as they were.
 
 A search box at the top narrows the list by playlist name: press OK on it, type with Kodi's
 keyboard and confirm. A ticked playlist the search hides stays ticked and is kept when you
@@ -373,14 +408,14 @@ that still exists.
 
 **A playlist shows as unusable**
 
-The playlist is not a TV show or film playlist, so it can never credit anyone. It is not
-listed in the picker, so there is nothing to untick: open Edit playlists for that viewer and
-press Done to remove it, or change the playlist's type in Kodi to shows or films. The
-viewer's other playlists keep working in the meantime.
+The playlist is not a TV show or film playlist, so it can never credit anyone. It is not listed
+in the picker, so there is nothing to untick: open that viewer's "Playlists" and press Done to
+remove it, or change the playlist's type in Kodi to shows or films. The viewer's other
+playlists keep working in the meantime.
 
-If Kodi has no TV show or film smart playlists at all, Edit playlists shows the "Kodi has no
-smart playlists of TV shows or films yet" message instead of the list, so Done is not
-available. In that case, make a TV show or film smart playlist (Edit playlists then opens, and
+If Kodi has no TV show or film smart playlists at all, the viewer's "Playlists" shows the "Kodi
+has no smart playlists of TV shows or films yet" message instead of the list, so Done is not
+available. In that case, make a TV show or film smart playlist ("Playlists" then opens, and
 Done removes the unusable one), change the unusable playlist's type in Kodi to shows or films,
 or remove the viewer and add them again.
 

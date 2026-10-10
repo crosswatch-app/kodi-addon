@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -172,3 +173,39 @@ class PromptMemory:
             for key in keys:
                 data.pop(key, None)
             return _write_json(self._path, data)
+
+    def rename_viewer(self, old: str, new: str) -> int:
+        """Every answer naming old names new instead, in one write; the count changed."""
+        return self._rewrite_names(lambda names: [new if n == old else n for n in names])[0]
+
+    def drop_viewer(self, name: str) -> tuple[int, int]:
+        """The name taken out of every answer, in one write. An answer left with nobody is
+        forgotten, so that show is asked about again. (changed, forgotten)."""
+        return self._rewrite_names(lambda names: [n for n in names if n != name])
+
+    def _rewrite_names(self, change: Callable[[list[str]], list[str]]) -> tuple[int, int]:
+        with self._lock:
+            data = _read_json(self._path, {})
+            if not isinstance(data, dict):
+                return 0, 0
+            changed = forgotten = 0
+            for key in list(data):
+                raw = data[key]
+                # Both stored shapes: a bare list predates the title and year.
+                names = raw if isinstance(raw, list) else raw.get("viewers") if isinstance(raw, dict) else None
+                if not isinstance(names, list):
+                    continue
+                after = change([str(n) for n in names])
+                if after == names:
+                    continue
+                changed += 1
+                if not after:
+                    del data[key]
+                    forgotten += 1
+                elif isinstance(raw, list):
+                    data[key] = after
+                else:
+                    raw["viewers"] = after
+            if changed:
+                _write_json(self._path, data)
+            return changed, forgotten

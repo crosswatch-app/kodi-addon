@@ -30,12 +30,17 @@ class Identity:
 UNRESOLVED = Identity((), None)
 
 
-def _by_playlist(index: PlaylistIndex | None, media: MediaItem) -> tuple[str, ...]:
+def _by_playlist(index: PlaylistIndex | None, media: MediaItem, viewers: list[Viewer]) -> tuple[str, ...]:
     if index is None:
         return ()
     if media.media_type == "episode":
-        return index.viewers_for("tvshow", media.show_library_id)
-    return index.viewers_for("movie", media.library_id)
+        names = index.viewers_for("tvshow", media.show_library_id)
+    else:
+        names = index.viewers_for("movie", media.library_id)
+    # The index holds the names it was built with; a viewer renamed or removed since must
+    # not be sent under the old name.
+    known = {v.name for v in viewers}
+    return tuple(name for name in names if name in known)
 
 
 def _by_profile(label: str, viewers: list[Viewer]) -> tuple[str, ...]:
@@ -60,7 +65,7 @@ def resolve(
     """
     lookup_id = media.show_library_id if media.media_type == "episode" else media.library_id
 
-    names = _by_playlist(index, media)
+    names = _by_playlist(index, media, viewers)
     if names:
         _log.info(
             "identity.resolved",
