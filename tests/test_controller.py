@@ -1388,3 +1388,84 @@ def test_a_queued_watch_whose_viewers_are_gone_is_not_asked(tmp_path):
     kodi.playing = False
     controller.on_tick()
     assert kodi.rate_requests == []
+
+
+def test_at_the_end_a_binge_stopped_partway_is_still_rated(tmp_path):
+    """The usual end of a binge: two episodes autoplayed through, the third stopped early."""
+    collector = Collector()
+    kodi = _rated_kodi(overrides=_shows("First", "Second", "Third"))
+    kodi.rate_answers = [8, 7]
+    settings = _rating_settings(rating_shared=True, rating_at_end=True)
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=settings)
+    for _ in range(2):
+        controller.on_av_started()
+        controller.on_tick()
+        controller.on_stopped(completed=True)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=False)  # 15 % in, not a finished watch
+    kodi.playing = False
+    controller.on_tick()
+    assert [r.title for r in kodi.rate_requests] == ["Second", "First"]
+
+
+def test_switching_away_from_rating_at_the_end_drops_the_queue(tmp_path):
+    collector = Collector()
+    kodi = _rated_kodi(overrides=_shows("First", "Second", "Third"))
+    settings = _rating_settings(rating_shared=True, rating_at_end=True)
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=settings)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    controller.on_av_started()  # the finished one is queued
+    controller.on_settings_changed(_rating_settings(rating_shared=True), Thresholds())
+    # Back again before the session ends: the watch queued under the old setting stays gone.
+    controller.on_settings_changed(_rating_settings(rating_shared=True, rating_at_end=True), Thresholds())
+    kodi.rate_answers = [8]
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    kodi.playing = False
+    controller.on_tick()
+    assert [r.title for r in kodi.rate_requests] == ["Second"]
+
+
+def test_our_own_closing_window_does_not_count_as_a_busy_dialog(tmp_path):
+    """Kodi keeps a closing window as the topmost modal dialog for its close animation."""
+    collector = Collector()
+    kodi = _rated_kodi(overrides=_shows("First", "Second"))
+    settings = _rating_settings(rating_shared=True, rating_at_end=True)
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=settings)
+
+    def closing(score):
+        def answer():
+            kodi.dialog_id = 13000
+            return score
+
+        return answer
+
+    kodi.rate_answers = [closing(8), closing(7)]
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    kodi.playing = False
+    controller.on_tick()
+    assert [r.title for r in kodi.rate_requests] == ["Second", "First"]
+
+
+def test_a_rating_follows_an_answered_who_watched_question_while_it_closes(tmp_path):
+    collector = Collector()
+    kodi = _rated_kodi(profile="Guest")
+    kodi.rate_answers = [5]
+
+    def who_watched(request):
+        kodi.who_watched_calls.append(request)
+        kodi.dialog_id = 13000  # the who-watched window, still animating out
+        return ("bob",)
+
+    kodi.who_watched = who_watched  # type: ignore[method-assign]
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=_rating_settings())
+    _watch(controller, kodi)
+    assert [(r.viewers, r.rating) for r in _rates(collector)] == [(("bob",), 5)]
