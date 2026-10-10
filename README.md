@@ -367,6 +367,12 @@ listed in the picker, so there is nothing to untick: open Edit playlists for tha
 press Done to remove it, or change the playlist's type in Kodi to shows or films. The
 viewer's other playlists keep working in the meantime.
 
+If Kodi has no TV show or film smart playlists at all, Edit playlists shows the "Kodi has no
+smart playlists of TV shows or films yet" message instead of the list, so Done is not
+available. In that case, make a TV show or film smart playlist (Edit playlists then opens, and
+Done removes the unusable one), change the unusable playlist's type in Kodi to shows or films,
+or remove the viewer and add them again.
+
 ### Logs
 
 The add-on writes its own log under

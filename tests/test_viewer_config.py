@@ -330,7 +330,7 @@ def test_cancel_keeps_the_mapping():
     assert viewer_config._edit_playlists(_picking(None), viewer, ["Anna TV"]) is None
 
 
-def test_an_unusable_playlist_is_offered_only_to_the_viewer_who_has_it():
+def test_an_unusable_playlist_is_offered_to_nobody():
     rows = viewer_config.playlist_rows(FakeKodi(), Viewer(name="bob"), ["Anna TV"], ["Eps"], [])
     assert [row.key for row in rows] == ["Anna TV"]
 
