@@ -12,7 +12,15 @@ returns a raw id rather than a "busy" verdict for exactly that reason.
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+from resources.lib.constants import ADDON_ID
+from resources.lib.log import get_logger
+
+if TYPE_CHECKING:
+    from resources.lib.ui.who_watched import WhoWatchedRequest
+
+_log = get_logger("ui")
 
 # xbmc/guilib/WindowIDs.h:12. GetTopmostModalDialog returns this when no modal is open.
 WINDOW_INVALID = 9999
@@ -36,6 +44,7 @@ class KodiApi(Protocol):
     def multiselect(
         self, heading: str, options: list[str], preselect: list[int] | None = None, autoclose: int = 0
     ) -> list[int] | None: ...
+    def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None: ...
     def select(self, heading: str, options: list[str]) -> int: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
@@ -161,6 +170,31 @@ class KodiRuntime:
         return self._xbmcgui.Dialog().multiselect(
             heading, choices, autoclose=autoclose * 1000, preselect=preselect or []
         )
+
+    def who_watched(self, request: WhoWatchedRequest) -> tuple[str, ...] | None:
+        """The ticked names, () for Done with nobody ticked, None for any cancel.
+
+        A window that cannot be built or fails while open counts as a cancel. There is no
+        fallback to a standard dialog: most CrossWatch windows have none, and for this one
+        a failure costs one unattributed watch, the same as an unanswered question.
+        """
+        try:
+            # Imported here: the window classes subclass xbmcgui types, and nothing else
+            # that imports this module should pay for or depend on them.
+            from resources.lib.ui import skin_fonts, window
+
+            # KODI-FONT-WORKAROUND: see the deletion guide in skin_fonts.
+            path = skin_fonts.ensure_generated(ADDON_ID)
+            dialog = window.WhoWatchedDialog(window.WHO_WATCHED_XML, path, "Default", "1080i")
+            dialog.prepare(request, self.localised, self.is_playing, self._xbmc.Monitor().waitForAbort)
+            try:
+                dialog.doModal()
+            finally:
+                dialog.stop()
+            return dialog.result
+        except Exception as exc:
+            _log.warning("ui.window_failed", window="who_watched", error_type=type(exc).__name__)
+            return None
 
     def select(self, heading: str, options: list[str]) -> int:
         choices: list[Any] = list(options)  # widened for the same reason as multiselect

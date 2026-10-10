@@ -1,6 +1,8 @@
 import pytest
 
 from resources.lib.kodi import KodiRpcError, KodiRuntime
+from resources.lib.ui import window as window_mod
+from resources.lib.ui.who_watched import WhoWatchedRequest
 
 
 class RecordingPlayer:
@@ -115,3 +117,47 @@ def test_read_text_bounds_the_read_rather_than_slicing_afterwards(runtime, monke
     monkeypatch.setattr(runtime._xbmcvfs, "File", File)
     runtime.read_text("special://profile/advancedsettings.xml", max_bytes=10)
     assert asked["count"] == 10
+
+REQUEST = WhoWatchedRequest(title="t", subtitle="", poster="", names=("anna", "bob"), autoclose_seconds=120)
+
+
+def test_who_watched_opens_the_window_from_the_font_adapted_path(runtime, monkeypatch):
+    opened = {}
+
+    class Dialog(window_mod.WhoWatchedDialog):
+        def __init__(self, xml, path, skin, resolution) -> None:
+            super().__init__(xml, path, skin, resolution)
+            opened.update(xml=xml, path=path)
+
+        def doModal(self) -> None:
+            self.finish("done", ("bob",))
+
+    monkeypatch.setattr(window_mod, "WhoWatchedDialog", Dialog)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.who_watched(REQUEST) == ("bob",)
+    assert opened == {"xml": "crosswatch-who.xml", "path": "/generated"}
+
+
+def test_who_watched_failure_is_a_cancel(runtime, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("Unable to load skin file")
+
+    monkeypatch.setattr(window_mod, "WhoWatchedDialog", broken)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    assert runtime.who_watched(REQUEST) is None
+
+
+def test_who_watched_failure_logs_the_window_and_error_type_only(runtime, monkeypatch):
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("secret detail")
+
+    monkeypatch.setattr(window_mod, "WhoWatchedDialog", broken)
+    monkeypatch.setattr("resources.lib.ui.skin_fonts.ensure_generated", lambda addon_id: "/generated")
+    runtime.who_watched(REQUEST)
+    line = next(m for m in captured if "ui.window_failed" in m)
+    assert "who_watched" in line and "RuntimeError" in line and "secret detail" not in line

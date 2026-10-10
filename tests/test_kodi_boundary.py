@@ -49,3 +49,12 @@ def test_multiselect_records_preselect_and_autoclose():
 def test_read_text_honours_a_size_cap():
     kodi = FakeKodi(files={"special://profile/advancedsettings.xml": "x" * 100})
     assert kodi.read_text("special://profile/advancedsettings.xml", max_bytes=10) == "x" * 10
+
+
+def test_who_watched_records_the_request_and_returns_the_scripted_answer():
+    from resources.lib.ui.who_watched import WhoWatchedRequest
+
+    kodi = FakeKodi(who_watched_answer=("anna",))
+    request = WhoWatchedRequest(title="t", subtitle="", poster="", names=("anna", "bob"))
+    assert kodi.who_watched(request) == ("anna",)
+    assert kodi.who_watched_calls == [request]

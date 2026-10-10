@@ -16,6 +16,7 @@ class FakeKodi:
         settings: dict[str, str] | None = None,
         files: dict[str, str] | None = None,
         multiselect_answer: list[int] | None = None,
+        who_watched_answer: tuple[str, ...] | None = None,
         select_answer: int = -1,
         input_answer: str = "",
         input_answers: list[str] | None = None,
@@ -33,6 +34,8 @@ class FakeKodi:
         self.settings = dict(settings or {})
         self.files = dict(files or {})
         self.multiselect_answer = multiselect_answer
+        self.who_watched_answer = who_watched_answer
+        self.who_watched_calls: list[Any] = []
         self.select_answer = select_answer
         self.input_answer = input_answer
         # Consumed in order, for a flow that asks more than one question.
@@ -106,6 +109,10 @@ class FakeKodi:
     ) -> list[int] | None:
         self.multiselect_calls.append((heading, list(options), preselect, autoclose))
         return self.multiselect_answer
+
+    def who_watched(self, request: Any) -> tuple[str, ...] | None:
+        self.who_watched_calls.append(request)
+        return self.who_watched_answer
 
     def select(self, heading: str, options: list[str]) -> int:
         return self.select_answer
