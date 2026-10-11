@@ -44,7 +44,6 @@ def _gate(
     media: MediaItem | None = None,
     position_ms: int | None = PAST_START,
     thresholds: Thresholds = THRESHOLDS,
-    memory: PromptMemory | None = None,
     movie_prompts_enabled: bool = True,
     dialog_id: int = WINDOW_INVALID,
     shutting_down: bool = False,
@@ -58,7 +57,6 @@ def _gate(
         media=_media() if media is None else media,
         position_ms=position_ms,
         thresholds=thresholds,
-        memory=PromptMemory(str(tmp_path / "prompts.json")) if memory is None else memory,
         movie_prompts_enabled=movie_prompts_enabled,
         dialog_id=dialog_id,
         shutting_down=shutting_down,
@@ -109,26 +107,11 @@ def test_an_unknown_position_does_not_ask(tmp_path):
     assert _gate(tmp_path, position_ms=None).reason == "below_ignore_seconds_at_start"
 
 
-def test_uses_a_remembered_answer_without_asking(tmp_path):
-    memory = PromptMemory(str(tmp_path / "prompts.json"))
-    memory.remember("show:tvdb:83462", ("bob",))
-    decision = _gate(tmp_path, memory=memory)
-    assert (decision.ask, decision.reason, decision.remembered) == (False, "remembered", ("bob",))
-
-
-def test_a_remembered_name_that_is_no_longer_a_viewer_is_discarded(tmp_path):
-    memory = PromptMemory(str(tmp_path / "prompts.json"))
-    memory.remember("show:tvdb:83462", ("carol",))
-    decision = _gate(tmp_path, memory=memory)
-    assert decision.ask is True
-    assert decision.remembered == ()
-
-
-def test_a_partially_stale_memory_keeps_the_names_that_still_exist(tmp_path):
-    memory = PromptMemory(str(tmp_path / "prompts.json"))
-    memory.remember("show:tvdb:83462", ("anna", "carol"))
-    decision = _gate(tmp_path, memory=memory)
-    assert (decision.ask, decision.remembered) == (False, ("anna",))
+def test_the_gate_does_not_consult_remembered_answers(tmp_path):
+    """Start resolution already used them: a watch with a remembered answer arrives resolved.
+    One the household gives during playback is not picked up at stop; they are asked."""
+    PromptMemory(str(tmp_path / "prompts.json")).remember("show:tvdb:83462", ("bob",))
+    assert _gate(tmp_path).ask is True
 
 
 def test_does_not_ask_while_another_dialog_is_open(tmp_path):
