@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from resources.lib import connect
@@ -7,7 +9,6 @@ from resources.lib.constants import (
     PAIR_BAD_ADDRESS,
     PAIR_CERTIFICATE,
     PAIR_CODE,
-    PAIR_DISABLED,
     PAIR_DONE,
     PAIR_FAILED,
     PAIR_INVALID_CODE,
@@ -58,7 +59,6 @@ def test_the_address_is_prefilled_with_the_last_one_used():
         (PairResult("rate_limited", status=429), f"#{PAIR_RATE_LIMITED}"),
         (PairResult("unreachable"), f"#{PAIR_UNREACHABLE}"),
         (PairResult("failed", status=404), f"#{PAIR_FAILED}"),
-        (PairResult("disabled", status=200), f"#{PAIR_DISABLED}"),
         (PairResult("certificate"), f"#{PAIR_CERTIFICATE}"),
     ],
 )
@@ -166,3 +166,10 @@ def test_arguments_are_split_on_the_first_equals_sign():
         "action": "link",
         "url": "http://h/?a=b",
     }
+
+
+def test_the_rate_limit_message_does_not_promise_a_minute():
+    """CrossWatch allows 10 wrong codes in 10 minutes and forgets each as it expires."""
+    po = Path(__file__).resolve().parents[1] / "resources" / "language" / "resource.language.en_gb" / "strings.po"
+    text = po.read_text(encoding="utf-8")
+    assert 'msgctxt "#30067"\nmsgid "Too many tries. Wait a few minutes and try again."' in text

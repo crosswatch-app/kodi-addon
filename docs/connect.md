@@ -34,7 +34,7 @@ If it does not succeed, nothing is changed: the previous connection, if any, sta
 What you see depends on what went wrong:
 
 - A wrong or expired code: "Code wrong or expired. Get a new code in CrossWatch."
-- Too many tries: "Too many tries. Wait a minute and try again."
+- Too many tries: "Too many tries. Wait a few minutes and try again."
 - CrossWatch cannot be reached at that address: "Can't reach CrossWatch at `<address>`."
 - Some other failure on CrossWatch's side: "Pairing failed: CrossWatch answered HTTP `<code>`."
 - An HTTPS certificate the add-on does not trust: "The certificate of `<address>` was not
