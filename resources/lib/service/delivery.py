@@ -11,12 +11,14 @@ import threading
 
 from resources.lib import status
 from resources.lib.config import Settings
+from resources.lib.constants import NOTIFY_HEADING, VIEWER_RENAMED_FROM_CROSSWATCH
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger
 from resources.lib.outbox import Outbox, config_fingerprint
+from resources.lib.people import reconcile
 from resources.lib.reporter import EventSink, HttpReporter, InvalidWebhookUrl, LogReporter, OutboxLane
-from resources.lib.routes import RouteFacts
-from resources.lib.storage import RouteStore
+from resources.lib.routes import Person, RouteFacts
+from resources.lib.storage import PromptMemory, RouteStore, ViewerStore
 
 _log = get_logger("service")
 
@@ -42,7 +44,13 @@ class Delivery:
     """
 
     def __init__(
-        self, kodi: KodiApi, outbox_path: str, abort: threading.Event, routes: RouteStore | None = None
+        self,
+        kodi: KodiApi,
+        outbox_path: str,
+        abort: threading.Event,
+        routes: RouteStore | None = None,
+        viewers: ViewerStore | None = None,
+        memory: PromptMemory | None = None,
     ) -> None:
         self._kodi = kodi
         self._outbox_path = outbox_path
@@ -52,6 +60,8 @@ class Delivery:
         self._lock = threading.Lock()
         self._instance: tuple[Endpoint, str] | None = None
         self._routes = routes
+        self._viewers = viewers
+        self._memory = memory
         self._route_facts: tuple[Endpoint, RouteFacts] | None = None
 
     def changed(self, settings: Settings) -> bool:
@@ -92,6 +102,31 @@ class Delivery:
         with self._lock:
             self._route_facts = (endpoint, facts)
 
+    def _apply_people(self, people: tuple[Person, ...]) -> None:
+        """Link and rename viewers to match CrossWatch's people (contract 1.6).
+
+        On the service thread: the settings script re-reads viewers.json before each action,
+        so a rename saved here is not overwritten by an open Viewers screen.
+        """
+        if self._viewers is None:
+            return
+        result = reconcile(self._viewers.viewers(), people)
+        if result.skipped:
+            _log.warning("people.rename_skipped", count=result.skipped)
+        if not result.changed:
+            return
+        self._viewers.save(result.viewers)
+        for old, new in result.renamed:
+            answers = self._memory.rename_viewer(old, new) if self._memory is not None else 0
+            kept = self._outbox.rename_viewer(old, new) if self._outbox is not None else 0
+            _log.info("people.viewer_renamed", answers=answers, kept=kept)
+            self._kodi.notify(
+                self._kodi.localised(NOTIFY_HEADING),
+                self._kodi.localised(VIEWER_RENAMED_FROM_CROSSWATCH).replace("%s", old, 1).replace("%s", new, 1),
+            )
+        if result.linked:
+            _log.info("people.viewer_linked", count=result.linked)
+
     def publish_status(self) -> None:
         """Write the instance name a ping reply carried, if it is for the current endpoint.
 
@@ -105,6 +140,8 @@ class Delivery:
             if endpoint == self._endpoint and endpoint[0] is not None:
                 self._routes.save(config_fingerprint(endpoint[1]), facts)
                 _log.info("service.routes_noted", routes=facts.count, accepted=len(facts.accepted))
+                if facts.people is not None:
+                    self._apply_people(facts.people)
         if noted is None:
             return
         endpoint, instance = noted

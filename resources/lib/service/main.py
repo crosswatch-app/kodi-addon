@@ -66,7 +66,17 @@ def main() -> None:
     # Created here because both sides need it and neither may default it: the queue sets it
     # on stop, the reporter waits on it during a retry backoff.
     abort = threading.Event()
-    delivery = Delivery(kodi, paths.outbox_path(kodi), abort, routes=RouteStore(paths.routes_path(kodi)))
+    # One instance each, shared: the controller and the delivery both read and write them.
+    viewer_store = JsonViewerStore(paths.viewers_path(kodi))
+    memory = PromptMemory(paths.prompts_path(kodi))
+    delivery = Delivery(
+        kodi,
+        paths.outbox_path(kodi),
+        abort,
+        routes=RouteStore(paths.routes_path(kodi)),
+        viewers=viewer_store,
+        memory=memory,
+    )
     sink, lane = delivery.build(settings)
     # device_identity owns identity, not versioning, and is used by tests that should not
     # need a Kodi handle just to produce a version string.
@@ -74,8 +84,8 @@ def main() -> None:
     queue = ReporterQueue(sink, device, abort, outbox=lane)
     controller = Controller(
         kodi=kodi,
-        viewer_store=JsonViewerStore(paths.viewers_path(kodi)),
-        memory=PromptMemory(paths.prompts_path(kodi)),
+        viewer_store=viewer_store,
+        memory=memory,
         media_resolver=MediaResolver(kodi),
         queue=queue,
         settings=settings,
