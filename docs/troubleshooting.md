@@ -25,7 +25,8 @@ they belong to the old token.
 
 ## Playback arrives under nobody, or under the wrong person
 
-- The viewer's name must match the name in that person's route "Username whitelist" (case and
+- The viewer's name must match the name in that person's route "Username whitelist", or, for a
+  route without a whitelist, the name of the user profile the route is assigned to (case and
   punctuation do not matter). A viewer showing "No CrossWatch route" is the giveaway; see
   [below](#a-viewer-shows-no-crosswatch-route).
 - With two or more viewers, someone has to be named: by a playlist, a profile, or an answer to
@@ -51,11 +52,36 @@ No route in CrossWatch accepts this viewer's name, so their playback goes nowher
 
 1. that the person has a Kodi watcher route in CrossWatch at all.
 2. that the route's "Username whitelist" holds the viewer's name. Case and punctuation do not
-   matter; anything else does.
+   matter; anything else does. A route without a whitelist takes the name of the user profile
+   it is assigned to instead, and nobody else.
 3. if you just renamed the viewer, that the whitelist has the new name.
 
 The line updates at the add-on's next check-in, within five minutes (at once after adding or
 renaming a viewer).
+
+## A person is missing from Add viewer
+
+"Add viewer" lists only CrossWatch user profiles that have a route on this Kodi, and leaves out
+people who are already viewers. Check:
+
+1. that the person's Kodi watcher route in CrossWatch is assigned to their user profile, on the
+   Kodi instance this add-on is paired with.
+2. that no viewer is linked to them already; a viewer that shows "Name from CrossWatch" is.
+3. that the add-on has checked in since the route changed: within five minutes. Close the
+   Viewers window and open it again.
+
+CrossWatch v0.13.3 and older list no people, so "Add viewer" always opens the keyboard there.
+To add someone without a profile, select "Type a name".
+
+## A typed name is refused as the same as another
+
+"CrossWatch treats this name as the same as `<name>`" means CrossWatch ignores case, spaces and
+punctuation when it compares names, so it could not tell the two viewers apart and would send
+both their playback to the same routes. Choose a name that differs in a letter or digit.
+
+Only two people picked from CrossWatch's list may differ just in spaces or punctuation, because
+CrossWatch keeps two profiles like that apart. If both people have profiles, pick them instead
+of typing.
 
 ## A playlist or profile shows as missing
 

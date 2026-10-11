@@ -146,6 +146,14 @@
     "keys": [],
     "group": "viewers"
   },
+  "people-picker": {
+    "window": "crosswatch-list.xml",
+    "rows": "people",
+    "search": "",
+    "filter": 0,
+    "keys": [],
+    "group": "viewers"
+  },
   "viewer-remove-confirm": {
     "window": "crosswatch-confirm.xml",
     "heading": "Remove Anna?",
