@@ -709,3 +709,8 @@ def test_a_plain_duplicate_stays_a_silent_refusal(tmp_path):
     kodi = ScriptedKodi([], windows=[("rename", "anna"), ("close", "anna")], inputs=["BOB"])
     run_dialog(kodi, store, memory)
     assert kodi.ok_calls == []
+
+
+def test_editing_playlists_keeps_the_person_id():
+    viewers = [Viewer(name="Anna", person_id="p1")]
+    assert viewer_config.apply_edit(viewers, "Anna", ("X",), ())[0].person_id == "p1"

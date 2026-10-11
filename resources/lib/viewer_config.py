@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import NamedTuple
 
 from resources.lib import log as logmod
@@ -150,19 +151,18 @@ def validate_name(name: str, existing: list[Viewer], own: str | None = None) -> 
 
 
 def rename_viewer(viewers: list[Viewer], old: str, new: str) -> list[Viewer]:
-    return [Viewer(name=new, playlists=v.playlists, profiles=v.profiles) if v.name == old else v for v in viewers]
+    return [replace(v, name=new) if v.name == old else v for v in viewers]
 
 
 def apply_edit(
     viewers: list[Viewer], name: str, playlists: tuple[str, ...], profiles: tuple[str, ...]
 ) -> list[Viewer]:
-    updated = Viewer(name=name, playlists=tuple(playlists), profiles=tuple(profiles))
     out = list(viewers)
     for index, viewer in enumerate(out):
         if viewer.name.casefold() == name.casefold():
-            out[index] = updated
+            out[index] = replace(viewer, playlists=tuple(playlists), profiles=tuple(profiles))
             return out
-    out.append(updated)
+    out.append(Viewer(name=name, playlists=tuple(playlists), profiles=tuple(profiles)))
     return out
 
 

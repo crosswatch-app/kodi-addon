@@ -190,3 +190,22 @@ def test_route_store_keeps_an_empty_people_list_apart_from_none(tmp_path):
     store.save("fp", RouteFacts(0, frozenset(), frozenset(), ()))
     loaded = store.load("fp")
     assert loaded is not None and loaded.people == ()
+
+
+def test_a_viewer_keeps_its_person_id(tmp_path):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="Anna", person_id="p-anna"), Viewer(name="bob")])
+    assert store.viewers() == [Viewer(name="Anna", person_id="p-anna"), Viewer(name="bob")]
+
+
+def test_an_unlinked_viewer_is_written_without_a_person_id(tmp_path):
+    """So the file still reads the same in beta2."""
+    path = tmp_path / "viewers.json"
+    JsonViewerStore(str(path)).save([Viewer(name="bob")])
+    assert "person_id" not in json.loads(path.read_text())[0]
+
+
+def test_a_blank_or_odd_person_id_reads_as_unlinked(tmp_path):
+    path = tmp_path / "viewers.json"
+    path.write_text(json.dumps([{"name": "a", "person_id": ""}, {"name": "b", "person_id": 7}]))
+    assert [v.person_id for v in JsonViewerStore(str(path)).viewers()] == [None, None]

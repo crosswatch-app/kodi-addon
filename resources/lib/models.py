@@ -19,6 +19,9 @@ class Viewer:
     name: str
     playlists: tuple[str, ...] = ()
     profiles: tuple[str, ...] = ()
+    # The CrossWatch person this viewer is linked to. None until linked; a viewer keeps its
+    # link through playlist and profile edits and through renames.
+    person_id: str | None = None
 
 
 @dataclass(frozen=True)
