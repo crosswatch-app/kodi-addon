@@ -2,6 +2,7 @@ import pytest
 
 from resources.lib import paths, viewer_config
 from resources.lib.constants import (
+    NOTIFY_HEADING,
     VIEWER_MORE,
     VIEWER_NONE,
     VIEWER_PLAYLISTS,
@@ -13,6 +14,7 @@ from resources.lib.constants import (
     VIEWERS_COUNT,
     VIEWERS_HEADING,
     VIEWERS_MISSING,
+    VIEWERS_NAME_CLASH,
     VIEWERS_NO_PLAYLISTS,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_ONE_PROFILE,
@@ -33,10 +35,12 @@ from resources.lib.ui.list_window import ListResult, ListState
 from resources.lib.ui.panel import PanelLine
 from resources.lib.ui.viewers_window import ROUTE_ACCEPTED, ROUTE_REFUSED, ViewersResult
 from resources.lib.viewer_config import (
+    NameClash,
     PlaylistListing,
     apply_edit,
     available_playlists,
     available_profiles,
+    crosswatch_name,
     current_routes,
     panel_lines,
     profile_rows,
@@ -662,3 +666,46 @@ def test_viewers_request_counts_one_viewer_and_none():
     one = viewers_request(Worded(), [Viewer(name="anna")], PlaylistListing(["X"], []), [], None)
     assert one.count == "1 viewer"
     assert viewers_request(Worded(), [], PlaylistListing(["X"], []), [], None).count == ""
+
+
+@pytest.mark.parametrize(("name", "key"), [("Anna-Lee", "annalee"), ("anna lee!", "annalee"), ("Zoë", "zo"), ("Ægir", "gir"), ("李", "")])
+def test_crosswatch_name_is_crosswatchs_own_comparison(name, key):
+    assert crosswatch_name(name) == key
+
+
+def test_a_name_crosswatch_reads_as_another_viewers_is_refused_with_that_viewer():
+    with pytest.raises(NameClash) as caught:
+        validate_name("anna lee", [Viewer(name="Anna-Lee"), Viewer(name="bob")])
+    assert caught.value.existing == "Anna-Lee"
+    assert str(caught.value) == "crosswatch_same"
+
+
+def test_a_rename_may_change_punctuation_of_the_viewers_own_name():
+    assert validate_name("Anna-Lee", [Viewer(name="annalee")], own="annalee") == "Anna-Lee"
+
+
+def test_names_crosswatch_cannot_read_are_compared_by_case_only():
+    assert validate_name("王", [Viewer(name="李")]) == "王"
+
+
+def test_a_clashing_new_viewer_is_explained_and_not_added(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna-Lee")])
+    kodi = ScriptedKodi([], windows=[("add", "Anna-Lee"), ("close", "Anna-Lee")], inputs=["annalee"])
+    run_dialog(kodi, store, memory)
+    assert [v.name for v in store.viewers()] == ["Anna-Lee"]
+    assert kodi.ok_calls == [(f"#{NOTIFY_HEADING}", f"#{VIEWERS_NAME_CLASH}")]
+
+
+def test_a_clashing_rename_is_explained_and_changes_nothing(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="Bo-B")])
+    kodi = ScriptedKodi([], windows=[("rename", "anna"), ("close", "anna")], inputs=["bob"])
+    run_dialog(kodi, store, memory)
+    assert [v.name for v in store.viewers()] == ["anna", "Bo-B"]
+    assert len(kodi.ok_calls) == 1
+
+
+def test_a_plain_duplicate_stays_a_silent_refusal(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")])
+    kodi = ScriptedKodi([], windows=[("rename", "anna"), ("close", "anna")], inputs=["BOB"])
+    run_dialog(kodi, store, memory)
+    assert kodi.ok_calls == []

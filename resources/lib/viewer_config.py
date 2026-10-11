@@ -13,6 +13,7 @@ This runs as a separate script with its own module state, so main() configures l
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from typing import NamedTuple
 
@@ -20,6 +21,7 @@ from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.config import read_settings
 from resources.lib.constants import (
+    NOTIFY_HEADING,
     VIEWER_MORE,
     VIEWER_NONE,
     VIEWER_PLAYLISTS,
@@ -31,6 +33,7 @@ from resources.lib.constants import (
     VIEWERS_COUNT,
     VIEWERS_HEADING,
     VIEWERS_MISSING,
+    VIEWERS_NAME_CLASH,
     VIEWERS_NAME_PROMPT,
     VIEWERS_NO_PLAYLISTS,
     VIEWERS_ONE_PLAYLIST,
@@ -109,8 +112,22 @@ def available_playlists(kodi: KodiApi) -> PlaylistListing:
     return listing
 
 
+def crosswatch_name(name: str) -> str:
+    """The name as CrossWatch compares it: lower case, everything but a to z and 0 to 9 dropped
+    (normalize_media_account_name in CrossWatch's cw_platform/account_match.py)."""
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+class NameClash(ValueError):
+    """A name CrossWatch would route as an existing viewer's, who is named here."""
+
+    def __init__(self, existing: str) -> None:
+        super().__init__("crosswatch_same")
+        self.existing = existing
+
+
 def validate_name(name: str, existing: list[Viewer], own: str | None = None) -> str:
-    """The cleaned name, or ValueError("empty") / ValueError("taken").
+    """The cleaned name, or ValueError("empty") / ValueError("taken") / NameClash.
 
     Reason codes, not sentences: the reason is logged, and a sentence would carry the name.
     own is the viewer being renamed: their current name is not taken, so a change of case is
@@ -122,6 +139,13 @@ def validate_name(name: str, existing: list[Viewer], own: str | None = None) -> 
     mine = own.casefold() if own else None
     if any(v.name.casefold() == cleaned.casefold() and v.name.casefold() != mine for v in existing):
         raise ValueError("taken")
+    # A name with nothing CrossWatch can read compares as "" to every other such name; that is
+    # CrossWatch's limit to lift, and refusing them all would leave non-Latin names no way in.
+    key = crosswatch_name(cleaned)
+    if key:
+        for viewer in existing:
+            if crosswatch_name(viewer.name) == key and viewer.name.casefold() != mine:
+                raise NameClash(viewer.name)
     return cleaned
 
 
@@ -362,6 +386,12 @@ def _edit_profiles(
 def _ask_name(kodi: KodiApi, viewers: list[Viewer], current: str = "") -> str | None:
     try:
         return validate_name(kodi.text_input(_text(kodi, VIEWERS_NAME_PROMPT), current), viewers, own=current or None)
+    except NameClash as exc:
+        _log.info("config.name_rejected", reason=str(exc))
+        # Told, unlike a plain duplicate: the two names look different, so a silent refusal
+        # would read as the keyboard having lost the input.
+        kodi.ok(_text(kodi, NOTIFY_HEADING), _text(kodi, VIEWERS_NAME_CLASH, exc.existing))
+        return None
     except ValueError as exc:
         _log.info("config.name_rejected", reason=str(exc))
         return None

@@ -45,6 +45,11 @@ from the next playback.
 playlists are theirs (the playlist window, described below), then the Viewers window comes
 back with the new viewer highlighted. Cancelling the playlist step still adds the viewer, with
 no playlists. A blank name, or one another viewer already has, is refused without a message.
+A name CrossWatch would treat as another viewer's name is refused with "CrossWatch treats this
+name as the same as `<name>`. Choose another name." CrossWatch ignores upper and lower case and
+everything that is not a letter a to z or a digit, so "Anna-Lee" and "annalee" are the same
+name to it. A name with no such letters or digits (for example in a non-Latin script) is only
+compared by case.
 
 "Profiles" opens a window titled "Profiles for `<name>`" that lists Kodi's profiles. The list
 comes from Kodi itself, so nothing is typed. Press OK on a profile to tick or untick it; the
@@ -57,7 +62,9 @@ playlist window.
 
 "Rename" opens Kodi's keyboard with the current name filled in. A name that another viewer
 already has is refused and nothing changes; changing only the upper and lower case of the
-viewer's own name is allowed. The viewer's remembered answers move to the new name. Change the
+viewer's own name is allowed, and so is a variant of it (for example "annalee" to
+"Anna-Lee"). A name CrossWatch treats as another viewer's name is refused with the same message
+as in Add viewer. The viewer's remembered answers move to the new name. Change the
 username whitelist of the CrossWatch route to the new name too, or that route stops receiving
 this viewer's playback.
 
