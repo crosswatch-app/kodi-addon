@@ -412,9 +412,45 @@ def _ask_name(kodi: KodiApi, viewers: list[Viewer], current: str = "") -> str | 
         return None
 
 
-def _add_typed(
-    kodi: KodiApi, store: ViewerStore, viewers: list[Viewer], playlists: list[str], people: Sequence[Person]
-) -> str | None:
+def _find(viewers: Sequence[Viewer], viewer: Viewer) -> Viewer | None:
+    """The viewer as the list holds it now: by person id when linked, since CrossWatch may
+    have renamed it, else by the name it had."""
+    if viewer.person_id:
+        return next((v for v in viewers if v.person_id == viewer.person_id), None)
+    return next((v for v in viewers if v.name == viewer.name), None)
+
+
+class Updated(NamedTuple):
+    viewers: list[Viewer]
+    # The edited viewer as found before the edit, and where it stood.
+    viewer: Viewer
+    position: int
+
+
+def _update(
+    store: ViewerStore, viewer: Viewer, edit: Callable[[list[Viewer], Viewer], list[Viewer] | None]
+) -> Updated | None:
+    """Apply edit to viewers.json as it is now, and save.
+
+    Read at save time because the service saves this file too, renaming and linking viewers
+    when CrossWatch's people change, and a sub-dialog can be open for as long as the household
+    likes: an edit made on the list read before it would save the stale copy over that.
+    None when the viewer is gone or edit returns None, and nothing is saved.
+    """
+    viewers = store.viewers()
+    current = _find(viewers, viewer)
+    if current is None:
+        _log.info("config.edit_dropped", count=1)
+        return None
+    edited = edit(viewers, current)
+    if edited is None:
+        return None
+    _save(store, edited)
+    return Updated(edited, current, viewers.index(current))
+
+
+def _add_typed(kodi: KodiApi, store: ViewerStore, playlists: list[str], people: Sequence[Person]) -> str | None:
+    viewers = store.viewers()
     name = _ask_name(kodi, viewers)
     if name is None:
         return None
@@ -422,9 +458,18 @@ def _add_typed(
     # A linked viewer carries CrossWatch's spelling, as the service would rename it to anyway.
     name = person.name if person else name
     selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers) or ()
-    viewers = [*viewers, Viewer(name=name, playlists=tuple(selected), person_id=person.id if person else None)]
+    viewers = store.viewers()
+    try:
+        # Again: the keyboard and the playlist step may have been open across a save by the
+        # service, which can have taken the name or linked the person since.
+        validate_name(name, viewers)
+        if person and any(v.person_id == person.id for v in viewers):
+            raise ValueError("taken")
+    except ValueError as exc:
+        _refused(kodi, exc)
+        return None
+    _save(store, [*viewers, Viewer(name=name, playlists=tuple(selected), person_id=person.id if person else None)])
     _log.info("config.viewer_added", playlists=len(selected), linked=person is not None)
-    _save(store, viewers)
     return name
 
 
@@ -432,15 +477,14 @@ def _add_viewer(
     kodi: KodiApi,
     store: ViewerStore,
     memory: PromptMemory,
-    viewers: list[Viewer],
     playlists: list[str],
     people: tuple[Person, ...] | None,
 ) -> str | None:
     """The first viewer added, to reopen on; None when nothing was."""
-    taken = {v.person_id for v in viewers if v.person_id}
+    taken = {v.person_id for v in store.viewers() if v.person_id}
     offer = [p for p in people or () if p.id not in taken]
     if not offer:
-        return _add_typed(kodi, store, viewers, playlists, people or ())
+        return _add_typed(kodi, store, playlists, people or ())
     result = kodi.list_window(
         ListRequest(
             heading=_text(kodi, VIEWERS_ADD_PEOPLE),
@@ -451,60 +495,61 @@ def _add_viewer(
         ),
         ListState(),
     )
+    chosen = [p for p in offer if p.id in result.keys]
     if result.action == "extra":
         # Ticking people and then choosing to type one more keeps the ticks.
-        viewers, first = _add_people(
-            kodi, store, memory, viewers, playlists, [p for p in offer if p.id in result.keys], people or ()
-        )
-        typed = _add_typed(kodi, store, viewers, playlists, people or ())
+        first = _add_people(kodi, store, memory, playlists, chosen, people or ())
+        typed = _add_typed(kodi, store, playlists, people or ())
         return first or typed
-    if result.action != "done" or not result.keys:
+    if result.action != "done" or not chosen:
         return None
-    chosen = [p for p in offer if p.id in result.keys]
-    return _add_people(kodi, store, memory, viewers, playlists, chosen, people or ())[1]
+    return _add_people(kodi, store, memory, playlists, chosen, people or ())
 
 
-def _link_existing(
-    memory: PromptMemory, viewers: list[Viewer], person: Person, people: Sequence[Person]
-) -> list[Viewer] | None:
-    """The viewers with the unlinked viewer already named like the person linked to them, or None.
+def _link_existing(viewers: list[Viewer], person: Person, people: Sequence[Person]) -> tuple[list[Viewer], str] | None:
+    """The viewers with the unlinked viewer already named like the person linked to them, and
+    that viewer's old name; or None.
 
     That viewer was typed before CrossWatch listed the person. It keeps its playlists and takes
-    CrossWatch's spelling, and its remembered answers follow the new spelling.
+    CrossWatch's spelling; the caller moves its remembered answers to the new spelling.
     """
     taken = {v.person_id for v in viewers if v.person_id}
     holder = next((v for v in viewers if v.name.casefold() == person.name.casefold()), None)
     if holder is None or holder.person_id or match_person(holder.name, people, taken) != person:
         return None
-    if holder.name != person.name:
-        memory.rename_viewer(holder.name, person.name)
-    return [replace(v, name=person.name, person_id=person.id) if v is holder else v for v in viewers]
+    return [replace(v, name=person.name, person_id=person.id) if v is holder else v for v in viewers], holder.name
 
 
 def _add_people(
     kodi: KodiApi,
     store: ViewerStore,
     memory: PromptMemory,
-    viewers: list[Viewer],
     playlists: list[str],
     chosen: list[Person],
     people: Sequence[Person],
-) -> tuple[list[Viewer], str | None]:
-    """The viewers with the chosen people added, and the first one added."""
+) -> str | None:
+    """Add the chosen people; the first one added."""
     if not chosen:
-        return viewers, None
+        return None
     first: str | None = None
     added = linked = 0
     for person in chosen:
+        # Per person: the playlist step for the one before may have been open across a save
+        # by the service.
+        viewers = store.viewers()
         try:
             name = validate_name(person.name, viewers, picked=True)
         except ValueError as exc:
-            relinked = None if isinstance(exc, NameClash) else _link_existing(memory, viewers, person, people)
+            relinked = None if isinstance(exc, NameClash) else _link_existing(viewers, person, people)
             if relinked is None:
                 _refused(kodi, exc, picked=person.name)
                 continue
-            viewers = relinked
+            viewers, old = relinked
+            # The list first, as a rename saves it: answers under a name no viewer has yet
+            # credit nobody.
             _save(store, viewers)
+            if old != person.name:
+                memory.rename_viewer(old, person.name)
             first = first or person.name
             linked += 1
             continue
@@ -513,12 +558,29 @@ def _add_people(
         _save(store, viewers)
         first = first or name
         added += 1
-        selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers)
+        selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers) or ()
         if selected:
-            viewers = apply_edit(viewers, name, selected, ())
-            _save(store, viewers)
+            _update(
+                store,
+                Viewer(name=name, person_id=person.id),
+                lambda vs, cur, picked=selected: apply_edit(vs, cur.name, picked, cur.profiles),
+            )
     _log.info("config.people_added", count=added, linked=linked, rejected=len(chosen) - added - linked)
-    return viewers, first
+    return first
+
+
+def _renamed(kodi: KodiApi, viewers: list[Viewer], current: Viewer, new: str) -> list[Viewer] | None:
+    # A viewer the service linked meanwhile carries CrossWatch's name now, and the service
+    # would rename it back.
+    if current.person_id:
+        return None
+    try:
+        # Against the list as it is now: the service may have taken the name meanwhile.
+        validate_name(new, viewers, own=current.name)
+    except ValueError as exc:
+        _refused(kodi, exc)
+        return None
+    return rename_viewer(viewers, current.name, new)
 
 
 def _act(
@@ -530,7 +592,10 @@ def _act(
     listing: PlaylistListing,
     profiles: list[str] | None,
 ) -> str:
-    """One action on the highlighted viewer; the row to reopen on."""
+    """One action on the highlighted viewer; the row to reopen on.
+
+    Each edit is applied by _update, to the list as it is when saved.
+    """
     viewer = next((v for v in viewers if v.name == result.key), None)
     if viewer is None:
         return ""
@@ -539,38 +604,44 @@ def _act(
         if picked is None:
             _log.info("config.playlists_unchanged", reason="cancelled")
             return viewer.name
-        viewers = apply_edit(viewers, viewer.name, picked, viewer.profiles)
+        done = _update(store, viewer, lambda vs, cur: apply_edit(vs, cur.name, picked, cur.profiles))
+        if done is None:
+            return ""
         _log.info("config.viewer_updated", playlists=len(picked))
-        _save(store, viewers)
-    elif result.action == "profiles":
+        return done.viewer.name
+    if result.action == "profiles":
         chosen = _edit_profiles(kodi, viewer, profiles, viewers)
         if chosen is None:
             return viewer.name
-        viewers = apply_edit(viewers, viewer.name, viewer.playlists, chosen)
+        done = _update(store, viewer, lambda vs, cur: apply_edit(vs, cur.name, cur.playlists, chosen))
+        if done is None:
+            return ""
         _log.info("config.viewer_updated", profiles=len(chosen))
-        _save(store, viewers)
-    elif result.action == "rename":
+        return done.viewer.name
+    if result.action == "rename":
         # A linked viewer's name is CrossWatch's, and the service would rename it back.
         if viewer.person_id:
             return viewer.name
         new = _ask_name(kodi, viewers, viewer.name)
         if new is None or new == viewer.name:
             return viewer.name
-        viewers = rename_viewer(viewers, viewer.name, new)
-        _save(store, viewers)
-        _log.info("config.viewer_renamed", answers=memory.rename_viewer(viewer.name, new))
+        done = _update(store, viewer, lambda vs, cur: _renamed(kodi, vs, cur, new))
+        if done is None:
+            return viewer.name
+        _log.info("config.viewer_renamed", answers=memory.rename_viewer(done.viewer.name, new))
         return new
-    elif result.action == "remove":
+    if result.action == "remove":
         question = _text(kodi, VIEWERS_REMOVE_CONFIRM, viewer.name)
         if not kodi.confirm_window(question, _text(kodi, VIEWERS_REMOVE_MESSAGE)):
             return viewer.name
-        index = viewers.index(viewer)
-        viewers = remove_viewer(viewers, viewer.name)
-        _save(store, viewers)
-        changed, forgotten = memory.drop_viewer(viewer.name)
+        done = _update(store, viewer, lambda vs, cur: remove_viewer(vs, cur.name))
+        if done is None:
+            return ""
+        changed, forgotten = memory.drop_viewer(done.viewer.name)
         _log.info("config.viewer_removed", answers=changed, forgotten=forgotten)
         # The row that takes its place: the next one, or the one before at the end.
-        return viewers[min(index, len(viewers) - 1)].name if viewers else ""
+        left = done.viewers
+        return left[min(done.position, len(left) - 1)].name if left else ""
     return viewer.name
 
 
@@ -580,9 +651,10 @@ def run_dialog(
     memory: PromptMemory,
     routes: Callable[[], RouteFacts | None] = lambda: None,
 ) -> None:
-    """routes and viewers.json are read on every pass: the service pings within a tick of a
-    change and renames linked viewers when CrossWatch does, and the open screen should catch
-    up rather than save its stale copy over that."""
+    """routes and viewers.json are read on every pass, and every edit is applied to
+    viewers.json as it is when saved: the service pings within a tick of a change and renames
+    linked viewers when CrossWatch does, and the open screen should catch up rather than save
+    its stale copy over that."""
     # Once per screen: each is a directory or profile listing over JSON-RPC.
     listing = available_playlists(kodi)
     if not listing.matchable:
@@ -593,7 +665,7 @@ def run_dialog(
     if not store.viewers():
         # An empty list has nothing to choose from: start where the household must.
         facts = routes()
-        added = _add_viewer(kodi, store, memory, [], listing.matchable, facts.people if facts else None)
+        added = _add_viewer(kodi, store, memory, listing.matchable, facts.people if facts else None)
         if added is None:
             return
         key = added
@@ -603,12 +675,11 @@ def run_dialog(
         result = kodi.viewers_window(viewers_request(kodi, store.viewers(), listing, profiles, facts), key)
         if result.action == "close":
             return
-        # Read again: the window may have been open across a save by the service.
-        viewers = store.viewers()
         if result.action == "add":
-            key = _add_viewer(kodi, store, memory, viewers, listing.matchable, facts.people if facts else None) or result.key
+            key = _add_viewer(kodi, store, memory, listing.matchable, facts.people if facts else None) or result.key
         else:
-            key = _act(kodi, store, memory, viewers, result, listing, profiles)
+            # Read again: the window may have been open across a save by the service.
+            key = _act(kodi, store, memory, store.viewers(), result, listing, profiles)
 
 
 def main() -> None:
