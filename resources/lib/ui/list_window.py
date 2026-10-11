@@ -59,11 +59,14 @@ class ListRequest:
     bulk_shown: str = ""
     # The rows that start ticked.
     ticked: tuple[str, ...] = ()
+    # Empty hides the extra button, which a pick list offers beside Done.
+    extra: str = ""
 
 
 @dataclass(frozen=True)
 class ListResult:
-    # "bulk" (the bulk button), "done" (Done on a pick list), "change" and "forget" (the
+    # "bulk" (the bulk button), "done" (Done on a pick list), "extra" (its extra button, with
+    # the ticked rows in keys), "change" and "forget" (the
     # Remembered answers window) or "close"
     action: str
     state: ListState

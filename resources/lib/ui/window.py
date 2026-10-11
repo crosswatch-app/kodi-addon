@@ -368,6 +368,7 @@ LIST_ROWS = 100
 BUTTON_BULK = 20
 BUTTON_CLOSE = 21
 BUTTON_PICK_DONE = 22
+BUTTON_PICK_EXTRA = 23
 
 
 class ListDialog(CrossWatchDialog):
@@ -477,6 +478,7 @@ class PickListDialog(ListDialog):
         super().prepare(request, state, localised)
         self._ticked = frozenset(request.ticked)
         self._window_properties["CW.Close"] = localised(WINDOW_CANCEL)
+        self._window_properties["CW.Extra"] = request.extra
 
     def onClick(self, controlId: int) -> None:
         if controlId == LIST_ROWS:
@@ -490,6 +492,9 @@ class PickListDialog(ListDialog):
         elif controlId == BUTTON_PICK_DONE:
             keys = lw.picked(self._request.rows, self._ticked)
             self.finish("done", lw.ListResult("done", self.state(), keys=keys))
+        elif controlId == BUTTON_PICK_EXTRA and self._request.extra:
+            keys = lw.picked(self._request.rows, self._ticked)
+            self.finish("extra", lw.ListResult("extra", self.state(), keys=keys))
         else:
             super().onClick(controlId)
 

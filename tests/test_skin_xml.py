@@ -160,7 +160,7 @@ def test_the_list_window_is_the_picker_only():
     """The Viewers and Remembered answers screens have their own split windows, so this one
     has no filter, no bulk button and no thumbnails, and nothing is conditional on pick mode."""
     root = ET.parse(LIST).getroot()
-    assert {c.get("id") for c in root.iter("control") if c.get("id")} == {"30", "100", "101", "21", "22"}
+    assert {c.get("id") for c in root.iter("control") if c.get("id")} == {"30", "100", "101", "21", "22", "23"}
     text = LIST.read_text(encoding="ascii")
     assert "CW.Pick" not in text and "CW.Bulk" not in text and "CW.Filter" not in text
     assert "ListItem.Art(thumb)" not in text and "poster_empty" not in text
@@ -183,9 +183,24 @@ def test_a_pick_list_has_an_accent_done_button_below_the_list():
     assert done.findtext("texturenofocus") == "crosswatch/box_accent.png"
     assert done.findtext("texturefocus") == "crosswatch/box_accent_focus.png"
     assert (done.findtext("left"), done.findtext("top")) == ("50", "740")
-    assert done.findtext("onup") == "100" and done.findtext("onright") == "21"
+    assert done.findtext("onup") == "100" and done.findtext("onright") == "23"
     assert _navigation(rows, "ondown") == [(None, "22")]
-    assert _navigation(close, "onleft") == [(None, "22")]
+    assert _navigation(close, "onleft") == [(None, "23")]
+
+
+def test_a_pick_list_can_show_an_extra_button_between_done_and_cancel():
+    root = ET.parse(LIST).getroot()
+    extra = root.find(".//control[@id='23']")
+    done = root.find(".//control[@id='22']")
+    close = root.find(".//control[@id='21']")
+    assert extra is not None and done is not None and close is not None
+    assert extra.findtext("label") == "$INFO[Window.Property(CW.Extra)]"
+    assert extra.findtext("visible") == "!String.IsEmpty(Window.Property(CW.Extra))"
+    assert extra.findtext("top") == done.findtext("top")
+    assert extra.findtext("texturenofocus") == "crosswatch/box.png"
+    assert (extra.findtext("onleft"), extra.findtext("onright"), extra.findtext("onup")) == ("22", "21", "100")
+    assert done.findtext("onright") == "23"
+    assert close.findtext("onleft") == "23"
 
 
 def test_pick_rows_show_a_tick():

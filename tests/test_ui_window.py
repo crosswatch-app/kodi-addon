@@ -27,6 +27,7 @@ from resources.lib.ui.window import (
     BUTTON_FORGET_ONE,
     BUTTON_NO,
     BUTTON_PICK_DONE,
+    BUTTON_PICK_EXTRA,
     BUTTON_PLAYLISTS,
     BUTTON_PROFILES,
     BUTTON_REMOVE,
@@ -528,13 +529,14 @@ PLAYLISTS = tuple(
 )
 
 
-def _pick(ticked=("Cartoons", "Eps"), state=START) -> tuple[Any, FakeRows, FakeEdit]:
+def _pick(ticked=("Cartoons", "Eps"), state=START, extra="") -> tuple[Any, FakeRows, FakeEdit]:
     request = ListRequest(
         heading="Playlists for anna",
         rows=PLAYLISTS,
         count_one="1 playlist",
         count_all="%s playlists",
         ticked=ticked,
+        extra=extra,
     )
     dialog: Any = PickListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
     dialog.prepare(request, state, lambda i: PICK_TEXTS.get(i, ""))
@@ -597,6 +599,24 @@ def test_done_with_nothing_ticked_returns_no_keys():
     dialog.onInit()
     dialog.onClick(BUTTON_PICK_DONE)
     assert dialog.result.action == "done" and dialog.result.keys == ()
+
+
+def test_the_extra_button_returns_what_is_ticked():
+    dialog, _, _ = _pick(extra="Type a name")
+    dialog.onInit()
+    assert dialog.getProperty("CW.Extra") == "Type a name"
+    dialog.onClick(BUTTON_PICK_EXTRA)
+    assert dialog.result.action == "extra"
+    assert dialog.result.keys == ("Cartoons", "Eps")
+    assert dialog.close_reason == "extra"
+
+
+def test_without_a_label_the_extra_button_does_nothing():
+    dialog, _, _ = _pick()
+    dialog.onInit()
+    assert dialog.getProperty("CW.Extra") == ""
+    dialog.onClick(BUTTON_PICK_EXTRA)
+    assert dialog.result is None
 
 
 def test_cancel_and_back_return_no_choice():

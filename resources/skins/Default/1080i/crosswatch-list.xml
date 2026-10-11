@@ -190,6 +190,22 @@
                 <texturenofocus border="16">crosswatch/box_accent.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_accent_focus.png</texturefocus>
                 <onup>100</onup>
+                <onright>23</onright>
+            </control>
+            <control type="button" id="23">
+                <left>470</left><top>740</top><width>300</width><height>72</height>
+                <align>center</align><aligny>center</aligny>
+                <textoffsetx>10</textoffsetx>
+                <font>font30_title</font>
+                <textcolor>FFF1F3F5</textcolor>
+                <focusedcolor>FFF1F3F5</focusedcolor>
+                <pulseonselect>false</pulseonselect>
+                <label>$INFO[Window.Property(CW.Extra)]</label>
+                <visible>!String.IsEmpty(Window.Property(CW.Extra))</visible>
+                <texturenofocus border="16">crosswatch/box.png</texturenofocus>
+                <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
+                <onup>100</onup>
+                <onleft>22</onleft>
                 <onright>21</onright>
             </control>
             <control type="button" id="21">
@@ -204,7 +220,7 @@
                 <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                 <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
                 <onup>100</onup>
-                <onleft>22</onleft>
+                <onleft>23</onleft>
             </control>
         </control>
     </controls>
