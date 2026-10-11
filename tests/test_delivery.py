@@ -219,3 +219,17 @@ def test_people_from_a_replaced_connection_change_nothing(tmp_path):
     on_routes(_facts(Person("p1", "Someone else")))
     delivery.publish_status()
     assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
+
+
+def test_a_rename_onto_another_viewers_name_is_skipped_with_a_warning(tmp_path):
+    from resources.lib import log as logmod
+
+    logged: list[tuple[str, int]] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: logged.append((message, level)))
+    viewers = [Viewer(name="Anna", person_id="p1"), Viewer(name="Anna B.")]
+    kodi, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, viewers)
+    on_routes(_facts(Person("p1", "Anna B.")))
+    delivery.publish_status()
+    assert store.viewers() == viewers
+    assert kodi.notifications == []
+    assert [level for message, level in logged if "people.rename_skipped" in message] == [logmod.WARNING]

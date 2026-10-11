@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from resources.lib import paths, viewer_config
@@ -304,6 +306,12 @@ def test_rename_viewer_keeps_playlists_and_profiles():
     assert rename_viewer(viewers, "anna", "annie") == [
         Viewer(name="annie", playlists=("A",), profiles=("P",)),
         Viewer(name="bob"),
+    ]
+
+
+def test_rename_viewer_keeps_the_person_id():
+    assert rename_viewer([Viewer(name="Anna", person_id="p1")], "Anna", "Anna B.") == [
+        Viewer(name="Anna B.", person_id="p1")
     ]
 
 
@@ -816,7 +824,7 @@ def test_a_rename_saved_while_the_screen_is_open_survives(tmp_path):
 
     kodi = RenamingKodi(["X"], windows=[("playlists", "bob"), ("close", "")], picks=[["X"]])
     run_dialog(kodi, store, memory)
-    assert [v.name for v in store.viewers()] == ["Anna B.", "bob"]
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1"), Viewer(name="bob", playlists=("X",))]
 
 
 def test_a_fresh_install_is_offered_the_people_too(tmp_path):
@@ -879,4 +887,258 @@ def test_a_picked_person_whose_name_a_viewer_linked_to_someone_else_holds_is_ref
     kodi = ScriptedKodi([], windows=[("add", "anna"), ("close", "")], picks=[["p1"]])
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p9", "Zed")))
     assert store.viewers() == [Viewer(name="anna", person_id="p9")]
+    assert kodi.ok_calls == []
+
+
+# --- the service saving while a sub-dialog is open --------------------------
+
+class ServiceSavingKodi(ScriptedKodi):
+    """Runs `service` once, as the service would save viewers.json, when the sub-dialog
+    numbered `at` opens (a pick list, the keyboard or a confirm)."""
+
+    def __init__(self, *args, service, at=0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._service, self._at, self._opened = service, at, 0
+
+    def _sub_dialog(self):
+        if self._opened == self._at:
+            self._service()
+        self._opened += 1
+
+    def list_window(self, request, state):
+        self._sub_dialog()
+        return super().list_window(request, state)
+
+    def text_input(self, heading, default=""):
+        self._sub_dialog()
+        return super().text_input(heading, default)
+
+    def confirm_window(self, heading, message):
+        self._sub_dialog()
+        return super().confirm_window(heading, message)
+
+
+def _renamed_by_service(store, renames):
+    """The service's rename of linked viewers: person id to new name."""
+
+    def service():
+        store.save([replace(v, name=renames.get(v.person_id, v.name)) for v in store.viewers()])
+
+    return service
+
+
+def test_a_playlist_edit_lands_on_the_viewer_crosswatch_renamed_meanwhile(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="Bob", person_id="p2")])
+    kodi = ServiceSavingKodi(
+        ["X"], windows=[("playlists", "Anna"), ("close", "")], picks=[["X"]],
+        service=_renamed_by_service(store, {"p1": "Anna B.", "p2": "Bobby"}),
+    )
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [
+        Viewer(name="Anna B.", playlists=("X",), person_id="p1"),
+        Viewer(name="Bobby", person_id="p2"),
+    ]
+    assert kodi.windows_shown[1][1] == "Anna B."
+
+
+def test_a_profile_edit_keeps_a_rename_of_another_viewer(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+    kodi = ServiceSavingKodi(
+        [], windows=[("profiles", "bob"), ("close", "")], picks=[["Master user"]],
+        service=_renamed_by_service(store, {"p1": "Anna B."}),
+    )
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1"), Viewer(name="bob", profiles=("Master user",))]
+
+
+def test_a_rename_keeps_a_rename_the_service_saved_meanwhile(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+    kodi = ServiceSavingKodi(
+        [], windows=[("rename", "bob"), ("close", "")], inputs=["rob"],
+        service=_renamed_by_service(store, {"p1": "Anna B."}),
+    )
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1"), Viewer(name="rob")]
+
+
+def test_a_rename_onto_a_name_the_service_took_meanwhile_is_refused(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+    kodi = ServiceSavingKodi(
+        [], windows=[("rename", "bob"), ("close", "")], inputs=["Anna B."],
+        service=_renamed_by_service(store, {"p1": "Anna B."}),
+    )
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1"), Viewer(name="bob")]
+
+
+def test_a_remove_keeps_a_rename_the_service_saved_meanwhile(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+    kodi = ServiceSavingKodi(
+        [], windows=[("remove", "bob"), ("close", "")], confirms=[True],
+        service=_renamed_by_service(store, {"p1": "Anna B."}),
+    )
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1")]
+    assert kodi.windows_shown[1][1] == "Anna B."
+
+
+def test_an_edit_to_a_viewer_gone_meanwhile_is_dropped(tmp_path):
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+
+    def service():
+        store.save([Viewer(name="Anna", person_id="p1")])
+
+    kodi = ServiceSavingKodi(["X"], windows=[("playlists", "bob"), ("close", "")], picks=[["X"]], service=service)
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
+    assert any("config.edit_dropped" in line for line in captured)
+    assert not any("bob" in line for line in captured)
+
+
+def test_a_picked_persons_playlists_land_after_crosswatch_renamed_them(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    kodi = ServiceSavingKodi(
+        ["X"], windows=[("add", "Anna"), ("close", "")], picks=[["p2"], ["X"]], at=1,
+        service=_renamed_by_service(store, {"p1": "Anna B.", "p2": "Benny"}),
+    )
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
+    assert store.viewers() == [
+        Viewer(name="Anna B.", person_id="p1"),
+        Viewer(name="Benny", playlists=("X",), person_id="p2"),
+    ]
+
+
+def test_picking_a_person_keeps_a_rename_saved_while_the_people_list_was_open(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    kodi = ServiceSavingKodi(
+        [], windows=[("add", "Anna"), ("close", "")], picks=[["p2"]],
+        service=_renamed_by_service(store, {"p1": "Anna B."}),
+    )
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1"), Viewer(name="Ben", person_id="p2")]
+
+
+def test_a_typed_add_keeps_a_rename_saved_during_its_playlist_step(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    kodi = ServiceSavingKodi(
+        ["X"], windows=[("add", "Anna"), ("close", "")], inputs=["Zed"], picks=[["X"]], at=1,
+        service=_renamed_by_service(store, {"p1": "Anna B."}),
+    )
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1"), Viewer(name="Zed", playlists=("X",))]
+
+
+def test_a_relinked_viewer_is_saved_before_its_answers_follow(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna")], answers={"show:tvdb:1": ["anna"]})
+    seen: list[list[Viewer]] = []
+
+    class Watching(PromptMemory):
+        def rename_viewer(self, old, new):
+            seen.append(store.viewers())
+            return super().rename_viewer(old, new)
+
+    memory = Watching(memory._path)
+    kodi = ScriptedKodi([], windows=[("add", "anna"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
+    assert seen == [[Viewer(name="Anna", person_id="p1")]]
+
+
+def test_a_typed_add_onto_a_name_the_service_took_meanwhile_is_refused(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    kodi = ServiceSavingKodi(
+        ["X"], windows=[("add", "Anna"), ("close", "")], inputs=["Zed"], picks=[["X"]], at=1,
+        service=_renamed_by_service(store, {"p1": "Zed"}),
+    )
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Zed", person_id="p1")]
+
+
+def test_a_typed_add_of_a_person_the_service_linked_meanwhile_is_refused(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Ben", person_id="p2")])
+
+    def service():
+        store.save([*store.viewers(), Viewer(name="Annie", person_id="p1")])
+
+    kodi = ServiceSavingKodi(
+        [], windows=[("add", "Ben"), ("close", "")], picks=[("extra", [])], inputs=["anna"], at=1, service=service,
+    )
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
+    assert store.viewers() == [Viewer(name="Ben", person_id="p2"), Viewer(name="Annie", person_id="p1")]
+
+
+def test_a_rename_of_a_viewer_the_service_linked_meanwhile_is_dropped(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="bob")])
+
+    def service():
+        store.save([Viewer(name="bob", person_id="p2")])
+
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
+    kodi = ServiceSavingKodi([], windows=[("rename", "bob"), ("close", "")], inputs=["rob"], service=service)
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="bob", person_id="p2")]
+    assert kodi.windows_shown[1][1] == ""
+    assert any("config.edit_dropped" in line and "reason=linked" in line for line in captured)
+
+
+def test_a_rename_of_a_viewer_gone_meanwhile_is_dropped(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+
+    def service():
+        store.save([Viewer(name="Anna", person_id="p1")])
+
+    kodi = ServiceSavingKodi([], windows=[("rename", "bob"), ("close", "")], inputs=["rob"], service=service)
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
+    assert kodi.windows_shown[1][1] == ""
+
+
+@pytest.mark.parametrize(
+    ("action", "script"),
+    [("profiles", {"picks": [["Master user"]]}), ("remove", {"confirms": [True]})],
+)
+def test_a_profile_edit_or_remove_of_a_viewer_gone_meanwhile_is_dropped(tmp_path, action, script):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+
+    def service():
+        store.save([Viewer(name="Anna", person_id="p1")])
+
+    kodi = ServiceSavingKodi([], windows=[(action, "bob"), ("close", "")], service=service, **script)
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
+    assert kodi.windows_shown[1][1] == ""
+
+
+def test_a_picked_person_links_an_unlinked_viewer_with_exactly_their_name(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", playlists=("Kids",))], answers={"show:tvdb:1": ["Anna"]})
+    moved: list[tuple[str, str]] = []
+
+    class Watching(PromptMemory):
+        def rename_viewer(self, old, new):
+            moved.append((old, new))
+            return super().rename_viewer(old, new)
+
+    memory = Watching(memory._path)
+    kodi = ScriptedKodi([], windows=[("add", "Anna"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
+    assert store.viewers() == [Viewer(name="Anna", playlists=("Kids",), person_id="p1")]
+    assert moved == []
+    answer = memory.recall("show:tvdb:1")
+    assert answer is not None and answer.viewers == ("Anna",)
+
+
+def test_a_picked_person_with_a_same_named_twin_does_not_link_the_viewer(tmp_path):
+    """Two people with the same exact name take nobody, as CrossWatch routes them."""
+    store, memory = _stores(tmp_path, [Viewer(name="anna")])
+    kodi = ScriptedKodi([], windows=[("add", "anna"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "ANNA")))
+    assert store.viewers() == [Viewer(name="anna")]
+    assert kodi.pick_requests[1:] == []
+    # Refused as taken, not as a clash: the same name is already on screen, so no dialog.
     assert kodi.ok_calls == []

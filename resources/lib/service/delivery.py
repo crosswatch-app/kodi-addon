@@ -105,8 +105,8 @@ class Delivery:
     def _apply_people(self, people: tuple[Person, ...]) -> None:
         """Link and rename viewers to match CrossWatch's people (contract 1.6).
 
-        On the service thread: the settings script re-reads viewers.json before each action,
-        so a rename saved here is not overwritten by an open Viewers screen.
+        On the service thread: the settings script applies each edit to viewers.json as it is
+        when saved, so a rename saved here is not overwritten by an open Viewers screen.
         """
         if self._viewers is None:
             return
