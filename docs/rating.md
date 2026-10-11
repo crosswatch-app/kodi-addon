@@ -44,7 +44,7 @@ Everyone the watch was credited to, however that was decided (see [Who watched](
   after the other, and each can skip.
 - With "Shared rating" on, one question, "How was it?", and the score goes to everyone credited.
 - When nobody was credited, one question, "How was it?", and the score is sent with no viewer.
-  Only CrossWatch routes with an empty username whitelist receive it.
+  Only CrossWatch routes with an empty username whitelist and no user profile receive it.
 
 ## Giving a score
 

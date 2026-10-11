@@ -61,11 +61,13 @@ renaming a viewer).
 
 ## A person is missing from Add viewer
 
-"Add viewer" lists only CrossWatch user profiles that have a route on this Kodi, and leaves out
-people who are already viewers. Check:
+"Add viewer" lists only CrossWatch user profiles that are assigned to a route on this Kodi
+without a username whitelist, and leaves out people who are already viewers. Check:
 
 1. that the person's Kodi watcher route in CrossWatch is assigned to their user profile, on the
-   Kodi instance this add-on is paired with.
+   Kodi instance this add-on is paired with, and that its "Username whitelist" is empty. A
+   route with a whitelist takes the names in it instead, so type the viewer's name to match
+   the whitelist.
 2. that no viewer is linked to them already; a viewer that shows "Name from CrossWatch" is.
 3. that the add-on has checked in since the route changed: within five minutes. Close the
    Viewers window and open it again.
