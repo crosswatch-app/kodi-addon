@@ -218,10 +218,11 @@ A route can be assigned to a CrossWatch user profile. For a Kodi route that prof
 - A route with a profile and no whitelist takes the viewer whose name matches the profile's name. Nobody else, and never an event without a viewer.
 - A whitelist, when set, wins. The profile name is then not used.
 - Names are compared loosely: case, spaces and punctuation do not matter. `anna b` matches `Anna B.`.
+- - Accents and scripts do count. `Renée` and `Rene` are different names, and a name in another script only matches itself. A name of only symbols or emoji needs the exact same text.
 - When two profiles only differ in spaces or punctuation, such as `Anna B.` and `Annab`, each one only takes its own name written the same way, apart from case.
 - `viewers` still carries names. Nothing changes in the events.
 
-The `ping` reply lists the people: every user profile that has a route on this Kodi instance.
+The `ping` reply lists the people: every user profile that has a route on this Kodi instance where the profile's name is used, so a route with a profile and no whitelist.
 
 ```json
 "people": [
@@ -233,6 +234,9 @@ The `ping` reply lists the people: every user profile that has a route on this K
 - Offer these names when the user adds a viewer. Typing a name stays possible for setups without profiles.
 - Keep the `id` with the viewer. When a profile is renamed in CrossWatch, the next `ping` reply has the new `name` under the same `id`, and the add-on takes it over.
 - `people` is empty when no route on this instance has a profile.
+- A profile whose routes on this Kodi all have a whitelist is left out. The whitelist decides there, so picking that person would not reach the route.
+- The look-alike rule counts every profile in CrossWatch, also ones that are not in `people`. So a typed name that only loosely matches a listed person can still be refused. A name picked from `people` always works.
+
 
 ## Ratings
 
@@ -274,7 +278,7 @@ A `rate` is its own event, sent after the `stop` of a finished watch. The `stop`
 
 What CrossWatch does with it:
 
-- It routes a `rate` like a `stop`. The route of that viewer gets it once, and routes without a whitelist get it too.
+- It routes a `rate` like a `stop`. The route of that viewer gets it once, and routes without a whitelist and without a user profile get it too.
 - It forwards the rating to the route's destination when that destination takes ratings. There is no extra switch on the CrossWatch side. The switch is the add-on's own setting.
 - Not every service takes a rating for an episode. CrossWatch sorts that out and skips the ones that do not. It does not turn an episode rating into a show rating.
 - A `rate` never touches the now-playing card or the watched state.
