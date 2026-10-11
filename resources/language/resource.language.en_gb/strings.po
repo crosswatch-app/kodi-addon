@@ -470,3 +470,7 @@ msgstr ""
 msgctxt "#30152"
 msgid "Masterpiece"
 msgstr ""
+
+msgctxt "#30153"
+msgid "CrossWatch treats this name as the same as %s. Choose another name."
+msgstr ""
