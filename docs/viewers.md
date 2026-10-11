@@ -46,7 +46,8 @@ keyboard instead.
 ### Type a name
 
 1. Select "Add viewer", then "Type a name" if the list of people opens (with no viewers and no
-   people, the keyboard opens straight away).
+   people, the keyboard opens straight away). Anyone you ticked in that list is added first,
+   with their playlists asked as after Done, and then the keyboard opens.
 2. Type the person's name. It must match the name in that person's CrossWatch route
    "Username whitelist" (or, for a route without a whitelist, the name of the user profile it
    is assigned to), or CrossWatch has nowhere to send their playback.

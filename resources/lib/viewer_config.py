@@ -444,10 +444,21 @@ def _add_viewer(
         ListState(),
     )
     if result.action == "extra":
-        return _add_typed(kodi, store, viewers, playlists, people or ())
+        # Ticking people and then choosing to type one more keeps the ticks.
+        viewers, first = _add_people(kodi, store, viewers, playlists, [p for p in offer if p.id in result.keys])
+        typed = _add_typed(kodi, store, viewers, playlists, people or ())
+        return first or typed
     if result.action != "done" or not result.keys:
         return None
-    chosen = [p for p in offer if p.id in result.keys]
+    return _add_people(kodi, store, viewers, playlists, [p for p in offer if p.id in result.keys])[1]
+
+
+def _add_people(
+    kodi: KodiApi, store: ViewerStore, viewers: list[Viewer], playlists: list[str], chosen: list[Person]
+) -> tuple[list[Viewer], str | None]:
+    """The viewers with the chosen people added, and the first one added."""
+    if not chosen:
+        return viewers, None
     first: str | None = None
     added = 0
     for person in chosen:
@@ -466,7 +477,7 @@ def _add_viewer(
             viewers = apply_edit(viewers, name, selected, ())
             _save(store, viewers)
     _log.info("config.people_added", count=added, rejected=len(chosen) - added)
-    return first
+    return viewers, first
 
 
 def _act(

@@ -839,3 +839,11 @@ def test_a_refused_pick_does_not_stop_the_others(tmp_path):
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna B."), Person("p2", "Ben")))
     assert store.viewers() == [Viewer(name="annab"), Viewer(name="Ben", person_id="p2")]
     assert kodi.ok_calls[0] == (f"#{NOTIFY_HEADING}", f"#{VIEWERS_NAME_CLASH}")
+
+
+def test_type_a_name_adds_the_ticked_people_first(tmp_path):
+    store, memory = _stores(tmp_path, [])
+    kodi = ScriptedKodi(["Kids"], windows=[("close", "")], picks=[("extra", ["p1"]), ["Kids"], None], inputs=["Zed"])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
+    assert store.viewers() == [Viewer(name="Anna", playlists=("Kids",), person_id="p1"), Viewer(name="Zed")]
+    assert kodi.windows_shown[0][1] == "Anna"
