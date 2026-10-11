@@ -13,7 +13,6 @@ This runs as a separate script with its own module state, so main() configures l
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import NamedTuple
@@ -52,6 +51,7 @@ from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.log import get_logger
 from resources.lib.models import Viewer
 from resources.lib.outbox import config_fingerprint
+from resources.lib.people import crosswatch_name
 from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared_type
 from resources.lib.routes import RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
@@ -111,12 +111,6 @@ def available_playlists(kodi: KodiApi) -> PlaylistListing:
         else:
             listing.unusable.append(label)
     return listing
-
-
-def crosswatch_name(name: str) -> str:
-    """The name as CrossWatch compares it: lower case, everything but a to z and 0 to 9 dropped
-    (normalize_media_account_name in CrossWatch's cw_platform/account_match.py)."""
-    return re.sub(r"[^a-z0-9]+", "", name.lower())
 
 
 class NameClash(ValueError):

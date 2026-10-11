@@ -40,7 +40,6 @@ from resources.lib.viewer_config import (
     apply_edit,
     available_playlists,
     available_profiles,
-    crosswatch_name,
     current_routes,
     panel_lines,
     profile_rows,
@@ -666,11 +665,6 @@ def test_viewers_request_counts_one_viewer_and_none():
     one = viewers_request(Worded(), [Viewer(name="anna")], PlaylistListing(["X"], []), [], None)
     assert one.count == "1 viewer"
     assert viewers_request(Worded(), [], PlaylistListing(["X"], []), [], None).count == ""
-
-
-@pytest.mark.parametrize(("name", "key"), [("Anna-Lee", "annalee"), ("anna lee!", "annalee"), ("Zoë", "zo"), ("Ægir", "gir"), ("李", "")])
-def test_crosswatch_name_is_crosswatchs_own_comparison(name, key):
-    assert crosswatch_name(name) == key
 
 
 def test_a_name_crosswatch_reads_as_another_viewers_is_refused_with_that_viewer():
