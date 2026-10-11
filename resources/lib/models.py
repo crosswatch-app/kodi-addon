@@ -22,6 +22,10 @@ class Viewer:
     # The CrossWatch person this viewer is linked to. None until linked; a viewer keeps its
     # link through playlist and profile edits and through renames.
     person_id: str | None = None
+    # The person's name as CrossWatch last listed it. A rename is detected against this, not
+    # against name, so a viewer typed as "anna-lee" and linked to "Anna Lee" keeps its spelling
+    # until CrossWatch renames the person.
+    person_name: str | None = None
 
 
 @dataclass(frozen=True)

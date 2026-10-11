@@ -57,7 +57,9 @@ def reconcile(viewers: Sequence[Viewer], people: Sequence[Person]) -> Reconciled
     skipped = 0
     for index, viewer in enumerate(out):
         person = by_id.get(viewer.person_id or "")
-        if person is None or person.name == viewer.name:
+        # Against the name CrossWatch last listed, so a link made on a loose match keeps the
+        # viewer's own spelling until the person is renamed.
+        if person is None or person.name == (viewer.person_name or viewer.name):
             continue
         # A second viewer under the same name would merge two people's playlists and answers.
         clash = any(v.name.casefold() == person.name.casefold() for i, v in enumerate(out) if i != index)
@@ -65,7 +67,7 @@ def reconcile(viewers: Sequence[Viewer], people: Sequence[Person]) -> Reconciled
             skipped += 1
             continue
         renamed.append((viewer.name, person.name))
-        out[index] = replace(viewer, name=person.name)
+        out[index] = replace(viewer, name=person.name, person_name=person.name)
     linked = 0
     taken = {v.person_id for v in out if v.person_id}
     for index, viewer in enumerate(out):
@@ -73,7 +75,7 @@ def reconcile(viewers: Sequence[Viewer], people: Sequence[Person]) -> Reconciled
             continue
         person = match_person(viewer.name, people, taken)
         if person is not None:
-            out[index] = replace(viewer, person_id=person.id)
+            out[index] = replace(viewer, person_id=person.id, person_name=person.name)
             taken.add(person.id)
             linked += 1
     return Reconciled(out, tuple(renamed), linked, skipped)

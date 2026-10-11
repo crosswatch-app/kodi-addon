@@ -40,18 +40,26 @@ def test_a_name_with_nothing_crosswatch_reads_matches_by_case_only():
 
 def test_reconcile_links_a_typed_viewer_and_keeps_its_spelling():
     result = reconcile([Viewer(name="anna b")], [ANNA])
-    assert result.viewers == [Viewer(name="anna b", person_id="p-anna")]
+    assert result.viewers == [Viewer(name="anna b", person_id="p-anna", person_name="Anna B.")]
     assert result.linked == 1 and result.renamed == ()
 
 
+def test_a_loosely_linked_viewer_keeps_its_spelling_on_the_next_ping():
+    first = reconcile([Viewer(name="anna-lee")], [Person("p1", "Anna Lee")])
+    second = reconcile(first.viewers, [Person("p1", "Anna Lee")])
+    assert second.viewers == first.viewers and second.viewers[0].name == "anna-lee"
+    assert not second.changed and second.renamed == ()
+
+
 def test_reconcile_renames_a_linked_viewer():
-    result = reconcile([Viewer(name="Anna", playlists=("A",), person_id="p-anna")], [ANNA])
-    assert result.viewers == [Viewer(name="Anna B.", playlists=("A",), person_id="p-anna")]
+    old = Viewer(name="Anna", playlists=("A",), person_id="p-anna", person_name="Anna")
+    result = reconcile([old], [ANNA])
+    assert result.viewers == [Viewer(name="Anna B.", playlists=("A",), person_id="p-anna", person_name="Anna B.")]
     assert result.renamed == (("Anna", "Anna B."),)
 
 
 def test_a_rename_onto_another_viewers_name_is_skipped():
-    viewers = [Viewer(name="Anna", person_id="p-anna"), Viewer(name="anna b.")]
+    viewers = [Viewer(name="Anna", person_id="p-anna", person_name="Anna"), Viewer(name="anna b.")]
     result = reconcile(viewers, [ANNA])
     assert result.viewers == viewers and result.skipped == 1 and result.renamed == ()
 
@@ -67,5 +75,10 @@ def test_nothing_to_do_reports_no_change():
 
 
 def test_a_case_only_rename_is_taken_over():
-    result = reconcile([Viewer(name="ben", person_id="p-ben")], [BEN])
+    result = reconcile([Viewer(name="ben", person_id="p-ben", person_name="ben")], [BEN])
     assert result.renamed == (("ben", "Ben"),)
+
+
+def test_a_link_without_a_last_seen_name_compares_against_the_viewer_name():
+    viewers = [Viewer(name="Ben", person_id="p-ben")]
+    assert reconcile(viewers, [BEN]).viewers == viewers

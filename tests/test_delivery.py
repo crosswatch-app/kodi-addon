@@ -171,12 +171,13 @@ def _facts(*people):
 
 
 def test_a_ping_with_people_renames_the_viewer_everywhere(tmp_path):
-    kodi, delivery, on_routes, lane, store, memory = _people_delivery(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    linked = [Viewer(name="Anna", person_id="p1", person_name="Anna")]
+    kodi, delivery, on_routes, lane, store, memory = _people_delivery(tmp_path, linked)
     memory.remember("show:tvdb:1", ("Anna",))
     lane.store.add({"event": "stop", "event_id": "e1", "viewers": ["Anna"]}, "stop")
     on_routes(_facts(Person("p1", "Anna B.")))
     delivery.publish_status()
-    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1")]
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1", person_name="Anna B.")]
     remembered = memory.recall("show:tvdb:1")
     assert remembered is not None and remembered.viewers == ("Anna B.",)
     assert lane.store._entries[0].body["viewers"] == ["Anna B."]
@@ -187,7 +188,16 @@ def test_a_ping_with_people_links_a_typed_viewer_without_a_toast(tmp_path):
     kodi, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, [Viewer(name="anna")])
     on_routes(_facts(Person("p1", "Anna")))
     delivery.publish_status()
-    assert store.viewers() == [Viewer(name="anna", person_id="p1")]
+    assert store.viewers() == [Viewer(name="anna", person_id="p1", person_name="Anna")]
+    assert kodi.notifications == []
+
+
+def test_a_viewer_linked_on_a_loose_match_keeps_its_spelling_on_the_next_ping(tmp_path):
+    kodi, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, [Viewer(name="anna-lee")])
+    for _ in range(2):
+        on_routes(_facts(Person("p1", "Anna Lee")))
+        delivery.publish_status()
+    assert store.viewers() == [Viewer(name="anna-lee", person_id="p1", person_name="Anna Lee")]
     assert kodi.notifications == []
 
 

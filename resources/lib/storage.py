@@ -79,25 +79,28 @@ class JsonViewerStore:
             name = str(row.get("name") or "").strip()
             if not name:
                 continue
-            pid = row.get("person_id")
+            pid, pname = row.get("person_id"), row.get("person_name")
             out.append(
                 Viewer(
                     name=name,
                     playlists=tuple(str(p) for p in row.get("playlists") or []),
                     profiles=tuple(str(p) for p in row.get("profiles") or []),
                     person_id=pid if isinstance(pid, str) and pid else None,
+                    person_name=pname if isinstance(pname, str) and pname else None,
                 )
             )
         return out
 
     def save(self, viewers: list[Viewer]) -> None:
-        # person_id is written only when set, so an unlinked viewer's row is the same shape
+        # person_id and person_name are written only when set, so an unlinked viewer's row is the same shape
         # the add-on wrote before the link existed.
         rows = []
         for v in viewers:
             row: dict[str, object] = {"name": v.name, "playlists": list(v.playlists), "profiles": list(v.profiles)}
             if v.person_id:
                 row["person_id"] = v.person_id
+            if v.person_name:
+                row["person_name"] = v.person_name
             rows.append(row)
         _write_json(self._path, rows)
 
