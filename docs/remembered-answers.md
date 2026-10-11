@@ -1,66 +1,52 @@
 # Remembered answers
 
-The window that lists the shows whose viewer the add-on has remembered, and lets you change or
-forget them.
+When you answer [the question at the end](who-watched.md#the-question-at-the-end) for an episode,
+the add-on remembers who watched that show and stops asking. This window lets you check those
+answers, correct a wrong one, or forget one so the question comes back.
 
-The add-on settings have a Remembered answers entry under Viewers, next to Configure viewers
-and playlists. It opens one CrossWatch window titled "Remembered answers", listing every show
-with a remembered answer. With nothing remembered yet, the entry shows the short notice "No
-remembered answers yet." instead of opening the window. The top line has "CROSSWATCH" on the
-left, the title in the middle and a count on the right that shows how many ("12 shows", or "3
-of 12" when a search or viewer narrows the list).
+Open it from the add-on settings: Viewers > "Remembered answers". With nothing remembered yet,
+you get the notice "No remembered answers yet." instead.
 
 ![Remembered answers](screenshots/remembered/remembered-split-covered.png)
 
-On the left are the Search box, the Viewer button below it, and then the shows, each with a
-small poster and its title. A warning icon on a show means its answer needs a look: the show is
-not in your library any more, or the answer is not stable (see "Not stable" below). To search,
-press OK on the box, type with Kodi's keyboard and confirm. It matches show titles and viewer
-names. The Viewer button reads "Viewer: All" and cycles with OK through All, each configured
-viewer, and "will ask again" (shows nobody is remembered for). A show with no known title is
-listed by its id, for example "Kodi library id 12" or "tvdb 81189". Search and viewer combine.
-When nothing is listed the window says "Nothing matches".
+Pick a show on the left to see its answer on the right. To find a show, use the search box (it
+matches show titles and viewer names), or press "Viewer" to cycle through the viewers and "will
+ask again", which lists the shows whose answer no longer names any configured viewer. A show
+whose title is unknown is listed by its id, such as "tvdb 81189" or "Kodi library id 12".
 
-The right side shows the highlighted show, so moving up and down the list changes it. It has
-the show's title, its poster (or "No poster"), the year (when known), and then:
+## Change or forget an answer
 
-- "Answer": the viewers the answer is for, or "will ask again" when none of its viewers is
-  configured any more.
-- "Covered by": shown when a playlist decides this show, with one line per playlist, such as
-  "Anna's playlist 'Cartoons'". The answer is kept, and used again if the show leaves the
-  playlist.
-- "Not in library": shown with "gone from Kodi's library" when the show is no longer in your
-  Kodi library.
-- "Not stable": shown when the answer was stored against Kodi's database id and that id can no
-  longer be trusted. It says either "now points at `<other show>`" (the id now holds a different
-  show) or "no title stored to check it" (the id cannot be checked).
+- **Change** opens the who-watched window with the current answer ticked. Tick the right
+  people and press Done. Done with nobody ticked forgets the answer; Skip or Back changes
+  nothing.
+- **Forget** removes the answer after you confirm. The question is asked again at the end of
+  the show's next episode.
+- **Forget all** forgets every show in the list after you confirm. While a search or viewer
+  filter is active it reads "Forget N shown" and forgets only the shows listed.
 
-When there are more lines than fit, the last one says "and N more".
+Changes apply from the next playback.
 
-Change and Forget are together in the bottom row, on the right, just left of Close:
+## What the details mean
 
-- Change opens the who-watched window with the current answer ticked and no countdown. Done
-  saves the new answer. Done with nobody ticked forgets the answer, so the show is asked about
-  again after its next episode. Skip or Back leaves the answer unchanged. Change is not shown
-  for a "Not stable" show, which can only be forgotten.
-- Forget asks "Forget who watched this show? It will be asked again." first, with No
-  preselected. Yes forgets the answer, so the show is asked about again after its next
-  episode.
+- **Answer**: the viewers credited for this show. "will ask again" means none of them is a
+  viewer any more, so the question comes back.
+- **Covered by**: a viewer's playlist contains this show, and [playlists win over remembered
+  answers](#when-a-remembered-answer-is-not-used). The answer is kept, and used again if the
+  show ever leaves the playlist.
+- **Not in library** (warning icon): the show is no longer in your Kodi library. Forget it if
+  you removed the show for good.
+- **Not stable** (warning icon): the show had no scraper id (such as TVDb or TMDb), so the
+  answer was stored against Kodi's internal library number, and that number now belongs to
+  another show ("now points at `<other show>`") or cannot be checked ("no title stored to
+  check it"). Such an answer can only be forgotten; you are asked again next time.
 
-OK on a show moves to Change (or to Forget for a "Not stable" show).
+![A Not stable answer](screenshots/remembered/remembered-split-not-stable.png)
 
-At the bottom left of that row, "Forget all" becomes "Forget N shown" while a search or viewer
-narrows the list, and is hidden when nothing is listed. It forgets exactly the shows listed,
-after a Yes/No confirmation (No is preselected). Close, in the bottom-right corner, leaves the
-screen; so does Back.
+## When a remembered answer is not used
 
-After each change the window comes back with the same search and viewer, on the same show;
-after a forget, on the show that took its place. When nothing is left the screen closes with a
-short notice ("No remembered answers yet."). Changes apply from the next playback, no restart
-needed.
+Playlists and the Kodi profile are checked first, so either one overrides a remembered answer.
+Only a playlist is shown as "Covered by"; a show decided by the Kodi profile has no mark here.
 
-Playlist membership and then the active Kodi profile are both checked before a remembered
-answer, so either one overrides it. Only playlists are shown as "Covered by": the answer is
-kept, and applies again if the show leaves the playlist. A show decided by a viewer's Kodi
-profile shows no mark. That makes the choice of playlist matter:
-it should describe what that person watches, not what they just happened to play.
+If the wrong person is credited for a show marked "Covered by", fix the playlist, not the
+answer. A playlist should describe what that person watches, not what was played last; see
+[Smart playlists](who-watched.md#smart-playlists).

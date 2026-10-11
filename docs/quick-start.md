@@ -1,27 +1,32 @@
 # Quick start
 
-The steps that take you from an installed add-on to playback reported per person.
+From an installed add-on to playback that CrossWatch credits to the right person. It takes a few
+minutes, once per Kodi device.
 
-1. In CrossWatch, open the Kodi entry and choose to add this device with the add-on option
-   (CrossWatch also offers a JSON-RPC option; that is for [Link](connect.md#link-shortcut)).
-   CrossWatch gives you a pairing code. CrossWatch's wiki shows its screens: [Kodi
-   add-on](https://wiki.crosswatch.app/crosswatch/settings/connections/media-clients/kodi/kodi-add-on).
-2. In Kodi, go to Add-ons > My add-ons > Services > CrossWatch > Configure, open the
-   CrossWatch category, and select "Pair with CrossWatch" ([Connect to CrossWatch](connect.md)
-   has the details). Enter the address first, then the code.
-3. In CrossWatch, set up a Kodi watcher route for each person in the household. In each
-   route's "Username whitelist" (the names that route accepts), enter that person's name.
-   Once the add-on is paired and has viewers, the route's "Find users" button also lists
-   the viewer names it reported.
-4. In the add-on settings, Viewers category, select "Configure viewers and playlists" and add
-   one viewer per person ([Viewers](viewers.md)). Each viewer's name must be the same as the
-   username in that person's route (CrossWatch ignores upper and lower case and punctuation
-   when comparing). Give each viewer one or more smart playlists, or one or more Kodi profiles.
-   A one-person household only needs the one viewer, with no playlists or profiles.
-5. Check the Viewers window. Once CrossWatch has answered the add-on's next check-in, each
-   viewer shows "CrossWatch route", or "No CrossWatch route" when no route accepts that name
-   (see [Troubleshooting](troubleshooting.md#a-viewer-shows-no-crosswatch-route)).
+**Before you start:** a running CrossWatch with the services each person wants to sync to
+(Trakt, Plex and so on) already connected, and the add-on [installed](install.md).
 
-Names have to match because CrossWatch sends a playback to the route whose username whitelist
-contains the viewer's name. A viewer named differently from every whitelist is still sent,
-but only a route with an empty whitelist (and no CrossWatch profile set on it) accepts it.
+1. **Pair.** In CrossWatch, open the Kodi entry and add this device with the add-on option (not
+   the JSON-RPC option) to get a pairing code. In Kodi, open the add-on settings and select
+   "Pair with CrossWatch", then type CrossWatch's address and the code.
+   [Connect to CrossWatch](connect.md) has the details and the error messages.
+
+2. **Add a viewer per person in Kodi.** In the add-on settings, Viewers category, select
+   "Configure viewers and playlists" and add each person by name. Give each viewer one or more
+   smart playlists of the shows and films they watch, or their Kodi profile. See
+   [Viewers](viewers.md).
+
+    Living alone? Add one viewer with your name and nothing else; everything is credited to you.
+
+3. **Add a route per person in CrossWatch.** Each person needs a Kodi watcher route with their
+   viewer name in its "Username whitelist"; this is how CrossWatch knows where to send their
+   playback. The names must match, though case and punctuation do not matter. The route's
+   "Find users" button lists the viewer names the add-on has reported.
+
+4. **Check.** Within a few minutes, each viewer in the Viewers window shows "CrossWatch route".
+   "No CrossWatch route" means the names do not match; see
+   [Troubleshooting](troubleshooting.md#a-viewer-shows-no-crosswatch-route).
+
+Now play something. Anything the playlists and profiles do not settle is asked when playback
+stops (see [Who watched](who-watched.md)). To get a rating question as well, see
+[Rating](rating.md).

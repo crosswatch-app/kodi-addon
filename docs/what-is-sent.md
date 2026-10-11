@@ -1,70 +1,61 @@
 # What the add-on sends
 
-What the add-on sends to CrossWatch, and what happens when CrossWatch cannot be reached.
+Everything goes to your own CrossWatch and nowhere else. CrossWatch then passes it on to the
+services you set up there.
 
-Everything goes only to your own CrossWatch, which then passes it on to whatever services you
-have set up there:
+## What is sent
 
-- Playback events (start, pause, resume, progress, stop), and a heartbeat. The heartbeat goes
-  every five minutes and straight away after pairing or when the viewer names change, and
-  carries the names of all configured viewers.
-- Ratings, if you switched them on: a score for each viewer who rated, with the same item
-  details as a stop, but never the file path or the playback position (see
-  [Rating](rating.md)).
-- Kodi's device name, a generated device id and the add-on's version.
-- Viewer names, and how they were found (playlist, profile, or the question, which includes
-  an answer remembered from it; nothing when the only viewer is
-  credited because they are the only one).
-- Title, year, season, episode and episode title; the ids Kodi has for it (such as
-  TMDb, TVDb, IMDb); duration, playback position and progress; the file path, with any user
-  name, password and query string removed; and the Plex rating key for
-  PlexKodiConnect playback, which is only reported when "Skip PlexKodiConnect playback" is off
-  (it is on by default, see [Settings](settings.md#viewers)).
+- **Playback**: start, pause, resume, progress and stop, for episodes and films.
+- **A heartbeat** every five minutes, and straight away after pairing or a change of viewer
+  names. It carries the names of all configured viewers, so CrossWatch can tell which of them
+  have a route.
+- **Ratings**, if you switched [rating](rating.md) on: the score per viewer, with the same item
+  details as a stop, minus the file path and playback position.
 
-Only episodes and films are reported, and only when Kodi knows at least one real id for them
-(such as TMDb, TVDb or IMDb). The ids can come from Kodi's library or from the add-on that plays
-the item, so an episode or film played from an add-on that supplies its ids is reported too.
-Music, live TV, and a file Kodi knows nothing about send nothing.
+Each playback event carries:
 
-The webhook token travels only in a request header, never in a URL. Nothing is sent anywhere
-other than your own CrossWatch.
+- who watched: the viewer names, and whether a playlist, a profile or the question decided it.
+- the item: title, year, season, episode and episode title, and the ids Kodi has (such as TMDb,
+  TVDb, IMDb).
+- playback: duration, position and progress.
+- the file path, with any user name, password and query string removed.
+- this Kodi: its device name, the add-on's device id and the add-on version.
+- for PlexKodiConnect playback, the Plex rating key. That playback is only reported when "Skip
+  PlexKodiConnect playback" is off; it is on by default.
+
+Only episodes and films with at least one real id (such as TMDb, TVDb or IMDb) are reported.
+The ids can come from Kodi's library or from the add-on playing the item. Music, live TV and
+files Kodi knows nothing about are not reported.
+
+The webhook token is sent in a request header, never in a URL.
 
 Developers: the exact payload is the
 [contract](https://github.com/crosswatch-app/kodi-addon/blob/main/docs/contract.md).
 
 ## When CrossWatch cannot be reached
 
-Every playback event (start, pause, resume, progress, stop) and the periodic heartbeat is
-sent only while it is still true. The add-on keeps trying for two minutes from the moment
-the event happened, then gives up on it. It never sends one late, because an old position
-could overwrite a newer resume point.
+The add-on keeps trying each event for two minutes, then drops it. An old progress or pause
+event is useless later and could even overwrite a newer resume point, so it is never sent late.
 
-The one exception is a stop that completes a watch, meaning Kodi played the item to the end,
-or played to at least its watched threshold (90 percent by default, the
-`playcountminimumpercent` advanced setting, the same rule Kodi itself uses).
+**A finished watch is the exception.** When a stop completes a watch (played to the end, or
+past Kodi's watched threshold, 90 percent by default), the add-on saves it to disk before
+sending, so it survives CrossWatch being down and Kodi restarting. It is then:
 
-- That stop is written to `outbox.json` in the add-on's data folder
-  (`userdata/addon_data/service.crosswatch/`; per Kodi profile: outside the master profile it is
-  under `userdata/profiles/<profile>/addon_data/`) before the first send is even attempted. It
-  survives CrossWatch being down and Kodi being restarted or switched off.
-- It is retried every five minutes while Kodi runs, and straight away when Kodi starts.
-- When it is finally delivered, it carries its original time and is marked as replayed,
-  so CrossWatch sees the same event arriving late, not a new one. Plex, Emby and
-  Jellyfin record the watch at the time it happened; trackers such as Trakt and Simkl,
-  and CrossWatch's own history, record it at the time it arrives, so a watch delivered
-  late shows up late there. It is removed from the file once CrossWatch accepts it.
-- It is dropped, with a warning in the log, if CrossWatch refuses it, if it is more
-  than seven days old when Kodi starts, when a new stop would make more than 200 waiting (the
-  oldest goes), or if the token has changed since, for example after pairing with a different
-  CrossWatch, so a stored stop is never sent to a different CrossWatch. A new address for the
-  same instance keeps it. Unpair alone keeps them.
+- retried every five minutes while Kodi runs, and straight away when Kodi starts.
+- delivered with its original time, marked as a late delivery. Plex, Emby and Jellyfin record
+  the watch at the time it happened; Trakt, Simkl and CrossWatch's own history record it when
+  it arrives.
+- dropped, with a warning in the log, when CrossWatch refuses it, when it is more than seven
+  days old at Kodi's start, when more than 200 are waiting (the oldest goes), or when the token
+  has changed since, for example by pairing with a different CrossWatch. A stored watch is never
+  sent to a different CrossWatch.
 
-A rating is kept on disk and sent later in the same way as a completed watch.
+Ratings are kept and retried the same way.
 
-Kodi still marks the item watched in its own library either way. But only this add-on knows
-who watched it, so a stop that is ultimately dropped loses the viewer attribution for that
-watch, not the watched state itself.
+Kodi marks the item watched in its own library regardless. A dropped stop loses only who
+watched it.
 
-Nothing is stored when no webhook is configured. Every other event (start, pause, resume,
-progress, a stop that did not complete a watch, and the heartbeat) is never written to disk:
-it is held only in memory for its two-minute window.
+The saved watches are in `outbox.json` in the add-on's data folder,
+`userdata/addon_data/service.crosswatch/` (in another Kodi profile:
+`userdata/profiles/<profile>/addon_data/service.crosswatch/`). No other event is written to
+disk.
