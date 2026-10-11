@@ -13,13 +13,11 @@ minutes, once per Kodi device.
 
 2. **Add a viewer per person in Kodi.** In the add-on settings, Viewers category, select
    "Configure viewers and playlists" and add each person: pick them from the people CrossWatch
-   lists, or type their name. Give each viewer one or more smart playlists of the shows and
-   films they watch, or their Kodi profile. See [Viewers](viewers.md#add-a-viewer).
+   lists (see the note under step 3), or type their name. Give each viewer one or more smart
+   playlists of the shows and films they watch, or their Kodi profile. See
+   [Viewers](viewers.md#add-a-viewer).
 
     Living alone? Add one viewer with your name and nothing else; everything is credited to you.
-
-    Using CrossWatch user profiles? Set up the routes in step 3 first. "Add viewer" then lists
-    the people to pick from (this needs a CrossWatch release newer than v0.13.3).
 
 3. **Add a route per person in CrossWatch.** Each person needs a Kodi watcher route; this is how
    CrossWatch knows where to send their playback. Either assign the route to the person's
@@ -27,6 +25,10 @@ minutes, once per Kodi device.
    route's "Username whitelist". The names must match, though case and punctuation do not
    matter. A whitelist, when set, wins over the profile. The route's "Find users" button lists
    the viewer names the add-on has reported.
+
+    Using CrossWatch user profiles? Do this step before step 2. Once a route is assigned to a
+    profile, "Add viewer" lists that person to pick from after the add-on's next check-in,
+    within five minutes. This needs CrossWatch v0.13.5 or newer.
 
 4. **Check.** Within a few minutes, each viewer in the Viewers window shows "CrossWatch route".
    "No CrossWatch route" means the names do not match; see

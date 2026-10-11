@@ -39,9 +39,10 @@ already added. A profile shows up here once a route on this Kodi is assigned to 
 CrossWatch and the add-on has checked in, which it does every five minutes. For someone who has
 no profile, select "Type a name".
 
-This needs a CrossWatch release newer than v0.13.3. With v0.13.3, when no route on this Kodi
-is assigned to a profile, or when everyone listed is already a viewer, "Add viewer" opens the
-keyboard instead.
+The list needs CrossWatch v0.13.5 or newer; with an older CrossWatch, "Add viewer" always opens
+the keyboard. A newer one opens the keyboard too when no route on this Kodi is assigned to a
+profile, when everyone listed is already a viewer, when the add-on is not paired, or when it has
+not checked in yet.
 
 ### Type a name
 
@@ -117,8 +118,9 @@ name would stop the route from receiving its playback.
 To rename a linked viewer, rename the user profile in CrossWatch. At its next check-in the
 add-on takes over the new name, shows "`<old>` is now called `<new>` in CrossWatch", and moves
 the viewer's remembered answers and any finished watches still waiting for delivery to the new
-name. If another viewer already has the new name, the add-on leaves both alone; remove or
-rename that other viewer, and the rename follows at the next check-in.
+name. If another viewer already has the new name, the add-on leaves both alone. Remove that
+other viewer, or rename its profile in CrossWatch if it is linked, and the rename follows at
+the next check-in.
 
 Existing viewers whose names match one of CrossWatch's people are linked at the add-on's first
 check-in with a CrossWatch that lists people, and take the profile's exact spelling. A viewer

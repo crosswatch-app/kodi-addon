@@ -70,14 +70,16 @@ people who are already viewers. Check:
 3. that the add-on has checked in since the route changed: within five minutes. Close the
    Viewers window and open it again.
 
-CrossWatch v0.13.3 and older list no people, so "Add viewer" always opens the keyboard there.
+CrossWatch releases before v0.13.5 list no people, so "Add viewer" always opens the keyboard
+there.
 To add someone without a profile, select "Type a name".
 
 ## A typed name is refused as the same as another
 
 "CrossWatch treats this name as the same as `<name>`" means CrossWatch ignores case, spaces and
 punctuation when it compares names, so it could not tell the two viewers apart and would send
-both their playback to the same routes. Choose a name that differs in a letter or digit.
+both their playback to the same routes. Choose a name that differs in a letter or digit (an
+accent counts).
 
 Only two people picked from CrossWatch's list may differ just in spaces or punctuation, because
 CrossWatch keeps two profiles like that apart. If both people have profiles, pick them instead
