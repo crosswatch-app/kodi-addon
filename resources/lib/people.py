@@ -54,21 +54,34 @@ def same_name(a: str, b: str) -> bool:
     return bool(exact) and exact == exact_name(b)
 
 
+def _accepts(person: Person, name: str, people: Sequence[Person]) -> bool:
+    """Whether CrossWatch routes name to this person (route_profile_accepts in CrossWatch's
+    providers/scrobble/routes.py)."""
+    wanted = exact_name(name)
+    exact = exact_name(person.name)
+    if not wanted or not exact:
+        return False
+    if sum(1 for p in people if exact_name(p.name) == exact) > 1:
+        return False
+    loose = crosswatch_name(person.name)
+    if not loose or sum(1 for p in people if crosswatch_name(p.name) == loose) > 1:
+        return wanted == exact
+    return crosswatch_name(name) == loose
+
+
 def match_person(name: str, people: Sequence[Person], taken: Collection[str]) -> Person | None:
     """The person a viewer name links to, as CrossWatch would route it.
 
     CrossWatch compares loosely, except between two profiles that differ only in spaces or
-    punctuation: each of those takes only its own spelling, apart from case. A name with no
-    letter or digit compares by its exact form, so it is not linked to every other such name.
+    punctuation: each of those takes only its own spelling, apart from case. Two profiles with
+    the same exact name take nobody. A name with no letter or digit compares by its exact form,
+    so it is not linked to every other such name.
+
+    Judged over all people, taken included: a person already linked still makes its loose twin
+    ambiguous, as it does for CrossWatch.
     """
-    free = [p for p in people if p.id not in taken]
-    key = crosswatch_name(name)
-    if not key:
-        return next((p for p in free if exact_name(p.name) == exact_name(name)), None)
-    loose = [p for p in free if crosswatch_name(p.name) == key]
-    if len(loose) == 1:
-        return loose[0]
-    return next((p for p in loose if exact_name(p.name) == exact_name(name)), None)
+    person = next((p for p in people if _accepts(p, name, people)), None)
+    return None if person is None or person.id in taken else person
 
 
 @dataclass(frozen=True)

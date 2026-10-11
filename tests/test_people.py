@@ -141,3 +141,29 @@ def test_a_case_only_rename_is_taken_over():
 def test_a_link_without_a_last_seen_name_compares_against_the_viewer_name():
     viewers = [Viewer(name="Ben", person_id="p-ben")]
     assert reconcile(viewers, [BEN]).viewers == viewers
+
+
+def test_a_taken_person_does_not_make_its_loose_twin_unambiguous():
+    assert match_person("anna b", [ANNA, ANNAB], {"p-annab"}) is None
+    assert match_person("anna b.", [ANNA, ANNAB], {"p-annab"}) == ANNA
+
+
+def test_two_people_with_the_same_exact_name_match_nobody():
+    assert match_person("Anna", [Person("p1", "Anna"), Person("p2", "anna ")], ()) is None
+
+
+def test_two_viewers_link_in_one_pass():
+    result = reconcile([Viewer(name="Anna B."), Viewer(name="Ben")], [ANNA, BEN])
+    assert [v.person_id for v in result.viewers] == ["p-anna", "p-ben"]
+    assert result.linked == 2 and result.renamed == () and result.changed
+
+
+def test_every_clashing_rename_is_counted():
+    viewers = [
+        Viewer(name="Anna", person_id="p-anna"),
+        Viewer(name="anna b."),
+        Viewer(name="Bob", person_id="p-ben"),
+        Viewer(name="ben"),
+    ]
+    result = reconcile(viewers, [ANNA, BEN])
+    assert result.viewers == viewers and result.skipped == 2 and not result.changed
