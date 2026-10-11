@@ -29,8 +29,11 @@ cannot be mistyped, and it follows a rename in CrossWatch.
 2. Tick everyone you want to add with OK, then press Done. Each ticked person becomes a viewer,
    except one whose name CrossWatch would confuse with a viewer you typed earlier: the add-on
    says "CrossWatch treats this name as the same as `<name>`. Choose another name." and skips
-   that person. A person whose name is already a viewer's, apart from case, is skipped without
-   a message; that viewer is linked to them at the add-on's next check-in.
+   that person. If a viewer you typed earlier already has a person's name, apart from case, ticking
+   that person links the viewer to them instead of adding a second one: the viewer keeps its
+   playlists and remembered answers, takes CrossWatch's spelling of the name, and is not asked
+   for playlists again. A person whose name belongs to a viewer already linked to someone else
+   is skipped without a message.
 3. For each new viewer in turn, tick their playlists and press Done, or press Cancel to keep that
    viewer without playlists.
 

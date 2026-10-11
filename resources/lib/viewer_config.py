@@ -424,6 +424,7 @@ def _add_typed(
 def _add_viewer(
     kodi: KodiApi,
     store: ViewerStore,
+    memory: PromptMemory,
     viewers: list[Viewer],
     playlists: list[str],
     people: tuple[Person, ...] | None,
@@ -445,27 +446,60 @@ def _add_viewer(
     )
     if result.action == "extra":
         # Ticking people and then choosing to type one more keeps the ticks.
-        viewers, first = _add_people(kodi, store, viewers, playlists, [p for p in offer if p.id in result.keys])
+        viewers, first = _add_people(
+            kodi, store, memory, viewers, playlists, [p for p in offer if p.id in result.keys], people or ()
+        )
         typed = _add_typed(kodi, store, viewers, playlists, people or ())
         return first or typed
     if result.action != "done" or not result.keys:
         return None
-    return _add_people(kodi, store, viewers, playlists, [p for p in offer if p.id in result.keys])[1]
+    chosen = [p for p in offer if p.id in result.keys]
+    return _add_people(kodi, store, memory, viewers, playlists, chosen, people or ())[1]
+
+
+def _link_existing(
+    memory: PromptMemory, viewers: list[Viewer], person: Person, people: Sequence[Person]
+) -> list[Viewer] | None:
+    """The viewers with the unlinked viewer already named like the person linked to them, or None.
+
+    That viewer was typed before CrossWatch listed the person. It keeps its playlists and takes
+    CrossWatch's spelling, and its remembered answers follow the new spelling.
+    """
+    taken = {v.person_id for v in viewers if v.person_id}
+    holder = next((v for v in viewers if v.name.casefold() == person.name.casefold()), None)
+    if holder is None or holder.person_id or match_person(holder.name, people, taken) != person:
+        return None
+    if holder.name != person.name:
+        memory.rename_viewer(holder.name, person.name)
+    return [replace(v, name=person.name, person_id=person.id) if v is holder else v for v in viewers]
 
 
 def _add_people(
-    kodi: KodiApi, store: ViewerStore, viewers: list[Viewer], playlists: list[str], chosen: list[Person]
+    kodi: KodiApi,
+    store: ViewerStore,
+    memory: PromptMemory,
+    viewers: list[Viewer],
+    playlists: list[str],
+    chosen: list[Person],
+    people: Sequence[Person],
 ) -> tuple[list[Viewer], str | None]:
     """The viewers with the chosen people added, and the first one added."""
     if not chosen:
         return viewers, None
     first: str | None = None
-    added = 0
+    added = linked = 0
     for person in chosen:
         try:
             name = validate_name(person.name, viewers, picked=True)
         except ValueError as exc:
-            _refused(kodi, exc)
+            relinked = None if isinstance(exc, NameClash) else _link_existing(memory, viewers, person, people)
+            if relinked is None:
+                _refused(kodi, exc)
+                continue
+            viewers = relinked
+            _save(store, viewers)
+            first = first or person.name
+            linked += 1
             continue
         # Saved before the playlist step, so Back there keeps the person added.
         viewers = [*viewers, Viewer(name=name, person_id=person.id)]
@@ -476,7 +510,7 @@ def _add_people(
         if selected:
             viewers = apply_edit(viewers, name, selected, ())
             _save(store, viewers)
-    _log.info("config.people_added", count=added, rejected=len(chosen) - added)
+    _log.info("config.people_added", count=added, linked=linked, rejected=len(chosen) - added - linked)
     return viewers, first
 
 
@@ -552,7 +586,7 @@ def run_dialog(
     if not store.viewers():
         # An empty list has nothing to choose from: start where the household must.
         facts = routes()
-        added = _add_viewer(kodi, store, [], listing.matchable, facts.people if facts else None)
+        added = _add_viewer(kodi, store, memory, [], listing.matchable, facts.people if facts else None)
         if added is None:
             return
         key = added
@@ -565,7 +599,7 @@ def run_dialog(
         # Read again: the window may have been open across a save by the service.
         viewers = store.viewers()
         if result.action == "add":
-            key = _add_viewer(kodi, store, viewers, listing.matchable, facts.people if facts else None) or result.key
+            key = _add_viewer(kodi, store, memory, viewers, listing.matchable, facts.people if facts else None) or result.key
         else:
             key = _act(kodi, store, memory, viewers, result, listing, profiles)
 

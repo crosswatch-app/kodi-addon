@@ -847,3 +847,24 @@ def test_type_a_name_adds_the_ticked_people_first(tmp_path):
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
     assert store.viewers() == [Viewer(name="Anna", playlists=("Kids",), person_id="p1"), Viewer(name="Zed")]
     assert kodi.windows_shown[0][1] == "Anna"
+
+
+def test_a_picked_person_links_the_unlinked_viewer_that_already_has_their_name(tmp_path):
+    store, memory = _stores(
+        tmp_path, [Viewer(name="anna", playlists=("Kids",)), Viewer(name="bob")], answers={"show:tvdb:1": ["anna"]}
+    )
+    kodi = ScriptedKodi([], windows=[("add", "anna"), ("close", "Anna")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
+    assert store.viewers() == [Viewer(name="Anna", playlists=("Kids",), person_id="p1"), Viewer(name="bob")]
+    answer = memory.recall("show:tvdb:1")
+    assert answer is not None and answer.viewers == ("Anna",)
+    assert kodi.pick_requests[1:] == [] and kodi.ok_calls == []
+    assert kodi.windows_shown[1][1] == "Anna"
+
+
+def test_a_picked_person_whose_name_a_viewer_linked_to_someone_else_holds_is_refused(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="anna", person_id="p9")])
+    kodi = ScriptedKodi([], windows=[("add", "anna"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p9", "Zed")))
+    assert store.viewers() == [Viewer(name="anna", person_id="p9")]
+    assert kodi.ok_calls == []
