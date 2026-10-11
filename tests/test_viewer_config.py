@@ -29,7 +29,7 @@ from resources.lib.constants import (
 from resources.lib.models import Viewer
 from resources.lib.outbox import config_fingerprint
 from resources.lib.playlist_index import PLAYLIST_DIR
-from resources.lib.routes import RouteFacts
+from resources.lib.routes import Person, RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 from resources.lib.ui.list_window import ListResult, ListState
 from resources.lib.ui.panel import PanelLine
@@ -363,7 +363,11 @@ class ScriptedKodi(FakeKodi):
 
     def list_window(self, request, state):
         self.pick_requests.append(request)
+        # A list is Done with those keys, ("extra", keys) the extra button, None Cancel.
         keys = self._picks.pop(0) if self._picks else None
+        if isinstance(keys, tuple):
+            action, ticked = keys
+            return ListResult(action, state, keys=tuple(ticked))
         return ListResult("close", state) if keys is None else ListResult("done", state, keys=tuple(keys))
 
     def text_input(self, heading, default=""):
@@ -708,3 +712,115 @@ def test_a_plain_duplicate_stays_a_silent_refusal(tmp_path):
 def test_editing_playlists_keeps_the_person_id():
     viewers = [Viewer(name="Anna", person_id="p1")]
     assert viewer_config.apply_edit(viewers, "Anna", ("X",), ())[0].person_id == "p1"
+
+
+# --- CrossWatch's people ---------------------------------------------------
+
+def _with_people(*people):
+    return lambda: RouteFacts(1, frozenset(), frozenset(), tuple(people))
+
+
+def test_add_offers_the_people_not_yet_added(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    kodi = ScriptedKodi([], windows=[("add", "Anna"), ("close", "")], picks=[None])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
+    request = kodi.pick_requests[0]
+    assert [r.key for r in request.rows] == ["p2"] and request.extra == "#30155"
+
+
+def test_picking_several_people_adds_them_linked_and_asks_playlists_for_each(tmp_path):
+    store, memory = _stores(tmp_path, [])
+    kodi = ScriptedKodi(["Kids"], windows=[("close", "")], picks=[["p1", "p2"], ["Kids"], None])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
+    assert store.viewers() == [
+        Viewer(name="Anna", playlists=("Kids",), person_id="p1"),
+        Viewer(name="Ben", person_id="p2"),
+    ]
+
+
+def test_type_a_name_opens_the_keyboard_and_links_a_match(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Ben", person_id="p2")])
+    kodi = ScriptedKodi([], windows=[("add", "Ben"), ("close", "")], picks=[("extra", []), None], inputs=["anna"])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben"), Person("p3", "Cy")))
+    assert Viewer(name="anna", person_id="p1") in store.viewers()
+
+
+def test_without_people_add_goes_straight_to_the_keyboard(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="bob")])
+    kodi = ScriptedKodi([], windows=[("add", "bob"), ("close", "")], inputs=[""])
+    run_dialog(kodi, store, memory, lambda: RouteFacts(1, frozenset(), frozenset()))
+    assert kodi.pick_requests == [] and len(kodi.input_calls) == 1
+
+
+def test_with_everyone_added_add_goes_straight_to_the_keyboard(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    kodi = ScriptedKodi([], windows=[("add", "Anna"), ("close", "")], inputs=[""])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
+    assert kodi.pick_requests == []
+
+
+def test_a_loose_pair_of_people_may_both_be_added(tmp_path):
+    store, memory = _stores(tmp_path, [])
+    kodi = ScriptedKodi([], windows=[("close", "")], picks=[["p1", "p2"], None, None])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna B."), Person("p2", "Annab")))
+    assert [v.name for v in store.viewers()] == ["Anna B.", "Annab"]
+
+
+def test_a_picked_person_may_sit_next_to_a_loose_equal_linked_viewer_only():
+    linked = [Viewer(name="Anna B.", person_id="p1")]
+    assert validate_name("Annab", linked, picked=True) == "Annab"
+    with pytest.raises(NameClash):
+        validate_name("Annab", [Viewer(name="Anna B.")], picked=True)
+    with pytest.raises(ValueError, match="taken"):
+        validate_name("anna b.", linked, picked=True)
+
+
+def test_a_typed_name_that_clashes_loosely_is_still_refused(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna B.", person_id="p1")])
+    kodi = ScriptedKodi([], windows=[("add", "Anna B."), ("close", "")], picks=[("extra", [])], inputs=["Annab"])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna B."), Person("p9", "Zed")))
+    assert [v.name for v in store.viewers()] == ["Anna B."] and len(kodi.ok_calls) == 1
+
+
+def test_a_linked_viewer_row_is_marked_and_says_where_its_name_comes_from(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+    kodi = ScriptedKodi([], windows=[("close", "")])
+    run_dialog(kodi, store, memory)
+    rows = kodi.windows_shown[0][0].rows
+    assert [r.linked for r in rows] == [True, False]
+    assert rows[0].lines[0].text == "#30158"
+
+
+def test_rename_on_a_linked_viewer_changes_nothing(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    kodi = ScriptedKodi([], windows=[("rename", "Anna"), ("close", "")], inputs=["Zed"])
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")] and kodi.input_calls == []
+
+
+def test_a_rename_saved_while_the_screen_is_open_survives(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+
+    class RenamingKodi(ScriptedKodi):
+        def viewers_window(self, request, key):
+            if not self.windows_shown:
+                store.save([Viewer(name="Anna B.", person_id="p1"), Viewer(name="bob")])  # the service
+            return super().viewers_window(request, key)
+
+    kodi = RenamingKodi(["X"], windows=[("playlists", "bob"), ("close", "")], picks=[["X"]])
+    run_dialog(kodi, store, memory)
+    assert [v.name for v in store.viewers()] == ["Anna B.", "bob"]
+
+
+def test_a_fresh_install_is_offered_the_people_too(tmp_path):
+    store, memory = _stores(tmp_path, [])
+    kodi = ScriptedKodi([], windows=[("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
+
+
+def test_a_picked_person_loosely_equal_to_an_unlinked_viewer_is_not_added(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="annab")])
+    kodi = ScriptedKodi([], windows=[("add", "annab"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna B.")))
+    assert store.viewers() == [Viewer(name="annab")] and kodi.windows_shown[1][1] == "annab"

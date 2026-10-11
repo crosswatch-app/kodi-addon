@@ -5,8 +5,10 @@ settings.xml is static and cannot express a variable number of viewers, so the l
 edited through CrossWatch windows and stored as JSON, saved after every change. The list
 arithmetic and the rows are pure so they are testable without a GUI.
 
-A viewer's name must match the name CrossWatch routes on, which is why it is free text
-rather than a picker: these names come from playlists and prompts, not from Kodi profiles.
+A viewer's name must match the name CrossWatch routes on, so when CrossWatch lists its
+people, Add offers them and a picked viewer stays linked to that person (people.py); a typed
+name is the fallback, linked when it matches a person. Kodi profiles are no source: these
+names come from playlists and prompts.
 
 This runs as a separate script with its own module state, so main() configures logging.
 """
@@ -22,6 +24,7 @@ from resources.lib import paths
 from resources.lib.config import read_settings
 from resources.lib.constants import (
     NOTIFY_HEADING,
+    VIEWER_FROM_CROSSWATCH,
     VIEWER_MORE,
     VIEWER_NONE,
     VIEWER_PLAYLISTS,
@@ -29,6 +32,7 @@ from resources.lib.constants import (
     VIEWER_ROUTE_MISSING,
     VIEWER_ROUTE_OK,
     VIEWER_UNUSABLE,
+    VIEWERS_ADD_PEOPLE,
     VIEWERS_ALSO,
     VIEWERS_COUNT,
     VIEWERS_HEADING,
@@ -36,9 +40,11 @@ from resources.lib.constants import (
     VIEWERS_NAME_CLASH,
     VIEWERS_NAME_PROMPT,
     VIEWERS_NO_PLAYLISTS,
+    VIEWERS_ONE_PERSON,
     VIEWERS_ONE_PLAYLIST,
     VIEWERS_ONE_PROFILE,
     VIEWERS_ONE_VIEWER,
+    VIEWERS_PEOPLE,
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
     VIEWERS_PROFILES,
@@ -46,14 +52,15 @@ from resources.lib.constants import (
     VIEWERS_PROFILES_FOR,
     VIEWERS_REMOVE_CONFIRM,
     VIEWERS_REMOVE_MESSAGE,
+    VIEWERS_TYPE_NAME,
 )
 from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.log import get_logger
 from resources.lib.models import Viewer
 from resources.lib.outbox import config_fingerprint
-from resources.lib.people import crosswatch_name
+from resources.lib.people import crosswatch_name, match_person
 from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared_type
-from resources.lib.routes import RouteFacts
+from resources.lib.routes import Person, RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
 from resources.lib.ui.panel import PanelLine
@@ -121,12 +128,13 @@ class NameClash(ValueError):
         self.existing = existing
 
 
-def validate_name(name: str, existing: list[Viewer], own: str | None = None) -> str:
+def validate_name(name: str, existing: list[Viewer], own: str | None = None, picked: bool = False) -> str:
     """The cleaned name, or ValueError("empty") / ValueError("taken") / NameClash.
 
     Reason codes, not sentences: the reason is logged, and a sentence would carry the name.
     own is the viewer being renamed: their current name is not taken, so a change of case is
-    allowed.
+    allowed. picked means the name is a person CrossWatch listed: CrossWatch keeps two people
+    apart by their own spelling, so it may sit next to a loose-equal viewer that is linked too.
     """
     cleaned = str(name or "").strip()
     if not cleaned:
@@ -139,6 +147,8 @@ def validate_name(name: str, existing: list[Viewer], own: str | None = None) -> 
     key = crosswatch_name(cleaned)
     if key:
         for viewer in existing:
+            if picked and viewer.person_id:
+                continue
             if crosswatch_name(viewer.name) == key and viewer.name.casefold() != mine:
                 raise NameClash(viewer.name)
     return cleaned
@@ -209,7 +219,8 @@ def panel_lines(
     gone = set(missing_playlists(viewer, listing.matchable, listing.unusable))
     wrong = set(unusable_playlists(viewer, listing.unusable))
     missing, none = _text(kodi, VIEWERS_MISSING), _text(kodi, VIEWER_NONE)
-    lines = [PanelLine(_text(kodi, VIEWER_PLAYLISTS), heading=True)]
+    lines = [PanelLine(_text(kodi, VIEWER_FROM_CROSSWATCH))] if viewer.person_id else []
+    lines.append(PanelLine(_text(kodi, VIEWER_PLAYLISTS), heading=True))
     for name in viewer.playlists:
         if name in wrong:
             lines.append(PanelLine(name, tag=_text(kodi, VIEWER_UNUSABLE), warn=True))
@@ -246,7 +257,12 @@ def viewers_request(
     routes: RouteFacts | None,
 ) -> ViewersRequest:
     rows = tuple(
-        ViewerRow(key=v.name, lines=panel_lines(kodi, v, listing, profiles), route=route_state(v, routes))
+        ViewerRow(
+            key=v.name,
+            lines=panel_lines(kodi, v, listing, profiles),
+            route=route_state(v, routes),
+            linked=v.person_id is not None,
+        )
         for v in viewers
     )
     return ViewersRequest(
@@ -391,17 +407,66 @@ def _ask_name(kodi: KodiApi, viewers: list[Viewer], current: str = "") -> str | 
         return None
 
 
-def _add_viewer(
-    kodi: KodiApi, store: ViewerStore, viewers: list[Viewer], playlists: list[str]
-) -> tuple[list[Viewer], str | None]:
+def _add_typed(
+    kodi: KodiApi, store: ViewerStore, viewers: list[Viewer], playlists: list[str], people: Sequence[Person]
+) -> str | None:
     name = _ask_name(kodi, viewers)
     if name is None:
-        return viewers, None
+        return None
+    person = match_person(name, people, {v.person_id for v in viewers if v.person_id})
     selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers) or ()
-    viewers = apply_edit(viewers, name, selected, ())
-    _log.info("config.viewer_added", playlists=len(selected))
+    viewers = [*viewers, Viewer(name=name, playlists=tuple(selected), person_id=person.id if person else None)]
+    _log.info("config.viewer_added", playlists=len(selected), linked=person is not None)
     _save(store, viewers)
-    return viewers, name
+    return name
+
+
+def _add_viewer(
+    kodi: KodiApi,
+    store: ViewerStore,
+    viewers: list[Viewer],
+    playlists: list[str],
+    people: tuple[Person, ...] | None,
+) -> str | None:
+    """The first viewer added, to reopen on; None when nothing was."""
+    taken = {v.person_id for v in viewers if v.person_id}
+    offer = [p for p in people or () if p.id not in taken]
+    if not offer:
+        return _add_typed(kodi, store, viewers, playlists, people or ())
+    result = kodi.list_window(
+        ListRequest(
+            heading=_text(kodi, VIEWERS_ADD_PEOPLE),
+            rows=tuple(ListRow(key=p.id, title=p.name) for p in offer),
+            count_one=_text(kodi, VIEWERS_ONE_PERSON),
+            count_all=_text(kodi, VIEWERS_PEOPLE),
+            extra=_text(kodi, VIEWERS_TYPE_NAME),
+        ),
+        ListState(),
+    )
+    if result.action == "extra":
+        return _add_typed(kodi, store, viewers, playlists, people or ())
+    if result.action != "done" or not result.keys:
+        return None
+    chosen = [p for p in offer if p.id in result.keys]
+    first: str | None = None
+    added = 0
+    for person in chosen:
+        try:
+            name = validate_name(person.name, viewers, picked=True)
+        except ValueError as exc:
+            _log.info("config.name_rejected", reason=str(exc))
+            continue
+        # Saved before the playlist step, so Back there keeps the person added.
+        viewers = [*viewers, Viewer(name=name, person_id=person.id)]
+        _save(store, viewers)
+        first = first or name
+        added += 1
+        selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers)
+        if selected:
+            viewers = apply_edit(viewers, name, selected, ())
+            _save(store, viewers)
+    _log.info("config.people_added", count=added, rejected=len(chosen) - added)
+    return first
 
 
 def _act(
@@ -412,46 +477,49 @@ def _act(
     result: ViewersResult,
     listing: PlaylistListing,
     profiles: list[str] | None,
-) -> tuple[list[Viewer], str]:
-    """One action on the highlighted viewer: the viewers after it, and the row to reopen on."""
+) -> str:
+    """One action on the highlighted viewer; the row to reopen on."""
     viewer = next((v for v in viewers if v.name == result.key), None)
     if viewer is None:
-        return viewers, ""
+        return ""
     if result.action == "playlists":
         picked = _edit_playlists(kodi, viewer, listing.matchable, listing.unusable, viewers)
         if picked is None:
             _log.info("config.playlists_unchanged", reason="cancelled")
-            return viewers, viewer.name
+            return viewer.name
         viewers = apply_edit(viewers, viewer.name, picked, viewer.profiles)
         _log.info("config.viewer_updated", playlists=len(picked))
         _save(store, viewers)
     elif result.action == "profiles":
         chosen = _edit_profiles(kodi, viewer, profiles, viewers)
         if chosen is None:
-            return viewers, viewer.name
+            return viewer.name
         viewers = apply_edit(viewers, viewer.name, viewer.playlists, chosen)
         _log.info("config.viewer_updated", profiles=len(chosen))
         _save(store, viewers)
     elif result.action == "rename":
+        # A linked viewer's name is CrossWatch's, and the service would rename it back.
+        if viewer.person_id:
+            return viewer.name
         new = _ask_name(kodi, viewers, viewer.name)
         if new is None or new == viewer.name:
-            return viewers, viewer.name
+            return viewer.name
         viewers = rename_viewer(viewers, viewer.name, new)
         _save(store, viewers)
         _log.info("config.viewer_renamed", answers=memory.rename_viewer(viewer.name, new))
-        return viewers, new
+        return new
     elif result.action == "remove":
         question = _text(kodi, VIEWERS_REMOVE_CONFIRM, viewer.name)
         if not kodi.confirm_window(question, _text(kodi, VIEWERS_REMOVE_MESSAGE)):
-            return viewers, viewer.name
+            return viewer.name
         index = viewers.index(viewer)
         viewers = remove_viewer(viewers, viewer.name)
         _save(store, viewers)
         changed, forgotten = memory.drop_viewer(viewer.name)
         _log.info("config.viewer_removed", answers=changed, forgotten=forgotten)
         # The row that takes its place: the next one, or the one before at the end.
-        return viewers, viewers[min(index, len(viewers) - 1)].name if viewers else ""
-    return viewers, viewer.name
+        return viewers[min(index, len(viewers) - 1)].name if viewers else ""
+    return viewer.name
 
 
 def run_dialog(
@@ -460,9 +528,9 @@ def run_dialog(
     memory: PromptMemory,
     routes: Callable[[], RouteFacts | None] = lambda: None,
 ) -> None:
-    """routes is read on every pass: the service pings within a tick of a change, and the
-    open screen should catch up with what CrossWatch answered."""
-    viewers = store.viewers()
+    """routes and viewers.json are read on every pass: the service pings within a tick of a
+    change and renames linked viewers when CrossWatch does, and the open screen should catch
+    up rather than save its stale copy over that."""
     # Once per screen: each is a directory or profile listing over JSON-RPC.
     listing = available_playlists(kodi)
     if not listing.matchable:
@@ -470,22 +538,25 @@ def run_dialog(
     profiles = available_profiles(kodi)
 
     key = ""
-    if not viewers:
+    if not store.viewers():
         # An empty list has nothing to choose from: start where the household must.
-        viewers, added = _add_viewer(kodi, store, viewers, listing.matchable)
+        facts = routes()
+        added = _add_viewer(kodi, store, [], listing.matchable, facts.people if facts else None)
         if added is None:
             return
         key = added
 
     while True:
-        result = kodi.viewers_window(viewers_request(kodi, viewers, listing, profiles, routes()), key)
+        facts = routes()
+        result = kodi.viewers_window(viewers_request(kodi, store.viewers(), listing, profiles, facts), key)
         if result.action == "close":
             return
+        # Read again: the window may have been open across a save by the service.
+        viewers = store.viewers()
         if result.action == "add":
-            viewers, added = _add_viewer(kodi, store, viewers, listing.matchable)
-            key = added or result.key
+            key = _add_viewer(kodi, store, viewers, listing.matchable, facts.people if facts else None) or result.key
         else:
-            viewers, key = _act(kodi, store, memory, viewers, result, listing, profiles)
+            key = _act(kodi, store, memory, viewers, result, listing, profiles)
 
 
 def main() -> None:

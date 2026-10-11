@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Local JSON persistence, behind a seam. No policy lives here.
 
-ViewerStore is an interface because a later version pulls viewer names from CrossWatch so
-they cannot drift from the route username whitelist.
+ViewerStore only keeps the list. Keeping viewer names in step with the people CrossWatch
+lists, so they cannot drift from its route usernames, is people.py's job.
 
 Neither reads nor writes raise. A write sits on the stop path, so a full disk must cost an
 attribution rather than a watch.

@@ -471,6 +471,26 @@ msgctxt "#30153"
 msgid "CrossWatch treats this name as the same as %s. Choose another name."
 msgstr ""
 
+msgctxt "#30154"
+msgid "Add viewers"
+msgstr ""
+
+msgctxt "#30155"
+msgid "Type a name"
+msgstr ""
+
+msgctxt "#30156"
+msgid "1 person"
+msgstr ""
+
+msgctxt "#30157"
+msgid "%s people"
+msgstr ""
+
+msgctxt "#30158"
+msgid "Name from CrossWatch"
+msgstr ""
+
 msgctxt "#30159"
 msgid "%s is now called %s in CrossWatch"
 msgstr ""
