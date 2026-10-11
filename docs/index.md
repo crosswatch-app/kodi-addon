@@ -22,19 +22,20 @@ See [Who watched](who-watched.md) for the details.
 
 !!! warning "Beta"
 
-    This is a beta (1.0.0~beta1), installable from a GitHub release; see
+    This is a beta (1.0.0~beta2), installable from a GitHub release; see
     [Install](install.md). It needs CrossWatch v0.13.3 or later, where Kodi add-on support is
-    marked experimental.
+    marked experimental. Rating needs the CrossWatch release after v0.13.3.
 
-    It has been tested on Kodi 21.3 (Omega) against CrossWatch v0.13.3 and the development
-    builds before it, including pairing, Link, routing playback by viewer, and replay after an
-    outage. The add-on's windows were checked in Estuary and Arctic Zephyr Mod; Kodi on
-    Android and other skins have not been tested.
+    It has been tested on Kodi 21.3 (Omega) against CrossWatch v0.13.3 and its development
+    builds, including pairing, Link, routing playback by viewer, replay after an outage, and
+    rating (against the development build). The add-on's windows were checked in Estuary and
+    Arctic Zephyr Mod; Kodi on Android and other skins have not been tested.
 
 ## Requirements
 
 - Kodi 21 (Omega). Earlier versions are not supported; later versions have not been tested.
-- CrossWatch v0.13.3 or later, the first release with Kodi add-on support.
+- CrossWatch v0.13.3 or later, the first release with Kodi add-on support. Rating needs the
+  release after v0.13.3.
 - Kodi able to reach CrossWatch over the network, for example both on the same home
   network. CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority, such as

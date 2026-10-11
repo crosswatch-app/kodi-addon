@@ -8,7 +8,7 @@ add-on repository.
 This add-on has not reached the official Kodi add-on repository yet. Install the beta from a
 [GitHub release](https://github.com/crosswatch-app/kodi-addon/releases) instead:
 
-1. Download `service.crosswatch-v1.0.0-beta1.zip` from that release's assets.
+1. Download `service.crosswatch-v1.0.0-beta2.zip` from that release's assets.
 2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources". Kodi warns that add-ons
    get access to personal data; choose Yes to continue.
 3. Go to Add-ons, open the add-on browser (the open box icon at the top left), choose
