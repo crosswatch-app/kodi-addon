@@ -420,7 +420,7 @@ def _find(viewers: Sequence[Viewer], viewer: Viewer) -> Viewer | None:
     return next((v for v in viewers if v.name == viewer.name), None)
 
 
-class Updated(NamedTuple):
+class _Updated(NamedTuple):
     viewers: list[Viewer]
     # The edited viewer as found before the edit, and where it stood.
     viewer: Viewer
@@ -429,7 +429,7 @@ class Updated(NamedTuple):
 
 def _update(
     store: ViewerStore, viewer: Viewer, edit: Callable[[list[Viewer], Viewer], list[Viewer] | None]
-) -> Updated | None:
+) -> _Updated | None:
     """Apply edit to viewers.json as it is now, and save.
 
     Read at save time because the service saves this file too, renaming and linking viewers
@@ -440,13 +440,13 @@ def _update(
     viewers = store.viewers()
     current = _find(viewers, viewer)
     if current is None:
-        _log.info("config.edit_dropped", count=1)
+        _log.info("config.edit_dropped", count=1, reason="gone")
         return None
     edited = edit(viewers, current)
     if edited is None:
         return None
     _save(store, edited)
-    return Updated(edited, current, viewers.index(current))
+    return _Updated(edited, current, viewers.index(current))
 
 
 def _add_typed(kodi: KodiApi, store: ViewerStore, playlists: list[str], people: Sequence[Person]) -> str | None:
@@ -571,17 +571,15 @@ def _add_people(
     return first
 
 
-def _renamed(kodi: KodiApi, viewers: list[Viewer], current: Viewer, new: str) -> list[Viewer] | None:
-    # A viewer the service linked meanwhile carries CrossWatch's name now, and the service
-    # would rename it back.
+def _renamed(viewers: list[Viewer], current: Viewer, new: str) -> list[Viewer] | None:
+    """The rename applied, or None when the service linked the viewer meanwhile: its name is
+    CrossWatch's now, and the service would rename it back. Raises validate_name's
+    ValueError: checked against the list as it is now, as the service may have taken the
+    name meanwhile."""
     if current.person_id:
+        _log.info("config.edit_dropped", count=1, reason="linked")
         return None
-    try:
-        # Against the list as it is now: the service may have taken the name meanwhile.
-        validate_name(new, viewers, own=current.name)
-    except ValueError as exc:
-        _refused(kodi, exc)
-        return None
+    validate_name(new, viewers, own=current.name)
     return rename_viewer(viewers, current.name, new)
 
 
@@ -627,9 +625,13 @@ def _act(
         new = _ask_name(kodi, viewers, viewer.name)
         if new is None or new == viewer.name:
             return viewer.name
-        done = _update(store, viewer, lambda vs, cur: _renamed(kodi, vs, cur, new))
-        if done is None:
+        try:
+            done = _update(store, viewer, lambda vs, cur: _renamed(vs, cur, new))
+        except ValueError as exc:
+            _refused(kodi, exc)
             return viewer.name
+        if done is None:
+            return ""
         _log.info("config.viewer_renamed", answers=memory.rename_viewer(done.viewer.name, new))
         return new
     if result.action == "remove":

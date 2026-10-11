@@ -1076,9 +1076,27 @@ def test_a_rename_of_a_viewer_the_service_linked_meanwhile_is_dropped(tmp_path):
     def service():
         store.save([Viewer(name="bob", person_id="p2")])
 
+    from resources.lib import log as logmod
+
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda message, level: captured.append(message))
     kodi = ServiceSavingKodi([], windows=[("rename", "bob"), ("close", "")], inputs=["rob"], service=service)
     run_dialog(kodi, store, memory)
     assert store.viewers() == [Viewer(name="bob", person_id="p2")]
+    assert kodi.windows_shown[1][1] == ""
+    assert any("config.edit_dropped" in line and "reason=linked" in line for line in captured)
+
+
+def test_a_rename_of_a_viewer_gone_meanwhile_is_dropped(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", person_id="p1"), Viewer(name="bob")])
+
+    def service():
+        store.save([Viewer(name="Anna", person_id="p1")])
+
+    kodi = ServiceSavingKodi([], windows=[("rename", "bob"), ("close", "")], inputs=["rob"], service=service)
+    run_dialog(kodi, store, memory)
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
+    assert kodi.windows_shown[1][1] == ""
 
 
 @pytest.mark.parametrize(
@@ -1122,3 +1140,5 @@ def test_a_picked_person_with_a_same_named_twin_does_not_link_the_viewer(tmp_pat
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "ANNA")))
     assert store.viewers() == [Viewer(name="anna")]
     assert kodi.pick_requests[1:] == []
+    # Refused as taken, not as a clash: the same name is already on screen, so no dialog.
+    assert kodi.ok_calls == []
