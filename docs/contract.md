@@ -1,6 +1,6 @@
 # Kodi add-on contract
 
-Version 1.5. Draft.
+Version 1.6. Draft.
 
 ## The idea
 
@@ -206,10 +206,32 @@ Live TV and recordings are out of scope. `Player.GetProperties` has a `live` pro
 Each Kodi route checks `viewers` against its own whitelist. If it matches, that route gets the event once, as that viewer.
 
 - `["anna", "tom"]` goes to Anna's route and Tom's route. Once each.
-- Routes without a whitelist get everything.
-- Empty `viewers` only goes to routes without a whitelist.
+- Routes without a whitelist and without a user profile get everything.
+- Empty `viewers` only goes to routes without a whitelist and without a user profile.
 
 The `ping` sends all viewer names set up in the add-on. CrossWatch keeps them and shows them in the user picker.
+
+### People
+
+A route can be assigned to a CrossWatch user profile. For a Kodi route that profile's name then works as the whitelist, so nobody has to type the name twice.
+
+- A route with a profile and no whitelist takes the viewer whose name matches the profile's name. Nobody else, and never an event without a viewer.
+- A whitelist, when set, wins. The profile name is then not used.
+- Names are compared loosely, like whitelists: case, spaces and punctuation do not matter. `anna b` matches `Anna B.`.
+- `viewers` still carries names. Nothing changes in the events.
+
+The `ping` reply lists the people: every user profile that has a route on this Kodi instance.
+
+```json
+"people": [
+  { "id": "p-anna", "name": "Anna" },
+  { "id": "p-ben", "name": "Ben" }
+]
+```
+
+- Offer these names when the user adds a viewer. Typing a name stays possible for setups without profiles.
+- Keep the `id` with the viewer. When a profile is renamed in CrossWatch, the next `ping` reply has the new `name` under the same `id`, and the add-on takes it over.
+- `people` is empty when no route on this instance has a profile.
 
 ## Ratings
 
@@ -339,9 +361,15 @@ A `ping` also tells which routes each viewer hits. Handy for a Test connection b
   "routes": [
     { "id": "R1", "sink": "trakt", "label": "Trakt Anna", "viewers": ["anna"] },
     { "id": "R2", "sink": "trakt", "label": "Trakt Tom", "viewers": ["tom"] }
+  ],
+  "people": [
+    { "id": "p-anna", "name": "Anna" },
+    { "id": "p-tom", "name": "Tom" }
   ]
 }
 ```
+
+`people` is explained under Viewers. An older CrossWatch does not send it.
 
 ## Versions
 
