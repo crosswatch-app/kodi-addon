@@ -248,6 +248,7 @@ def test_the_icons_are_64_pixel_rgba_pngs():
 
 VIEWERS = SKIN / "1080i" / "crosswatch-viewers.xml"
 NOT_EMPTY = "!String.IsEqual(Window.Property(CW.Empty),true)"
+NOT_LINKED = "!String.IsEqual(Container(100).ListItem.Property(linked),true)"
 
 
 def _nav(control: ET.Element, key: str) -> list[tuple[str | None, str]]:
@@ -320,8 +321,16 @@ def test_the_viewers_actions_hide_with_no_viewers_and_add_viewer_never_does():
     for control_id, string_id in labels.items():
         control = _viewers_control(control_id)
         assert control.findtext("label") == f"$ADDON[{ADDON_ID} {string_id}]"
-        assert control.findtext("visible") == (NOT_EMPTY if control_id in ("10", "11", "12", "13") else None)
+        expected = [NOT_EMPTY] if control_id in ("10", "11", "12", "13") else []
+        if control_id == "12":
+            expected.append(NOT_LINKED)
+        assert [v.text for v in control.findall("visible")] == expected
     assert ET.parse(VIEWERS).getroot().findtext("defaultcontrol") == "21"
+
+
+def test_rename_hides_for_a_viewer_whose_name_comes_from_crosswatch():
+    visible = [v.text for v in _viewers_control("12").findall("visible")]
+    assert NOT_LINKED in visible and NOT_EMPTY in visible
 
 
 def test_the_empty_viewers_list_says_so_in_translatable_text():

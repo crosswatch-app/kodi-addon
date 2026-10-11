@@ -27,6 +27,8 @@ class ViewerRow:
     lines: tuple[PanelLine, ...] = ()
     # "" when CrossWatch made no claim about this name: unpaired, not asked yet, no reply.
     route: str = ""
+    # The name belongs to a CrossWatch person, so renaming it here would only be undone.
+    linked: bool = False
 
     @property
     def warn(self) -> bool:
@@ -56,6 +58,7 @@ def properties(row: ViewerRow, request: ViewersRequest) -> dict[str, str]:
     props = {
         "warn": "true" if row.warn else "",
         "route": row.route,
+        "linked": "true" if row.linked else "",
         "route_text": route_text.get(row.route, ""),
     }
     return props | panel.slot_properties(row.lines, request.more, PANEL_SLOTS)

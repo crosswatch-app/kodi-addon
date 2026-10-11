@@ -345,6 +345,8 @@ class ViewersDialog(CrossWatchDialog):
         if controlId == VIEWERS_ROWS:
             # The row has no action of its own; OK there means "go to the actions".
             self.setFocusId(BUTTON_PLAYLISTS)
+        elif controlId == BUTTON_RENAME and self._selected_row_linked():
+            return
         elif action and self._request.rows:
             self.finish(action, vw.ViewersResult(action, self._selected()))
         elif controlId == BUTTON_ADD:
@@ -352,12 +354,20 @@ class ViewersDialog(CrossWatchDialog):
         elif controlId == BUTTON_VIEWERS_CLOSE:
             self.finish("close", vw.ViewersResult("close", self._selected()))
 
-    def _selected(self) -> str:
+    def _selected_row(self) -> vw.ViewerRow | None:
         rows = self._request.rows
         if not rows:
-            return ""
+            return None
         control: Any = self.getControl(VIEWERS_ROWS)
-        return rows[min(max(int(control.getSelectedPosition()), 0), len(rows) - 1)].key
+        return rows[min(max(int(control.getSelectedPosition()), 0), len(rows) - 1)]
+
+    def _selected(self) -> str:
+        row = self._selected_row()
+        return row.key if row else ""
+
+    def _selected_row_linked(self) -> bool:
+        row = self._selected_row()
+        return bool(row and row.linked)
 
 
 LIST_XML = "crosswatch-list.xml"

@@ -860,3 +860,18 @@ def test_skip_and_back_send_nothing():
     other.onInit()
     other.onAction(Action(92))
     assert other.result is None and other.close_reason == "back"
+
+
+def test_rename_on_a_linked_viewer_does_nothing_and_other_actions_still_act():
+    rows = (ViewerRow("anna"), ViewerRow("bob", linked=True))
+    dialog, grid = _viewers(rows=rows)
+    dialog.onInit()
+    grid.position = 1
+    dialog.onClick(BUTTON_RENAME)  # hidden in the skin, but a stray click must not rename
+    assert dialog.result is None and dialog.closed == 0
+    dialog.onClick(BUTTON_REMOVE)
+    assert dialog.result == ViewersResult("remove", "bob")
+    unlinked, grid = _viewers(rows=rows)
+    unlinked.onInit()
+    unlinked.onClick(BUTTON_RENAME)
+    assert unlinked.result == ViewersResult("rename", "anna")

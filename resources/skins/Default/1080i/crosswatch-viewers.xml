@@ -674,6 +674,8 @@
                     <texturenofocus border="16">crosswatch/box.png</texturenofocus>
                     <texturefocus border="16">crosswatch/box_focus.png</texturefocus>
                     <visible>!String.IsEqual(Window.Property(CW.Empty),true)</visible>
+                    <!-- Kodi ANDs visible tags. A viewer named by CrossWatch is renamed there. -->
+                    <visible>!String.IsEqual(Container(100).ListItem.Property(linked),true)</visible>
                     <onup>100</onup>
                 </control>
                 <control type="button" id="13">
