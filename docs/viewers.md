@@ -26,7 +26,11 @@ cannot be mistyped, and it follows a rename in CrossWatch.
 ![Adding viewers from CrossWatch](screenshots/viewers/people-picker.png)
 
 1. Select "Add viewer" (with no viewers yet, the list opens straight away).
-2. Tick everyone you want to add with OK, then press Done. Each ticked person becomes a viewer.
+2. Tick everyone you want to add with OK, then press Done. Each ticked person becomes a viewer,
+   except one whose name CrossWatch would confuse with a viewer you typed earlier: the add-on
+   says "CrossWatch treats this name as the same as `<name>`. Choose another name." and skips
+   that person. A person whose name is already a viewer's, apart from case, is skipped without
+   a message; that viewer is linked to them at the add-on's next check-in.
 3. For each new viewer in turn, tick their playlists and press Done, or press Cancel to keep that
    viewer without playlists.
 

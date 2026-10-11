@@ -825,8 +825,17 @@ def test_a_fresh_install_is_offered_the_people_too(tmp_path):
     assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
 
 
-def test_a_picked_person_loosely_equal_to_an_unlinked_viewer_is_not_added(tmp_path):
+def test_a_picked_person_loosely_equal_to_an_unlinked_viewer_is_explained_and_not_added(tmp_path):
     store, memory = _stores(tmp_path, [Viewer(name="annab")])
     kodi = ScriptedKodi([], windows=[("add", "annab"), ("close", "")], picks=[["p1"]])
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna B.")))
     assert store.viewers() == [Viewer(name="annab")] and kodi.windows_shown[1][1] == "annab"
+    assert kodi.ok_calls == [(f"#{NOTIFY_HEADING}", f"#{VIEWERS_NAME_CLASH}")]
+
+
+def test_a_refused_pick_does_not_stop_the_others(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="annab")])
+    kodi = ScriptedKodi([], windows=[("add", "annab"), ("close", "")], picks=[["p1", "p2"], None])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna B."), Person("p2", "Ben")))
+    assert store.viewers() == [Viewer(name="annab"), Viewer(name="Ben", person_id="p2")]
+    assert kodi.ok_calls[0] == (f"#{NOTIFY_HEADING}", f"#{VIEWERS_NAME_CLASH}")

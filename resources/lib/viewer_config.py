@@ -389,17 +389,19 @@ def _edit_profiles(
     return result.keys
 
 
+def _refused(kodi: KodiApi, exc: ValueError) -> None:
+    _log.info("config.name_rejected", reason=str(exc))
+    # A clash is told, unlike a plain duplicate: the two names look different, so a silent
+    # refusal would read as the input having been lost.
+    if isinstance(exc, NameClash):
+        kodi.ok(_text(kodi, NOTIFY_HEADING), _text(kodi, VIEWERS_NAME_CLASH, exc.existing))
+
+
 def _ask_name(kodi: KodiApi, viewers: list[Viewer], current: str = "") -> str | None:
     try:
         return validate_name(kodi.text_input(_text(kodi, VIEWERS_NAME_PROMPT), current), viewers, own=current or None)
-    except NameClash as exc:
-        _log.info("config.name_rejected", reason=str(exc))
-        # Told, unlike a plain duplicate: the two names look different, so a silent refusal
-        # would read as the keyboard having lost the input.
-        kodi.ok(_text(kodi, NOTIFY_HEADING), _text(kodi, VIEWERS_NAME_CLASH, exc.existing))
-        return None
     except ValueError as exc:
-        _log.info("config.name_rejected", reason=str(exc))
+        _refused(kodi, exc)
         return None
 
 
@@ -452,7 +454,7 @@ def _add_viewer(
         try:
             name = validate_name(person.name, viewers, picked=True)
         except ValueError as exc:
-            _log.info("config.name_rejected", reason=str(exc))
+            _refused(kodi, exc)
             continue
         # Saved before the playlist step, so Back there keeps the person added.
         viewers = [*viewers, Viewer(name=name, person_id=person.id)]
