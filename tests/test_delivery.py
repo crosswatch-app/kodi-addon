@@ -1,12 +1,13 @@
 import threading
 
 from resources.lib.config import KEY_STATUS, Settings
-from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED
+from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED, VIEWER_RENAMED_HEADING
+from resources.lib.models import Viewer
 from resources.lib.outbox import Outbox, config_fingerprint
 from resources.lib.reporter import HttpReporter, LogReporter
-from resources.lib.routes import RouteFacts
+from resources.lib.routes import Person, RouteFacts
 from resources.lib.service.delivery import Delivery
-from resources.lib.storage import RouteStore
+from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 from tests.fakes import FakeKodi
 
 URL = "http://nas:8787/webhook/kodiwatcher"
@@ -149,3 +150,72 @@ def test_route_facts_from_a_replaced_connection_are_ignored(tmp_path):
     delivery.publish_status()
     assert store.load(config_fingerprint("tok")) is None
     assert store.load(config_fingerprint("new")) is None
+
+
+def _people_delivery(tmp_path, viewers):
+    kodi = FakeKodi()
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save(viewers)
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    delivery = Delivery(
+        kodi, str(tmp_path / "outbox.json"), threading.Event(),
+        routes=RouteStore(str(tmp_path / "routes.json")), viewers=store, memory=memory,
+    )
+    sink, lane = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter) and sink._on_routes is not None and lane is not None
+    return kodi, delivery, sink._on_routes, lane, store, memory
+
+
+def _facts(*people):
+    return RouteFacts(1, frozenset(), frozenset(), tuple(people))
+
+
+def test_a_ping_with_people_renames_the_viewer_everywhere(tmp_path):
+    linked = [Viewer(name="Anna", person_id="p1")]
+    kodi, delivery, on_routes, lane, store, memory = _people_delivery(tmp_path, linked)
+    memory.remember("show:tvdb:1", ("Anna",))
+    lane.store.add({"event": "stop", "event_id": "e1", "viewers": ["Anna"]}, "stop")
+    on_routes(_facts(Person("p1", "Anna B.")))
+    delivery.publish_status()
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1")]
+    remembered = memory.recall("show:tvdb:1")
+    assert remembered is not None and remembered.viewers == ("Anna B.",)
+    assert lane.store._entries[0].body["viewers"] == ["Anna B."]
+    assert kodi.notifications == [(f"#{VIEWER_RENAMED_HEADING}", "Anna B.")]
+
+
+def test_a_ping_with_people_links_a_typed_viewer_without_a_toast(tmp_path):
+    kodi, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, [Viewer(name="Anna")])
+    on_routes(_facts(Person("p1", "Anna")))
+    delivery.publish_status()
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
+    assert kodi.notifications == []
+
+
+def test_a_viewer_linked_on_a_loose_match_takes_crosswatchs_spelling_once(tmp_path):
+    kodi, delivery, on_routes, lane, store, memory = _people_delivery(tmp_path, [Viewer(name="anna-lee")])
+    memory.remember("show:tvdb:1", ("anna-lee",))
+    lane.store.add({"event": "stop", "event_id": "e1", "viewers": ["anna-lee"]}, "stop")
+    for _ in range(2):
+        on_routes(_facts(Person("p1", "Anna Lee")))
+        delivery.publish_status()
+    assert store.viewers() == [Viewer(name="Anna Lee", person_id="p1")]
+    remembered = memory.recall("show:tvdb:1")
+    assert remembered is not None and remembered.viewers == ("Anna Lee",)
+    assert lane.store._entries[0].body["viewers"] == ["Anna Lee"]
+    assert len(kodi.notifications) == 1
+
+
+def test_a_ping_without_people_changes_no_viewer(tmp_path):
+    _, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, [Viewer(name="anna")])
+    on_routes(RouteFacts(1, frozenset(), frozenset()))
+    delivery.publish_status()
+    assert store.viewers() == [Viewer(name="anna")]
+
+
+def test_people_from_a_replaced_connection_change_nothing(tmp_path):
+    _, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, [Viewer(name="Anna", person_id="p1")])
+    delivery.build(_settings(token="new"))
+    on_routes(_facts(Person("p1", "Someone else")))
+    delivery.publish_status()
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]

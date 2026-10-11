@@ -56,3 +56,9 @@ def test_the_window_starts_on_the_key_or_the_first_row():
     assert start_position(rows, "dan") == 0
     assert start_position(rows, "") == 0
     assert start_position((), "anna") == 0
+
+
+def test_a_linked_row_says_so_in_its_properties():
+    linked = ViewerRow("Anna", linked=True)
+    assert properties(linked, _request([linked]))["linked"] == "true"
+    assert properties(ViewerRow("Bob"), _request())["linked"] == ""

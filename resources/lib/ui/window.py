@@ -345,6 +345,8 @@ class ViewersDialog(CrossWatchDialog):
         if controlId == VIEWERS_ROWS:
             # The row has no action of its own; OK there means "go to the actions".
             self.setFocusId(BUTTON_PLAYLISTS)
+        elif controlId == BUTTON_RENAME and self._selected_row_linked():
+            return
         elif action and self._request.rows:
             self.finish(action, vw.ViewersResult(action, self._selected()))
         elif controlId == BUTTON_ADD:
@@ -352,12 +354,20 @@ class ViewersDialog(CrossWatchDialog):
         elif controlId == BUTTON_VIEWERS_CLOSE:
             self.finish("close", vw.ViewersResult("close", self._selected()))
 
-    def _selected(self) -> str:
+    def _selected_row(self) -> vw.ViewerRow | None:
         rows = self._request.rows
         if not rows:
-            return ""
+            return None
         control: Any = self.getControl(VIEWERS_ROWS)
-        return rows[min(max(int(control.getSelectedPosition()), 0), len(rows) - 1)].key
+        return rows[min(max(int(control.getSelectedPosition()), 0), len(rows) - 1)]
+
+    def _selected(self) -> str:
+        row = self._selected_row()
+        return row.key if row else ""
+
+    def _selected_row_linked(self) -> bool:
+        row = self._selected_row()
+        return bool(row and row.linked)
 
 
 LIST_XML = "crosswatch-list.xml"
@@ -368,6 +378,7 @@ LIST_ROWS = 100
 BUTTON_BULK = 20
 BUTTON_CLOSE = 21
 BUTTON_PICK_DONE = 22
+BUTTON_PICK_EXTRA = 23
 
 
 class ListDialog(CrossWatchDialog):
@@ -477,6 +488,7 @@ class PickListDialog(ListDialog):
         super().prepare(request, state, localised)
         self._ticked = frozenset(request.ticked)
         self._window_properties["CW.Close"] = localised(WINDOW_CANCEL)
+        self._window_properties["CW.Extra"] = request.extra
 
     def onClick(self, controlId: int) -> None:
         if controlId == LIST_ROWS:
@@ -490,6 +502,9 @@ class PickListDialog(ListDialog):
         elif controlId == BUTTON_PICK_DONE:
             keys = lw.picked(self._request.rows, self._ticked)
             self.finish("done", lw.ListResult("done", self.state(), keys=keys))
+        elif controlId == BUTTON_PICK_EXTRA and self._request.extra:
+            keys = lw.picked(self._request.rows, self._ticked)
+            self.finish("extra", lw.ListResult("extra", self.state(), keys=keys))
         else:
             super().onClick(controlId)
 

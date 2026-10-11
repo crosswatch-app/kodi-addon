@@ -246,3 +246,20 @@ def test_log_lines_carry_no_names_or_titles(tmp_path, clocks, lines):
     outbox.refused("e-1")
     assert lines
     assert not any("anna" in line or "Example Show" in line for line in lines)
+
+
+def test_a_renamed_viewer_is_renamed_in_kept_watches(tmp_path, clocks):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add({"event": "stop", "event_id": "e1", "viewers": ["Anna", "ben"]}, "stop")
+    outbox.add({"event": "rate", "event_id": "e2", "viewers": ["ben"]}, "rate")
+    assert outbox.rename_viewer("Anna", "Anna B.") == 1
+    reloaded = _outbox(tmp_path, clocks)
+    assert reloaded.next_due() is not None
+    assert [e.body["viewers"] for e in reloaded._entries] == [["Anna B.", "ben"], ["ben"]]
+
+
+def test_renaming_nobody_writes_nothing(tmp_path, clocks, monkeypatch):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add({"event": "stop", "event_id": "e1", "viewers": ["ben"]}, "stop")
+    monkeypatch.setattr(outbox, "_save", lambda: pytest.fail("saved"))
+    assert outbox.rename_viewer("Anna", "Anna B.") == 0

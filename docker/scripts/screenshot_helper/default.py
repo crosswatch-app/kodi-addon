@@ -85,6 +85,9 @@ def _list(scene: dict, path: str) -> None:
     if scene.get("rows") == "profiles":
         _profiles(scene, path)
         return
+    if scene.get("rows") == "people":
+        _people(scene, path)
+        return
     raise ValueError(f"unknown list scene rows: {scene.get('rows')}")
 
 
@@ -156,6 +159,25 @@ def _profiles(scene: dict, path: str) -> None:
         dialog.stop()
 
 
+def _people(scene: dict, path: str) -> None:
+    from resources.lib.ui import list_window as lw
+
+    text = TARGET.getLocalizedString
+    request = lw.ListRequest(
+        heading=text(30154),
+        rows=(lw.ListRow("p1", "Anna"), lw.ListRow("p2", "Ben"), lw.ListRow("p3", "Chloe")),
+        count_one=text(30156),
+        count_all=text(30157),
+        extra=text(30155),
+    )
+    dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
+    dialog.prepare(request, lw.ListState(search=scene["search"]), text)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
 def _split(scene: dict, path: str) -> None:
     from resources.lib.ui import viewers_window as vw
     from resources.lib.ui.panel import PanelLine
@@ -164,9 +186,11 @@ def _split(scene: dict, path: str) -> None:
     heads = (PanelLine(text(30107), heading=True), PanelLine(text(30108), heading=True))
     missing, none = text(30058), PanelLine(text(30113))
 
-    def row(name, playlists, profiles=(), route=""):
-        lines = (heads[0], *(playlists or (none,)), heads[1], *(profiles or (none,)))
-        return vw.ViewerRow(name, lines, route)
+    def row(name, playlists, profiles=(), route="", linked=False):
+        # A linked viewer's panel opens with the name-from-CrossWatch line, as panel_lines builds it.
+        top = (PanelLine(text(30158)),) if linked else ()
+        lines = (*top, heads[0], *(playlists or (none,)), heads[1], *(profiles or (none,)))
+        return vw.ViewerRow(name, lines, route, linked)
 
     def line(name, tag=""):
         return PanelLine(name, tag=tag, warn=bool(tag))
@@ -174,7 +198,7 @@ def _split(scene: dict, path: str) -> None:
     easytv = ("All Shows", "Continue Watching", "Season Premieres", "Show Premieres", "Start Fresh", "Cartoons for the weekend")
     households = {
         "household": (
-            row("Anna", (line("Anna's shows"), line("Cartoons")), (line("Master user"),), vw.ROUTE_ACCEPTED),
+            row("Anna", (line("Anna's shows"), line("Cartoons")), (line("Master user"),), vw.ROUTE_ACCEPTED, linked=True),
             row("Ben", (line("Ben TV"), line("Old list", missing)), (), vw.ROUTE_REFUSED),
             row("Chloe", (line("Episodes", text(30122)),), (line("Kids"),)),
         ),

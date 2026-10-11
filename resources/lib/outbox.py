@@ -164,6 +164,22 @@ class Outbox:
         if self._remove(event_id):
             _log.warning("reporter.outbox_refused", pending=self.pending())
 
+    def rename_viewer(self, old: str, new: str) -> int:
+        """Carry a renamed viewer into kept watches, so a replay still names a route CrossWatch has.
+
+        Returns how many entries changed; the file is written once, and only when some did.
+        """
+        with self._lock:
+            changed = 0
+            for entry in self._entries:
+                names = entry.body.get("viewers")
+                if isinstance(names, list) and old in names:
+                    entry.body["viewers"] = [new if n == old else n for n in names]
+                    changed += 1
+            if changed:
+                self._save()
+            return changed
+
     def pending(self) -> int:
         with self._lock:
             return len(self._entries)
