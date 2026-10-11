@@ -22,7 +22,7 @@ _log = get_logger("config")
 WEBHOOK_PATH = "/webhook/kodiwatcher"
 PAIR_PATH = f"{WEBHOOK_PATH}/pair"
 
-Outcome = Literal["paired", "invalid_code", "rate_limited", "unreachable", "certificate", "disabled", "failed"]
+Outcome = Literal["paired", "invalid_code", "rate_limited", "unreachable", "certificate", "failed"]
 
 
 @dataclass(frozen=True)
@@ -123,10 +123,7 @@ def _verdict(status: int, raw: bytes) -> PairResult:
     if not isinstance(parsed, dict) or parsed.get("ok") is not True:
         return PairResult("failed", status=status)
     if parsed.get("ignored") is True:
-        # CrossWatch answers 200 when it is not taking add-on traffic at all; only the error
-        # field tells the household which switch to flip.
-        outcome: Outcome = "disabled" if parsed.get("error") == "addon_disabled" else "failed"
-        return PairResult(outcome, status=status)
+        return PairResult("failed", status=status)
     token = parsed.get("token")
     instance = parsed.get("instance")
     if not isinstance(token, str) or not token.strip():

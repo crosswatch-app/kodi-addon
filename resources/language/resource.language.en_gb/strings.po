@@ -160,7 +160,7 @@ msgid "Code wrong or expired. Get a new code in CrossWatch."
 msgstr ""
 
 msgctxt "#30067"
-msgid "Too many tries. Wait a minute and try again."
+msgid "Too many tries. Wait a few minutes and try again."
 msgstr ""
 
 msgctxt "#30068"
@@ -189,10 +189,6 @@ msgstr ""
 
 msgctxt "#30075"
 msgid "Disconnect this Kodi from CrossWatch? It stops reporting until you pair again."
-msgstr ""
-
-msgctxt "#30076"
-msgid "The Kodi add-on is switched off in CrossWatch. Turn it on there, then pair again."
 msgstr ""
 
 msgctxt "#30077"
