@@ -1,130 +1,114 @@
 # Troubleshooting
 
-Problems listed by what you see, with what to check.
+Problems listed by what you see. Several checks point at Kodi's log; [Logs](#logs) says where it
+is and what the add-on writes there.
 
 ## Nothing arrives in CrossWatch
 
-- Check the Status line: "Not paired" means pair again. "Paired with ..." only means CrossWatch
-  answered at some point (see [The Status line](connect.md#the-status-line)); check Kodi's log
-  for `reporter.failed` (CrossWatch could not be reached) or `reporter.rejected` with `status=401`
-  (the token was refused: pair again).
-- Check CrossWatch is reachable at the paired address.
-- Check the Kodi add-on is switched on for this Kodi in CrossWatch. While it is off,
-  CrossWatch offers no pairing code, and a code from before is refused as "Code wrong or
-  expired". Switching it off after pairing discards this Kodi's token: nothing shows in Kodi,
-  and the log shows `reporter.rejected` with `status=401`. Turn it on in CrossWatch and pair
-  again. Completed watches still waiting for delivery are then dropped, because the token
-  changed.
-- Only episodes and films with an id are reported, from Kodi's library or from an add-on that
-  supplies the ids; see [What the add-on sends](what-is-sent.md).
-- When CrossWatch was down, only completed watches are sent later; everything else is dropped
-  after two minutes (see [When CrossWatch cannot be
-  reached](what-is-sent.md#when-crosswatch-cannot-be-reached)).
-- PlexKodiConnect playback is skipped by default; see "Skip PlexKodiConnect playback" in
-  [Settings](settings.md#viewers).
-- Using `https://`: the certificate must come from a public certificate authority. A
-  certificate problem shows its own message when pairing; after pairing, Kodi's log
-  shows `reporter.failed` with `CERTIFICATE_VERIFY_FAILED`, repeated while the add-on retries
-  for two minutes.
+1. **Status line.** "Not paired" means the add-on has no connection: [pair](connect.md#pairing).
+   "Paired with ..." only means CrossWatch answered at some point, so go on.
+2. **Kodi's log.** `reporter.failed` means CrossWatch could not be reached: check that it runs
+   and that Kodi can reach the paired address. With `CERTIFICATE_VERIFY_FAILED` in it, the
+   `https://` certificate is not trusted; it must come from a public authority such as Let's
+   Encrypt. `reporter.rejected` with `status=401` means CrossWatch refused the token: pair again.
+3. **The Kodi add-on in CrossWatch.** It must be switched on for this Kodi instance. Switching it
+   off throws away this Kodi's token without any sign in Kodi; turn it back on and pair again.
+4. **What you played.** Only episodes and films with a real id (TMDb, TVDb, IMDb and the like)
+   are reported, and PlexKodiConnect playback is skipped by default. See
+   [What the add-on sends](what-is-sent.md).
+5. **An outage.** While CrossWatch was down, only finished watches were kept for later; the rest
+   was dropped after two minutes. See
+   [When CrossWatch cannot be reached](what-is-sent.md#when-crosswatch-cannot-be-reached).
+
+Pairing again after a token change drops finished watches still waiting for delivery, because
+they belong to the old token.
 
 ## Playback arrives under nobody, or under the wrong person
 
-- Check the viewer's name is the same name as in that person's route "Username whitelist"
-  (CrossWatch ignores case and punctuation).
-- Check the viewer has a playlist or Kodi profile configured (or, with two or more viewers,
-  that the question at the end was answered).
-- Check whether a playback-driven playlist (such as "Continue Watching") is attributing it to
-  the wrong person; see [Smart playlists](who-watched.md#smart-playlists).
-- Check the [Remembered answers](remembered-answers.md) screen for a show shown as "Covered by"
-  a playlist. Such a show is decided by that playlist and its remembered answer is not used, so
-  if the wrong person is credited, fix the playlist.
+- The viewer's name must match the name in that person's route "Username whitelist" (case and
+  punctuation do not matter). A viewer showing "No CrossWatch route" is the giveaway; see
+  [below](#a-viewer-shows-no-crosswatch-route).
+- With two or more viewers, someone has to be named: by a playlist, a profile, or an answer to
+  the question at the end. A skipped question sends the watch with no viewer.
+- A playlist that changes with playback, such as "Continue Watching", credits whoever owns it;
+  see [Smart playlists](who-watched.md#smart-playlists).
+- A playlist wins over a remembered answer. In [Remembered answers](remembered-answers.md), a
+  show marked "Covered by" is decided by that playlist, so fix the playlist rather than the
+  answer.
 
 ## The who-watched question never appears
 
-See [The question at the end](who-watched.md#the-question-at-the-end) for the cases where it is
-not asked.
+It is skipped on purpose in several cases, such as a single viewer, playback stopped in the
+first three minutes, or autoplay moving on to the next episode. See the list under
+[The question at the end](who-watched.md#the-question-at-the-end).
 
-## A playlist shows as missing
-
-The playlist was renamed or deleted, or the place it is stored is unavailable. Open that
-viewer's "Playlists" ([Viewers](viewers.md)), untick the one tagged "missing", tick its
-replacement and press Done.
-
-## A profile shows as missing
-
-The Kodi profile was renamed or deleted. Open that viewer's "Profiles", untick it, tick the
-right one and press Done.
+It is also not asked for a show with a remembered answer; check
+[Remembered answers](remembered-answers.md).
 
 ## A viewer shows "No CrossWatch route"
 
-No CrossWatch route accepts that viewer's name, so their playback has nowhere to go. Check, in
-order:
+No route in CrossWatch accepts this viewer's name, so their playback goes nowhere. Check:
 
-1. The name in the route's username whitelist against the viewer's name. They must be the
-   same name; CrossWatch ignores upper and lower case and punctuation when comparing.
-2. That the person has a route in CrossWatch at all. If not, create one with their name in its
-   username whitelist.
-3. Whether the viewer was just renamed. The whitelist may still have the old name: change it
-   to the new one.
+1. that the person has a Kodi watcher route in CrossWatch at all.
+2. that the route's "Username whitelist" holds the viewer's name. Case and punctuation do not
+   matter; anything else does.
+3. if you just renamed the viewer, that the whitelist has the new name.
 
-A route with an empty whitelist accepts every viewer, unless a CrossWatch profile is set on
-that route. Until CrossWatch has answered for that name (just after pairing, or right after
-adding or renaming a viewer), the line is left out entirely rather than showing "No CrossWatch
-route". The line can take a moment to change: it updates when CrossWatch answers the add-on's
-next check-in (every five minutes, and straight away when the viewer names change).
+The line updates at the add-on's next check-in, within five minutes (at once after adding or
+renaming a viewer).
+
+## A playlist or profile shows as missing
+
+The playlist or Kodi profile was renamed or deleted. Open that viewer's "Playlists" or
+"Profiles", untick the entry tagged "missing", tick the right one and press Done. While a
+playlist is missing, none of that viewer's playlists count.
 
 ## A playlist shows as unusable
 
-The playlist is not a TV show or film playlist, so it can never credit anyone. It is not listed
-in the picker, so there is nothing to untick: open that viewer's "Playlists" and press Done to
-remove it, or change the playlist's type in Kodi to shows or films. The viewer's other
-playlists keep working in the meantime.
+The playlist is not a playlist of TV shows or films, so it never credits anyone. It does not
+appear in the picker, so there is nothing to untick: open that viewer's "Playlists" and press
+Done to remove it. Or change the playlist's type to TV shows or Movies in Kodi.
 
-If Kodi has no TV show or film smart playlists at all, the viewer's "Playlists" shows the "Kodi
-has no smart playlists of TV shows or films yet" message instead of the list, so Done is not
-available. In that case, make a TV show or film smart playlist ("Playlists" then opens, and
-Done removes the unusable one), change the unusable playlist's type in Kodi to shows or films,
-or remove the viewer and add them again. After making a TV show or film smart playlist, close
-the Viewers window and choose "Configure viewers and playlists" again, so it is listed.
+If Kodi has no TV show or film smart playlists at all, the picker does not open. Make one in
+Kodi first, then close the Viewers window and open it again.
 
 ## No rating question appears
 
-See [When it asks](rating.md#when-it-asks) for the cases where it is not asked. "Ask for a
-rating" is Off by default.
+"Ask for a rating" is Off by default. If it is on, see [When it asks](rating.md#when-it-asks)
+for the cases where it is skipped.
 
 ## Ratings do not arrive
 
-Look in Kodi's log for the line that matches:
+Look in Kodi's log for:
 
-- `reporter.rejected` with `reason=unsupported_event`: your CrossWatch is too old to accept
-  ratings. Update CrossWatch.
-- `reporter.rejected` with `reason=no_rating_target`: the routes that matched take no rating
-  of this kind, for example an episode rating sent to Simkl. See [Where ratings
-  go](rating.md#where-ratings-go).
-- `reporter.rejected` with `reason=no_matching_route`: no route accepts that viewer. Check the
-  viewer's name against the route's username whitelist, as for [a viewer with no CrossWatch
-  route](#a-viewer-shows-no-crosswatch-route).
-- `reporter.rated` with `failed=` above 0: a destination refused the write. CrossWatch's own
-  log has the reason.
+| Log line | Meaning |
+|---|---|
+| `reporter.rejected` with `reason=unsupported_event` | Your CrossWatch is too old for ratings. Update it. |
+| `reporter.rejected` with `reason=no_rating_target` | None of the matching routes takes this kind of rating, for example an episode rating for Simkl. See [Where ratings go](rating.md#where-ratings-go). |
+| `reporter.rejected` with `reason=no_matching_route` | No route accepts the viewer; see [No CrossWatch route](#a-viewer-shows-no-crosswatch-route). |
+| `reporter.rated` with `failed=` above 0 | A service refused the rating. CrossWatch's log has the reason. |
 
 ## Logs
 
-Normal lines (failures, refusals, check-ins) go to Kodi's own log, `kodi.log` (see the
-[Kodi wiki](https://kodi.wiki/view/Log_file) for where it is).
+The add-on's normal lines (failures, refusals, check-ins) go to Kodi's log, `kodi.log`. The
+[Kodi wiki](https://kodi.wiki/view/Log_file) says where to find it.
 
-The add-on's own file, `crosswatch.log`, is in the `logs` folder of the add-on's data folder
-(`userdata/addon_data/service.crosswatch/logs/`, or under `userdata/profiles/<profile>/`
-outside the master profile; see the [Kodi wiki](https://kodi.wiki/view/Userdata) for where
-`userdata` is). It is only written while "Enable debug logging (records viewing history to
-disk)" is on, and then holds every line including the detail. It is kept to 500 KB, with up to
-three older files (`crosswatch.1.log` to `crosswatch.3.log`). Times are in UTC.
+For more detail, switch on "Enable debug logging" in the [Advanced settings](settings.md#advanced).
+The add-on then also writes `crosswatch.log` in the `logs` folder of its data folder,
+`userdata/addon_data/service.crosswatch/logs/` (in another Kodi profile, under
+`userdata/profiles/<profile>/`; the [Kodi wiki](https://kodi.wiki/view/Userdata) says where
+`userdata` is). It is capped at 500 KB plus three older files, with times in UTC. Switch it off
+again when you are done, because it records titles and viewer names.
 
-The add-on never logs the webhook token or a pairing code. Its normal lines carry counts and
-the CrossWatch address, never viewer names or titles; debug lines carry titles and viewer
-names. Kodi's own debug logging (not the add-on's) records the one-time code a Link hands over,
-which is already used or expired by then.
+What the logs never contain: the webhook token and pairing codes. The normal lines in `kodi.log`
+carry no titles or viewer names either. One exception outside the add-on's control: with
+Kodi's own debug logging on, `kodi.log` records the one-time code that a [Link](connect.md#link-shortcut)
+hands over. It is used up by then.
 
 ## Getting help
 
 Open an issue at [crosswatch-app/kodi-addon](https://github.com/crosswatch-app/kodi-addon/issues).
-A Kodi forum thread will follow with the first release.
+Attach `kodi.log`, and `crosswatch.log` if you have one, but check them for anything you would
+rather not share first.
+
+A Kodi forum thread will follow with the first stable release.

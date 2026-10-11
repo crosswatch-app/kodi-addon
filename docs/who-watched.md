@@ -1,108 +1,88 @@
 # Who watched
 
-How the add-on decides who in the household watched something, in the order it checks.
+Kodi does not know who is on the sofa, so the add-on works it out for every playback. It tries
+the methods below in order and stops at the first that names somebody. You set them up per
+viewer in [Viewers](viewers.md).
 
-The add-on works out who was watching, first match wins:
+1. [Smart playlists](#smart-playlists): the show or film is in a viewer's playlist.
+2. [Kodi profile](#kodi-profile): the active Kodi profile belongs to a viewer.
+3. [The question at the end](#the-question-at-the-end): Kodi asks, and for a show remembers the
+   answer.
+
+If nothing names anyone, the playback is sent with no viewer, and only a CrossWatch route with
+an empty username whitelist accepts it.
 
 ## Smart playlists
 
-A show (for an episode) or a film is credited to every viewer whose playlist contains it.
-Playlists are video smart playlists from Kodi's playlists folder, of shows or of films;
-only playlists of TV shows or films are used. The playlist picker only offers playlists
-of shows or films. If a viewer already had a playlist of another type, it is not listed in
-the picker, and it stays in their list until you press Done, which removes it from that
-viewer (Cancel or Back leaves it). Until it is removed, the Viewers window still shows that
-playlist tagged "unusable". It never credits anyone and is simply ignored: the viewer's other
-playlists still count. Playlists of the wrong type are never offered to anyone.
+Give each person a smart playlist of TV shows or films that describes what they watch. An
+episode is credited to every viewer whose playlist contains its show; a film to every viewer
+whose playlist contains the film.
 
-- Works well: a fixed list of shows, or rules on genre, tag or similar show attributes.
-- Avoid playlists whose membership follows from playback itself, such as "Continue Watching"
-  or "In Progress" smart playlists (rules on in-progress, play count or last played). Playing
-  a show adds it to such a playlist, so the next episode is attributed to whoever owns it,
-  even if someone else watched it.
+- Works well: a fixed list of shows, or rules on genre, tag, studio and other things that do
+  not change when you watch.
+- Avoid playlists that change because of playback, such as "Continue Watching" or "In
+  Progress" (rules on in progress, play count or last played). Whoever owns that playlist gets
+  credited for the next episode of anything that was just played, whoever watched it.
 
-If a viewer's playlist cannot be read (it was deleted or renamed), the viewer list shows it
-as missing, Kodi shows a notification, and all of that viewer's playlists stop counting until
-it is fixed: that viewer falls through to profile matching and the end-of-playback question.
-Kodi shows the notification "Playlist could not be read, so viewer identification is reduced:
-`<playlist names>`".
+The add-on reads playlist membership in advance: every hour by default ("Playlist refresh
+interval", see [Settings](settings.md#advanced)), after a library scan or clean, and when you
+change viewers or settings. It never re-reads during playback, only while nothing plays or
+playback is paused. A show you add to a playlist counts from the next re-read.
 
-Playlist membership is read ahead of time, not at the moment of playback. It is re-read every
-"Playlist refresh interval" (hourly by default, see [Settings](settings.md#advanced)), after a
-video library scan or clean, and as soon as viewers or settings change; re-reading happens
-only while nothing is playing or playback is paused. A show added to a playlist counts from
-the next re-read.
+If a viewer's playlist cannot be read, for example because it was renamed or deleted, Kodi shows
+"Playlist could not be read, so viewer identification is reduced: `<playlist names>`". Until you
+fix it, none of that viewer's playlists count, and the add-on falls back to the profile and the
+question. See [What the warnings mean](viewers.md#what-the-warnings-mean).
 
 ## Kodi profile
 
-If the active Kodi profile is one of a viewer's profiles (the name match ignores case), that
-viewer is credited. Profiles are picked from Kodi's own list under the viewer's "Profiles"
-button (see [Viewers](viewers.md)).
+If the active Kodi profile is one of a viewer's profiles, that viewer is credited. This only
+helps in a household where each person switches to their own Kodi profile.
 
-!!! note
+!!! note "Set up the add-on in every profile"
 
-    The add-on keeps its connection, viewers and remembered answers per Kodi profile, as Kodi
-    keeps every add-on's data per profile. Each Kodi profile that should report playback needs
-    the add-on paired and its viewers set up in that profile.
+    Kodi keeps each add-on's settings per profile, so the add-on's connection, viewers and
+    remembered answers are separate in every Kodi profile. Pair the add-on and set up viewers
+    in each profile that should report playback.
 
 ## The question at the end
 
-When neither of the above answered, Kodi asks who watched when playback stops, never at the
-start, so it never delays playback.
-
-The question is a CrossWatch window headed "Who watched it?", not the skin's standard dialog.
-It shows the title of the show or film with its poster (if there is none, a placeholder in the
-CrossWatch colours reading "No poster"), plus "Season N, episode M" for an episode or the year
-for a film. Below that is an "Everyone" row, then each configured viewer; focus starts on
-Everyone.
+When neither playlists nor profile name anybody, Kodi asks who watched once playback stops.
+It never asks at the start, so playback is never held up.
 
 ![The who-watched window](screenshots/who-watched/who-watched-episode.png)
 
-- OK on a viewer ticks or unticks that viewer. You can tick more than one.
-- OK on Everyone ticks every viewer, or clears them all when all are already ticked.
-- Done, below the list, sends the watch with the ticked viewers.
-- Skip or Back sends the watch with no viewer. Nothing is remembered, so the question comes
-  back next time. Done with nobody ticked does the same.
+- Press OK on each person who watched; you can tick several. "Everyone" ticks them all (or
+  clears them all when all are ticked).
+- Press Done to send the watch with the people you ticked.
+- Skip, Back, or Done with nobody ticked sends it with no viewer. Nothing is remembered, so you
+  are asked again next time.
 
-A countdown in the corner ("Closes in N s") runs from 120 seconds; at zero the window closes
-as if you had skipped. It also closes straight away, as if skipped, when playback starts
-again while it is open. The stop is sent to CrossWatch once the question is answered or closes.
+The window closes by itself after two minutes, or when playback starts again, as if you had
+pressed Skip. The stop is sent to CrossWatch once the question is answered or closes.
 
-It is not asked:
+**For a show, the answer is remembered** and used for its later episodes, from the moment they
+start, so you are asked once per show. To see, change or forget these answers, use
+[Remembered answers](remembered-answers.md). For a film nothing is remembered.
 
-- with fewer than two viewers configured.
+The question is not asked:
+
+- with fewer than two viewers.
 - for a film, when "Ask who watched a film" is off.
-- when playback stopped before Kodi's "ignore at start" point (180 seconds into the item unless
-  changed in Kodi's advanced settings); this is the position where it stopped, not how long it
-  was watched.
-- while Kodi is shutting down.
-- while another dialog is already open.
-- when the next item starts playing right away (binge or autoplay); the one that just ended
-  is then sent with no viewer.
+- when playback stopped in the first three minutes of the item (Kodi's "ignore at start"
+  point, 180 seconds unless changed in Kodi's advanced settings). What counts is the position
+  where it stopped, not how long you watched.
+- when the next item starts straight away (binge watching or autoplay). The one that ended is
+  sent with no viewer.
+- while another dialog is open, or while Kodi is shutting down.
 
-For a show, the answer is remembered and reused for later episodes, including from the start
-of playback. For a film, nothing is remembered. [Remembered answers](remembered-answers.md)
-shows, changes and forgets them.
-
-After this question, a rating question can follow; see [Rating](rating.md).
-
-## Nobody resolved
-
-If no viewer is resolved by any of the above, the event is sent with no viewers. CrossWatch
-treats that as an unknown viewer. The exception is a household with exactly one viewer
-configured: that viewer is credited instead (see [One person in the
-household](#one-person-in-the-household)).
+If [rating](rating.md) is switched on, the rating question follows this one.
 
 ## One person in the household
 
-If you are the only person who watches, add yourself as the one viewer under "Configure viewers
-and playlists". The viewer's name must match the username in your CrossWatch route's whitelist.
-You do not need any playlists or Kodi profiles: with exactly one viewer configured, every
-playback (start, pause, progress and stop) is credited to you. The end-of-playback question is
-never asked when there is only one viewer. With two or more viewers nothing changes.
+Add yourself as the only viewer, with no playlists or profiles. With exactly one viewer,
+everything is credited to that viewer and no question is ever asked. The name must match the
+username in your CrossWatch route's whitelist.
 
-The event carries your name, so a route with your name in its username whitelist receives it,
-and so does a route with an empty whitelist.
-
-Configuring no viewers at all also still works, with a CrossWatch route that has an empty
-username whitelist. The events then carry no viewer.
+Having no viewers at all also works, if your CrossWatch route has an empty username whitelist:
+every playback is then sent with no viewer.

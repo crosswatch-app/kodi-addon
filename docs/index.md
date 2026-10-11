@@ -9,41 +9,34 @@ CrossWatch itself is set up.
 
 ## How it decides who watched
 
-Kodi cannot say who pressed play inside one profile, so the add-on works it out. It checks
-three things in order, and the first match wins:
+Kodi cannot tell who pressed play, so the add-on works it out, first match wins:
 
-1. Smart playlists: every viewer whose playlist contains the show or film.
-2. The active Kodi profile.
-3. A question at the end of playback; for a show, the answer is remembered.
+1. a smart playlist of a viewer contains the show or film;
+2. the active Kodi profile belongs to a viewer;
+3. otherwise Kodi asks when playback stops, and remembers the answer for a show.
 
-With only one viewer configured, everything is credited to that viewer and nothing is asked.
-
-See [Who watched](who-watched.md) for the details.
+With only one viewer, everything is credited to that viewer and nothing is asked. See
+[Who watched](who-watched.md).
 
 !!! warning "Beta"
 
-    This is a beta (1.0.0~beta2), installable from a GitHub release; see
-    [Install](install.md). It needs CrossWatch v0.13.3 or later, where Kodi add-on support is
-    marked experimental. Rating needs the CrossWatch release after v0.13.3.
-
-    It has been tested on Kodi 21.3 (Omega) against CrossWatch v0.13.3 and its development
-    builds, including pairing, Link, routing playback by viewer, replay after an outage, and
-    rating (against the development build). The add-on's windows were checked in Estuary and
-    Arctic Zephyr Mod; Kodi on Android and other skins have not been tested.
+    This is a beta (1.0.0~beta2), installed from a GitHub release; see [Install](install.md).
+    It has been tested on Kodi 21.3 (Omega) with the Estuary and Arctic Zephyr Mod skins.
+    Kodi on Android and other skins have not been tested yet.
 
 ## Requirements
 
 - Kodi 21 (Omega). Earlier versions are not supported; later versions have not been tested.
-- CrossWatch v0.13.3 or later, the first release with Kodi add-on support. Rating needs the
-  release after v0.13.3.
+- CrossWatch v0.13.3 or later, the first release with Kodi add-on support (marked
+  experimental there). Rating needs a newer release than v0.13.3.
 - Kodi able to reach CrossWatch over the network, for example both on the same home
   network. CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority, such as
   Let's Encrypt through a reverse proxy. Self-signed certificates are not supported. Type the
   address with `https://`; without a scheme, `http://` is assumed.
 
-Kodi's web server and JSON-RPC interface are not needed. The only thing that uses them is
-the optional [Link](connect.md#link-shortcut) shortcut.
+Kodi's web server and JSON-RPC interface are not needed; only the optional
+[Link](connect.md#link-shortcut) shortcut uses them.
 
 ## Where to go next
 
@@ -69,7 +62,7 @@ the optional [Link](connect.md#link-shortcut) shortcut.
 
     ---
 
-    Pair the add-on, check the Status line, unpair.
+    Pair the add-on with your CrossWatch.
 
     [:octicons-arrow-right-24: Connect to CrossWatch](connect.md)
 
@@ -85,7 +78,7 @@ the optional [Link](connect.md#link-shortcut) shortcut.
 
     ---
 
-    Add one viewer per person, with playlists or profiles.
+    One viewer per person, recognised by playlist or profile.
 
     [:octicons-arrow-right-24: Viewers](viewers.md)
 

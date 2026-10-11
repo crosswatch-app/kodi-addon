@@ -1,38 +1,40 @@
 # Settings
 
-Every add-on setting by category, with its default and what it does.
+Every add-on setting, with its default. Open them under Add-ons > My add-ons > Services >
+CrossWatch > Configure. Settings marked "Advanced level" only show after you switch Kodi's
+settings screen to the Advanced level.
 
 ## CrossWatch
 
 | Setting | Default | What it does |
 |---|---|---|
-| Pair with CrossWatch | | Starts pairing: enter the CrossWatch address, then the pairing code. |
-| Status | (read-only) | Shows "Paired with `<instance>` at `<address>`" or "Not paired". |
-| Unpair | | Disconnects this Kodi from CrossWatch. Shown while a webhook token is set (paired or manual). |
-| Webhook URL | (blank) | Advanced level. The full webhook address for a manual setup, such as `http://192.168.1.10:8787/webhook/kodiwatcher`. Pairing fills it in. |
-| Webhook token | (blank) | Advanced level. Manual webhook token, instead of pairing. |
-| Device id (blank to generate) | (blank) | Advanced level. Leave blank to have the add-on generate one. Takes effect after Kodi restarts. |
+| Pair with CrossWatch | | Connects this Kodi to CrossWatch with a pairing code. See [Pairing](connect.md#pairing). |
+| Status | | Read-only. "Paired with `<instance>` at `<address>`" or "Not paired". See [The Status line](connect.md#the-status-line). |
+| Unpair | | Disconnects this Kodi from CrossWatch. Only shown while connected. |
+| Webhook URL | blank | Advanced level. The CrossWatch endpoint, for a [manual setup](connect.md#manual-setup-advanced). Pairing fills it in. |
+| Webhook token | blank | Advanced level. The token, for a manual setup. Pairing fills it in. |
+| Device id (blank to generate) | blank | Advanced level. Identifies this Kodi to CrossWatch. Leave it blank and the add-on makes one. A change takes effect after Kodi restarts. |
 
-The device name sent to CrossWatch is Kodi's own device name (Settings > Services > General >
-Device name).
+The device name CrossWatch shows is Kodi's own, set under Settings > Services > General >
+Device name.
 
 ## Viewers
 
 | Setting | Default | What it does |
 |---|---|---|
-| Configure viewers and playlists | | Add, edit or remove viewers and their playlists or Kodi profiles. |
-| Remembered answers | | View, change or forget who-watched answers remembered per show. |
-| Ask who watched a film | on | Whether the who-watched question is also asked after a film. |
-| Ask for a rating | Off | Whether to ask how it was after a finished watch: Off, Films, Episodes, or Films and episodes. See [Rating](rating.md). |
-| When to ask | After each watch | Shown when "Ask for a rating" is not Off. "After each watch", or "At the end, for everything watched", which asks for every finished watch once playback stops for good. See [When it asks](rating.md#when-it-asks). |
-| Shared rating | off | Shown when "Ask for a rating" is not Off. One question, "How was it?", whose score goes to every credited viewer, instead of one question per viewer. See [Who is asked](rating.md#who-is-asked). |
-| Write the rating to Kodi's library | off | Shown when "Ask for a rating" is not Off. Also sets Kodi's own user rating for items in Kodi's library. See [Kodi's own rating](rating.md#kodis-own-rating). |
-| Skip PlexKodiConnect playback | on | PlexKodiConnect playback is not reported, so a household also running CrossWatch's own Plex watcher does not get the same watch counted twice. Turn off to report PlexKodiConnect playback instead, labelled as such. This setting has not been tested, because PlexKodiConnect is not available on the test machine. |
+| Configure viewers and playlists | | Add, change or remove viewers. See [Viewers](viewers.md). |
+| Remembered answers | | See, change or forget the answers remembered per show. See [Remembered answers](remembered-answers.md). |
+| Ask who watched a film | On | Off: films that playlists and profiles do not settle are sent with no viewer instead of asking. |
+| Ask for a rating | Off | Films, Episodes, or Films and episodes: ask for a score after a finished watch. See [Rating](rating.md). |
+| When to ask | After each watch | Only shown when rating is on. "At the end, for everything watched" saves the questions until playback stops for good. |
+| Shared rating | Off | Only shown when rating is on. One question for everyone who watched, instead of one each. |
+| Write the rating to Kodi's library | Off | Only shown when rating is on. Also sets Kodi's own user rating. See [Kodi's own rating](rating.md#kodis-own-rating). |
+| Skip PlexKodiConnect playback | On | Playback through PlexKodiConnect is not reported, so that a household also running CrossWatch's Plex watcher does not count it twice. Off: it is reported, marked as PlexKodiConnect playback. Not yet tested against a real PlexKodiConnect. |
 
 ## Advanced
 
-| Setting | Default | Range | What it does |
-|---|---|---|---|
-| Progress report interval (seconds) | 60 | 30 to 600, steps of 30 | Standard level. How often a progress event is sent while something is playing, and again after a seek. |
-| Playlist refresh interval (minutes) | 60 | 5 to 720, steps of 5 | Advanced level. How often playlist membership is re-read. Also re-read after a library scan or clean, and after a settings change. |
-| Enable debug logging (records viewing history to disk) | off | | Writes the add-on's own log file (see [Logs](troubleshooting.md#logs)), with every detail including titles and viewer names. Applies straight away. Leave off unless troubleshooting. |
+| Setting | Default | What it does |
+|---|---|---|
+| Progress report interval (seconds) | 60 | 30 to 600. How often the playback position is sent while something plays, and after a seek. |
+| Playlist refresh interval (minutes) | 60 | Advanced level. 5 to 720. How often [playlist membership](who-watched.md#smart-playlists) is re-read. A library scan or clean and a settings change also trigger it. |
+| Enable debug logging (records viewing history to disk) | Off | Writes a detailed log file, including titles and viewer names. Takes effect at once. Leave off unless you are troubleshooting. See [Logs](troubleshooting.md#logs). |
