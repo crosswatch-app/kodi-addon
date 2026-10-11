@@ -7,7 +7,8 @@ clock, the monotonic source and the id generator are injected for the same reaso
 Everything here runs on the service thread, including the callbacks: Kodi queues them and
 executes them from Monitor.waitForAbort. There is therefore no concurrency to guard, and no
 locks. Callbacks can however arrive nested: the prompt window's doModal runs them too, in the
-middle of _flush_pending, which is written for that. The reporter worker is the only other thread and it touches only its own queue.
+middle of _flush_pending, which is written for that, and so do the rating windows that
+follow a stop. The reporter worker is the only other thread and it touches only its own queue.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from collections.abc import Callable
 
 from resources.lib import identity as identity_mod
 from resources.lib import prompt as prompt_mod
+from resources.lib import rating as rating_mod
 from resources.lib.advanced_settings import Thresholds
 from resources.lib.config import Settings
 from resources.lib.constants import (
@@ -26,8 +28,9 @@ from resources.lib.constants import (
     NOTIFY_UNREADABLE,
     PING_INTERVAL_SECONDS,
     PROMPT_AUTOCLOSE_SECONDS,
+    RATING_AUTOCLOSE_SECONDS,
 )
-from resources.lib.kodi import KodiApi
+from resources.lib.kodi import WINDOW_INVALID, KodiApi
 from resources.lib.log import get_logger
 from resources.lib.media import MediaResolver
 from resources.lib.models import EventKind, MediaItem, PingEvent, PlaybackEvent, Viewer
@@ -35,6 +38,7 @@ from resources.lib.playlist_index import IndexBuilder, PlaylistIndex
 from resources.lib.reporter import EventQueue
 from resources.lib.service.session import PlaybackSession
 from resources.lib.storage import PromptMemory, ViewerStore
+from resources.lib.ui.rating import RATE_FAILED, RateRequest, counter_text, question_text
 
 _log = get_logger("service")
 
@@ -82,10 +86,17 @@ class Controller:
         self._last_ping_at: float | None = None
         self._pinged_names: tuple[str, ...] | None = None
         self._shutting_down = False
+        self._ratings = rating_mod.RatingQueue()
 
     # -- lifecycle ---------------------------------------------------------
 
     def on_settings_changed(self, settings: Settings, thresholds: Thresholds) -> None:
+        if not (settings.rating_at_end and settings.rating_kinds):
+            # Watches queued under the old setting would otherwise come back the next time it
+            # is switched on, maybe days later.
+            dropped = self._ratings.clear()
+            if dropped:
+                _log.info("rating.dropped", reason="settings", count=dropped)
         self._settings = settings
         self._thresholds = thresholds
         self.invalidate_index()
@@ -171,6 +182,9 @@ class Controller:
 
     def on_abort(self) -> None:
         self._shutting_down = True
+        dropped = self._ratings.clear()
+        if dropped:
+            _log.info("rating.dropped", reason="shutdown", count=dropped)
         if self._session is not None:
             self._park(self._session, reason="abort")
             self._session = None
@@ -339,18 +353,26 @@ class Controller:
         # not find this stop and send it a second time, and a stop parked meanwhile by a
         # nested on_stopped must stay parked rather than be cleared on the way out.
         self._pending_stop = None
+        asked = ""
         try:
             if allow_prompt and not session.identity.viewers:
-                self._attribute_by_prompt(session)
+                asked = self._attribute_by_prompt(session)
         finally:
+            queued = False
             try:
                 queued = self._emit("stop", session)
                 if not queued:
                     _log.warning("service.stop_not_queued", session_id=session.session_id)
             except Exception as exc:
                 _log.error("service.stop_emit_failed", session_id=session.session_id, error=str(exc))
+            try:
+                self._after_stop(session, queued, allow_prompt, asked)
+            except Exception as exc:
+                # The stop is already queued: a rating that fails costs only the rating.
+                _log.warning("rating.failed", error=str(exc))
 
-    def _attribute_by_prompt(self, session: PlaybackSession) -> None:
+    def _attribute_by_prompt(self, session: PlaybackSession) -> str:
+        """Attribute by asking: "answered", "declined" (asked, nobody answered), or "" (not asked)."""
         try:
             viewers = self._viewers()
             decision = prompt_mod.gate(
@@ -366,16 +388,127 @@ class Controller:
             )
             if decision.remembered:
                 session.identity = identity_mod.Identity(decision.remembered, "prompt")
-                return
+                return ""
             if not decision.ask:
-                return
+                return ""
             names = prompt_mod.ask(self._kodi, viewers, session.media, PROMPT_AUTOCLOSE_SECONDS)
             if not names:
-                return
+                return "declined"
             session.identity = identity_mod.Identity(names, "prompt")
             prompt_mod.remember(self._memory, session.media, names)
+            return "answered"
         except Exception as exc:
             _log.warning("service.prompt_failed", error=str(exc))
+        return ""
+
+    # -- rating ------------------------------------------------------------
+
+    def _after_stop(self, session: PlaybackSession, queued: bool, allow_prompt: bool, asked: str) -> None:
+        completes = self._completes_watch(session.completed, session.percent())
+        rateable = queued and rating_mod.rateable(
+            self._settings, session.media, completes, self._has_usable_id(session.media)
+        )
+        watch = rating_mod.Watch(session.session_id, session.media, session.identity.viewers, asked == "declined")
+        # A window of our own just closed: Kodi keeps it as the topmost dialog while it
+        # animates out, which must not read as someone else's dialog being open.
+        after_window = bool(asked)
+        if self._settings.rating_at_end:
+            if rateable:
+                self._ratings.add(watch)
+            # Any stop that leaves Kodi idle ends the session, also one that is not itself
+            # rated: a binge usually ends with the next episode stopped partway.
+            if allow_prompt and len(self._ratings) and not self._kodi.is_playing():
+                # Taken before the first window: a stop flushed by a callback that window runs
+                # queues for the next run, not for this one.
+                self._run_ratings(self._ratings.take_all(), after_window)
+        elif rateable and allow_prompt:
+            self._run_ratings([watch], after_window)
+        # After each watch, a stop flushed because the next item started is not rated: the
+        # household is watching that next item.
+
+    def _run_ratings(self, watches: list[rating_mod.Watch], after_window: bool) -> None:
+        viewers = self._viewers()
+        plan = [(w, rating_mod.questions(w, viewers, self._settings.rating_shared)) for w in watches]
+        total = sum(len(qs) for _, qs in plan)
+        index = 0
+        for watch, questions in plan:
+            if not questions:
+                continue
+            # Someone else's dialog can only be open before the first of our windows; after one,
+            # the topmost dialog is ours, closing.
+            dialog_id = WINDOW_INVALID if after_window else self._kodi.topmost_dialog_id()
+            reason = rating_mod.may_ask(watch, dialog_id, self._shutting_down, self._kodi.is_playing())
+            if reason == "declined":
+                index += len(questions)
+                continue
+            if reason:
+                self._abandon(total - index)
+                return
+            subtitle, poster = prompt_mod.header(self._kodi, watch.media)
+            scores: list[int] = []
+            for question in questions:
+                index += 1
+                request = RateRequest(
+                    title=watch.media.title or "",
+                    subtitle=subtitle,
+                    poster=poster,
+                    question=question_text(self._kodi.localised, question.viewer),
+                    counter=counter_text(self._kodi.localised, index, total),
+                    autoclose_seconds=RATING_AUTOCLOSE_SECONDS,
+                    close_on_playback=True,
+                )
+                score = self._kodi.rate(request)
+                after_window = True
+                if score == RATE_FAILED:
+                    # Already logged as ui.window_failed; every later window would fail too.
+                    self._abandon(total - index)
+                    return
+                if score is not None:
+                    scores.append(score)
+                    for target in question.targets or (None,):
+                        self._emit_rate(watch, target, score)
+                if self._kodi.is_playing():
+                    self._write_back(watch, scores)
+                    self._abandon(total - index)
+                    return
+            self._write_back(watch, scores)
+
+    def _abandon(self, left: int) -> None:
+        dropped = self._ratings.clear()
+        if left or dropped:
+            _log.info("rating.abandoned", left=left + dropped)
+
+    def _emit_rate(self, watch: rating_mod.Watch, viewer: str | None, score: int) -> None:
+        event = PlaybackEvent(
+            kind="rate",
+            event_id=self._ids(),
+            session_id=watch.session_id,
+            sent_at=self._clock(),
+            media=watch.media,
+            viewers=(viewer,) if viewer else (),
+            viewers_source=None,
+            position_ms=None,
+            duration_ms=None,
+            percent=None,
+            rating=score,
+        )
+        _log.info("rating.given", media_type=watch.media.media_type, library_id=watch.media.library_id, rating=score)
+        if not self._queue.submit(event):
+            _log.warning("rating.not_queued", session_id=watch.session_id)
+
+    def _write_back(self, watch: rating_mod.Watch, scores: list[int]) -> None:
+        if not self._settings.rating_write_library or not scores:
+            return
+        media = watch.media
+        if media.library_id is None or media.is_pkc:
+            _log.debug("rating.library_skipped", media_type=media.media_type, reason="not_in_library")
+            return
+        value = rating_mod.single_score(scores)
+        if value is None:
+            _log.info("rating.library_skipped", media_type=media.media_type, reason="scores_differ")
+            return
+        if self._kodi.set_user_rating(media.media_type, media.library_id, value):
+            _log.info("rating.library_written", media_type=media.media_type, library_id=media.library_id)
 
     # -- helpers -----------------------------------------------------------
 

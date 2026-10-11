@@ -96,6 +96,14 @@ the optional [Link](connect.md#link-shortcut) shortcut.
 
     [:octicons-arrow-right-24: Remembered answers](remembered-answers.md)
 
+-   :lucide-star:{ .lg .middle } __Rating__
+
+    ---
+
+    Ask how it was after a watch, and send the score.
+
+    [:octicons-arrow-right-24: Rating](rating.md)
+
 -   :lucide-settings:{ .lg .middle } __Settings__
 
     ---

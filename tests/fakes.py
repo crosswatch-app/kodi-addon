@@ -34,6 +34,10 @@ class FakeKodi:
         self.files = dict(files or {})
         self.who_watched_answer = who_watched_answer
         self.who_watched_calls: list[Any] = []
+        self.rate_answers: list[Any] = []
+        self.rate_requests: list[Any] = []
+        self.user_ratings: list[tuple[str, int, int]] = []
+        self.user_rating_ok = True
         self.confirm_window_answer = confirm_window_answer
         self.confirm_window_calls: list[tuple[str, str]] = []
         self.list_window_results: list[Any] = []
@@ -111,6 +115,22 @@ class FakeKodi:
     def who_watched(self, request: Any) -> tuple[str, ...] | None:
         self.who_watched_calls.append(request)
         return self.who_watched_answer
+
+    def rate(self, request: Any) -> int | None:
+        """Answers from rate_answers in order, None once they run out; a callable answer is run
+        first, like the player callbacks a real window's doModal runs, and its return value is
+        the answer."""
+        self.rate_requests.append(request)
+        if not self.rate_answers:
+            return None
+        answer: Any = self.rate_answers.pop(0)
+        if callable(answer):
+            answer = answer()
+        return answer
+
+    def set_user_rating(self, media_type: str, library_id: int, value: int) -> bool:
+        self.user_ratings.append((media_type, library_id, value))
+        return self.user_rating_ok
 
     def confirm_window(self, heading: str, message: str) -> bool:
         self.confirm_window_calls.append((heading, message))

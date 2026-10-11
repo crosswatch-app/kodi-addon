@@ -153,13 +153,15 @@ def choose_viewers(
     return kodi.who_watched(request)
 
 
-def ask(kodi: KodiApi, viewers: list[Viewer], media: MediaItem, autoclose: int) -> tuple[str, ...]:
+def header(kodi: KodiApi, media: MediaItem) -> tuple[str, str]:
+    """The subtitle and poster an end-of-playback window shows, the same for every question."""
     if media.media_type == "episode":
-        subtitle = episode_subtitle(kodi, media.season, media.episode)
-        poster = show_poster(kodi, media.show_library_id)
-    else:
-        subtitle = year_subtitle(media.year)
-        poster = movie_poster(kodi, media.library_id)
+        return episode_subtitle(kodi, media.season, media.episode), show_poster(kodi, media.show_library_id)
+    return year_subtitle(media.year), movie_poster(kodi, media.library_id)
+
+
+def ask(kodi: KodiApi, viewers: list[Viewer], media: MediaItem, autoclose: int) -> tuple[str, ...]:
+    subtitle, poster = header(kodi, media)
     # Closes when playback starts: the household has moved on, and an open window would
     # otherwise sit over the next item.
     answer = choose_viewers(

@@ -8,6 +8,9 @@ have set up there:
 - Playback events (start, pause, resume, progress, stop), and a heartbeat. The heartbeat goes
   every five minutes and straight away after pairing or when the viewer names change, and
   carries the names of all configured viewers.
+- Ratings, if you switched them on: a score for each viewer who rated, with the same item
+  details as a stop, but never the file path or the playback position (see
+  [Rating](rating.md)).
 - Kodi's device name, a generated device id and the add-on's version.
 - Viewer names, and how they were found (playlist, profile, or the question, which includes
   an answer remembered from it; nothing when the only viewer is
@@ -55,6 +58,8 @@ or played to at least its watched threshold (90 percent by default, the
   oldest goes), or if the token has changed since, for example after pairing with a different
   CrossWatch, so a stored stop is never sent to a different CrossWatch. A new address for the
   same instance keeps it. Unpair alone keeps them.
+
+A rating is kept on disk and sent later in the same way as a completed watch.
 
 Kodi still marks the item watched in its own library either way. But only this add-on knows
 who watched it, so a stop that is ultimately dropped loses the viewer attribution for that

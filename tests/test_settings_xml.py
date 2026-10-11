@@ -54,6 +54,10 @@ def test_setting_ids_match_the_config_keys():
         config.KEY_SKIP_PKC,
         config.KEY_INDEX_TTL,
         config.KEY_DEBUG,
+        config.KEY_RATING_ASK,
+        config.KEY_RATING_WHEN,
+        config.KEY_RATING_SHARED,
+        config.KEY_RATING_WRITE_LIBRARY,
     ):
         assert key in ids, key
 

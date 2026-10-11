@@ -26,6 +26,7 @@ from resources.lib.constants import (
 )
 from resources.lib.log import get_logger
 from resources.lib.ui import list_window as lw
+from resources.lib.ui import rating as rt
 from resources.lib.ui import viewers_window as vw
 from resources.lib.ui import who_watched as ww
 
@@ -203,6 +204,55 @@ class WhoWatchedDialog(CrossWatchDialog):
         rows.getListItem(ww.EVERYONE_ROW).setProperty("chosen", "true" if ww.everyone(names, self._ticked) else "")
         for row, name in enumerate(names, start=1):
             rows.getListItem(row).setProperty("chosen", "true" if name in self._ticked else "")
+
+
+RATING_XML = "crosswatch-rate.xml"
+LIST_SCORES = 100
+BUTTON_REMOVE_RATING = 22
+
+
+class RatingDialog(CrossWatchDialog):
+    name = "rating"
+
+    def prepare(
+        self,
+        request: rt.RateRequest,
+        localised: Localised,
+        is_playing: Callable[[], bool],
+        wait_for_abort: Callable[[float], bool],
+    ) -> None:
+        self.configure(
+            localised,
+            {
+                "CW.Title": request.title,
+                "CW.Subtitle": request.subtitle,
+                "CW.Poster": request.poster,
+                "CW.Question": request.question,
+                "CW.Counter": request.counter,
+            },
+            request.autoclose_seconds,
+            request.close_on_playback,
+            is_playing,
+            wait_for_abort,
+        )
+
+    def fill(self) -> None:
+        scores: Any = self.getControl(LIST_SCORES)
+        for score, word in enumerate(rt.SCORE_WORDS, start=1):
+            item = xbmcgui.ListItem(str(score))
+            item.setProperty("word", self._localised(word))
+            scores.addItem(item)
+        # Skip, not a score: a stray OK must send nothing (cenodude, issue #1).
+        self.setFocusId(BUTTON_SKIP)
+
+    def onClick(self, controlId: int) -> None:
+        if controlId == LIST_SCORES:
+            scores: Any = self.getControl(LIST_SCORES)
+            self.finish("score", scores.getSelectedPosition() + 1)
+        elif controlId == BUTTON_REMOVE_RATING:
+            self.finish("remove", 0)
+        elif controlId == BUTTON_SKIP:
+            self.finish("skip")
 
 
 CONFIRM_XML = "crosswatch-confirm.xml"

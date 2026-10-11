@@ -15,6 +15,7 @@ from resources.lib.constants import (
 )
 from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, ListState
 from resources.lib.ui.panel import PanelLine
+from resources.lib.ui.rating import RateRequest
 from resources.lib.ui.viewers_window import ViewerRow, ViewersRequest, ViewersResult
 from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
@@ -29,18 +30,21 @@ from resources.lib.ui.window import (
     BUTTON_PLAYLISTS,
     BUTTON_PROFILES,
     BUTTON_REMOVE,
+    BUTTON_REMOVE_RATING,
     BUTTON_RENAME,
     BUTTON_SKIP,
     BUTTON_VIEWERS_CLOSE,
     BUTTON_YES,
     LIST_FILTER,
     LIST_ROWS,
+    LIST_SCORES,
     LIST_SEARCH,
     LIST_VIEWERS,
     VIEWERS_ROWS,
     ConfirmDialog,
     ListDialog,
     PickListDialog,
+    RatingDialog,
     RememberedDialog,
     ViewersDialog,
     WhoWatchedDialog,
@@ -776,3 +780,63 @@ def test_nothing_shown_gives_forget_nothing_to_act_on():
     dialog.onClick(BUTTON_FORGET_ONE)
     dialog.onClick(LIST_ROWS)
     assert dialog.closed == 0
+
+
+def _rating(counter="", autoclose=0) -> tuple[Any, FakeList]:
+    request = RateRequest(
+        title="Example", subtitle="Season 2, episode 5", poster="image://p/", question="Anna, how was it?",
+        counter=counter, autoclose_seconds=autoclose, close_on_playback=False,
+    )
+    dialog: Any = RatingDialog("crosswatch-rate.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, localised=lambda string_id: f"w{string_id}", is_playing=lambda: False, wait_for_abort=lambda _: False)
+    scores = FakeList()
+    dialog.set_control(LIST_SCORES, scores)
+    return dialog, scores
+
+
+def test_rating_focus_starts_on_skip_so_a_stray_ok_sends_nothing():
+    dialog, _ = _rating()
+    dialog.onInit()
+    assert dialog.focused == BUTTON_SKIP
+
+
+def test_the_scores_run_one_to_ten_and_carry_their_word():
+    dialog, scores = _rating()
+    dialog.onInit()
+    assert [item.getLabel() for item in scores.items] == [str(n) for n in range(1, 11)]
+    assert all(item.getProperty("word") for item in scores.items)
+    assert len({item.getProperty("word") for item in scores.items}) == 10
+
+
+def test_the_question_and_counter_are_window_properties():
+    dialog, _ = _rating(counter="2 of 3")
+    dialog.onInit()
+    assert dialog.getProperty("CW.Question") == "Anna, how was it?"
+    assert dialog.getProperty("CW.Counter") == "2 of 3"
+    assert dialog.getProperty("CW.Title") == "Example"
+
+
+def test_ok_on_a_score_sends_it():
+    dialog, scores = _rating()
+    dialog.onInit()
+    scores.position = 7
+    dialog.onClick(LIST_SCORES)
+    assert dialog.result == 8 and dialog.close_reason == "score"
+
+
+def test_remove_sends_zero():
+    dialog, _ = _rating()
+    dialog.onInit()
+    dialog.onClick(BUTTON_REMOVE_RATING)
+    assert dialog.result == 0 and dialog.close_reason == "remove"
+
+
+def test_skip_and_back_send_nothing():
+    dialog, _ = _rating()
+    dialog.onInit()
+    dialog.onClick(BUTTON_SKIP)
+    assert dialog.result is None and dialog.close_reason == "skip"
+    other, _ = _rating()
+    other.onInit()
+    other.onAction(Action(92))
+    assert other.result is None and other.close_reason == "back"

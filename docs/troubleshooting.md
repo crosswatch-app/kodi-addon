@@ -87,6 +87,26 @@ Done removes the unusable one), change the unusable playlist's type in Kodi to s
 or remove the viewer and add them again. After making a TV show or film smart playlist, close
 the Viewers window and choose "Configure viewers and playlists" again, so it is listed.
 
+## No rating question appears
+
+See [When it asks](rating.md#when-it-asks) for the cases where it is not asked. "Ask for a
+rating" is Off by default.
+
+## Ratings do not arrive
+
+Look in Kodi's log for the line that matches:
+
+- `reporter.rejected` with `reason=unsupported_event`: your CrossWatch is too old to accept
+  ratings. Update CrossWatch.
+- `reporter.rejected` with `reason=no_rating_target`: the routes that matched take no rating
+  of this kind, for example an episode rating sent to Simkl. See [Where ratings
+  go](rating.md#where-ratings-go).
+- `reporter.rejected` with `reason=no_matching_route`: no route accepts that viewer. Check the
+  viewer's name against the route's username whitelist, as for [a viewer with no CrossWatch
+  route](#a-viewer-shows-no-crosswatch-route).
+- `reporter.rated` with `failed=` above 0: a destination refused the write. CrossWatch's own
+  log has the reason.
+
 ## Logs
 
 Normal lines (failures, refusals, check-ins) go to Kodi's own log, `kodi.log` (see the

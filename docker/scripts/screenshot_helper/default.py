@@ -19,19 +19,23 @@ sys.path.insert(0, TARGET.getAddonInfo("path"))
 
 from resources.lib.constants import ADDON_ID  # noqa: E402
 from resources.lib.ui import skin_fonts, window  # noqa: E402
+from resources.lib.ui.rating import RateRequest, counter_text, question_text  # noqa: E402
 from resources.lib.ui.who_watched import WhoWatchedRequest  # noqa: E402
 
 
-def _who_watched(scene: dict, path: str) -> None:
+def _art(scene: dict) -> tuple[str, str, str]:
+    """Title, poster and subtitle: from this Kodi's library when the scene names one."""
     if scene.get("library"):
         # Written by screenshots.py: a show and a film from this Kodi's library, so the
         # poster is real art.
         with open(os.path.join(HERE, "library.json"), encoding="utf-8") as handle:
             item = json.load(handle)[scene["library"]]
-        title, poster = item["title"], item["poster"]
-        subtitle = scene["subtitle"].replace("{year}", str(item["year"] or ""))
-    else:
-        title, poster, subtitle = scene["title"], scene["poster"], scene["subtitle"]
+        return item["title"], item["poster"], scene["subtitle"].replace("{year}", str(item["year"] or ""))
+    return scene["title"], scene["poster"], scene["subtitle"]
+
+
+def _who_watched(scene: dict, path: str) -> None:
+    title, poster, subtitle = _art(scene)
     request = WhoWatchedRequest(
         title=title,
         subtitle=subtitle,
@@ -45,6 +49,26 @@ def _who_watched(scene: dict, path: str) -> None:
     # A watch step that waits an hour holds the countdown at its first value, so the
     # screenshot is the same on every run; Kodi shutting down still ends it.
     dialog.prepare(request, TARGET.getLocalizedString, lambda: False, lambda seconds: monitor.waitForAbort(3600))
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
+def _rate(scene: dict, path: str) -> None:
+    title, poster, subtitle = _art(scene)
+    localised = TARGET.getLocalizedString
+    request = RateRequest(
+        title=title,
+        subtitle=subtitle,
+        poster=poster,
+        question=question_text(localised, scene["viewer"]),
+        counter=counter_text(localised, *scene["counter"]),
+        autoclose_seconds=scene["autoclose_seconds"],
+    )
+    monitor = xbmc.Monitor()
+    dialog = window.RatingDialog(window.RATING_XML, path, "Default", "1080i")
+    dialog.prepare(request, localised, lambda: False, lambda seconds: monitor.waitForAbort(3600))
     try:
         dialog.doModal()
     finally:
@@ -231,6 +255,7 @@ WINDOWS = {
     window.CONFIRM_XML: _confirm,
     window.VIEWERS_XML: _split,
     window.REMEMBERED_XML: _remembered,
+    window.RATING_XML: _rate,
 }
 
 
