@@ -37,10 +37,11 @@ cannot be mistyped, and it follows a rename in CrossWatch.
 3. For each new viewer in turn, tick their playlists and press Done, or press Cancel to keep that
    viewer without playlists.
 
-The list holds every CrossWatch user profile that has a route on this Kodi, minus the people
-already added. A profile shows up here once a route on this Kodi is assigned to it in
-CrossWatch and the add-on has checked in, which it does every five minutes. For someone who has
-no profile, select "Type a name".
+The list holds every CrossWatch user profile that is assigned to a route on this Kodi without a
+username whitelist, minus the people already added. A route with a whitelist takes the names in
+it rather than the profile's, so its profile is not listed. A profile shows up here once a route
+on this Kodi is assigned to it in CrossWatch and the add-on has checked in, which it does every
+five minutes. For someone who has no profile, select "Type a name".
 
 The list needs CrossWatch v0.13.5 or newer; with an older CrossWatch, "Add viewer" always opens
 the keyboard. A newer one opens the keyboard too when no route on this Kodi is assigned to a

@@ -10,7 +10,7 @@ viewer in [Viewers](viewers.md).
    answer.
 
 If nothing names anyone, the playback is sent with no viewer, and only a CrossWatch route with
-an empty username whitelist accepts it.
+an empty username whitelist and no user profile accepts it.
 
 ## Smart playlists
 
@@ -84,5 +84,5 @@ Add yourself as the only viewer, with no playlists or profiles. With exactly one
 everything is credited to that viewer and no question is ever asked. The name must match the
 username in your CrossWatch route's whitelist.
 
-Having no viewers at all also works, if your CrossWatch route has an empty username whitelist:
-every playback is then sent with no viewer.
+Having no viewers at all also works, if your CrossWatch route has an empty username whitelist
+and no user profile: every playback is then sent with no viewer.
