@@ -28,8 +28,8 @@ cannot be mistyped, and it follows a rename in CrossWatch.
 1. Select "Add viewer" (with no viewers yet, the list opens straight away).
 2. Tick everyone you want to add with OK, then press Done. Each ticked person becomes a viewer,
    except one whose name CrossWatch would confuse with a viewer you typed earlier: the add-on
-   says "CrossWatch treats this name as the same as `<name>`. Choose another name." and skips
-   that person. If a viewer you typed earlier already has a person's name, apart from case, ticking
+   says "CrossWatch treats `<person>` as the same as the viewer `<viewer>`. Remove that viewer
+   first, or rename the profile in CrossWatch." and skips that person. If a viewer you typed earlier already has a person's name, apart from case, ticking
    that person links the viewer to them instead of adding a second one: the viewer keeps its
    playlists and remembered answers, takes CrossWatch's spelling of the name, and is not asked
    for playlists again. A person whose name belongs to a viewer already linked to someone else
@@ -119,7 +119,7 @@ that person. Its panel shows "Name from CrossWatch", and it has no Rename button
 name would stop the route from receiving its playback.
 
 To rename a linked viewer, rename the user profile in CrossWatch. At its next check-in the
-add-on takes over the new name, shows "`<old>` is now called `<new>` in CrossWatch", and moves
+add-on takes over the new name, shows a short "Renamed in CrossWatch" notification with the new name, and moves
 the viewer's remembered answers and any finished watches still waiting for delivery to the new
 name. If another viewer already has the new name, the add-on leaves both alone. Remove that
 other viewer, or rename its profile in CrossWatch if it is linked, and the rename follows at

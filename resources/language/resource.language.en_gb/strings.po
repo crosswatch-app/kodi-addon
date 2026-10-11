@@ -492,5 +492,9 @@ msgid "Name from CrossWatch"
 msgstr ""
 
 msgctxt "#30159"
-msgid "%s is now called %s in CrossWatch"
+msgid "Renamed in CrossWatch"
+msgstr ""
+
+msgctxt "#30160"
+msgid "CrossWatch treats %s as the same as the viewer %s. Remove that viewer first, or rename the profile in CrossWatch."
 msgstr ""

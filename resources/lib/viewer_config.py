@@ -45,6 +45,7 @@ from resources.lib.constants import (
     VIEWERS_ONE_PROFILE,
     VIEWERS_ONE_VIEWER,
     VIEWERS_PEOPLE,
+    VIEWERS_PICK_CLASH,
     VIEWERS_PLAYLISTS,
     VIEWERS_PLAYLISTS_FOR,
     VIEWERS_PROFILES,
@@ -389,12 +390,18 @@ def _edit_profiles(
     return result.keys
 
 
-def _refused(kodi: KodiApi, exc: ValueError) -> None:
+def _refused(kodi: KodiApi, exc: ValueError, picked: str | None = None) -> None:
     _log.info("config.name_rejected", reason=str(exc))
     # A clash is told, unlike a plain duplicate: the two names look different, so a silent
     # refusal would read as the input having been lost.
     if isinstance(exc, NameClash):
-        kodi.ok(_text(kodi, NOTIFY_HEADING), _text(kodi, VIEWERS_NAME_CLASH, exc.existing))
+        if picked is None:
+            body = _text(kodi, VIEWERS_NAME_CLASH, exc.existing)
+        else:
+            # Told apart from a typed name: "choose another name" means nothing for a person
+            # picked from the list, whose name only CrossWatch can change.
+            body = kodi.localised(VIEWERS_PICK_CLASH).replace("%s", picked, 1).replace("%s", exc.existing, 1)
+        kodi.ok(_text(kodi, NOTIFY_HEADING), body)
 
 
 def _ask_name(kodi: KodiApi, viewers: list[Viewer], current: str = "") -> str | None:
@@ -494,7 +501,7 @@ def _add_people(
         except ValueError as exc:
             relinked = None if isinstance(exc, NameClash) else _link_existing(memory, viewers, person, people)
             if relinked is None:
-                _refused(kodi, exc)
+                _refused(kodi, exc, picked=person.name)
                 continue
             viewers = relinked
             _save(store, viewers)

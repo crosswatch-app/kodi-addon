@@ -1,7 +1,7 @@
 import threading
 
 from resources.lib.config import KEY_STATUS, Settings
-from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED
+from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED, VIEWER_RENAMED_HEADING
 from resources.lib.models import Viewer
 from resources.lib.outbox import Outbox, config_fingerprint
 from resources.lib.reporter import HttpReporter, LogReporter
@@ -181,7 +181,7 @@ def test_a_ping_with_people_renames_the_viewer_everywhere(tmp_path):
     remembered = memory.recall("show:tvdb:1")
     assert remembered is not None and remembered.viewers == ("Anna B.",)
     assert lane.store._entries[0].body["viewers"] == ["Anna B."]
-    assert len(kodi.notifications) == 1
+    assert kodi.notifications == [(f"#{VIEWER_RENAMED_HEADING}", "Anna B.")]
 
 
 def test_a_ping_with_people_links_a_typed_viewer_without_a_toast(tmp_path):

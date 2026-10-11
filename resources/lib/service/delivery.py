@@ -11,7 +11,7 @@ import threading
 
 from resources.lib import status
 from resources.lib.config import Settings
-from resources.lib.constants import NOTIFY_HEADING, VIEWER_RENAMED_FROM_CROSSWATCH
+from resources.lib.constants import VIEWER_RENAMED_HEADING
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger
 from resources.lib.outbox import Outbox, config_fingerprint
@@ -120,10 +120,8 @@ class Delivery:
             answers = self._memory.rename_viewer(old, new) if self._memory is not None else 0
             kept = self._outbox.rename_viewer(old, new) if self._outbox is not None else 0
             _log.info("people.viewer_renamed", answers=answers, kept=kept)
-            self._kodi.notify(
-                self._kodi.localised(NOTIFY_HEADING),
-                self._kodi.localised(VIEWER_RENAMED_FROM_CROSSWATCH).replace("%s", old, 1).replace("%s", new, 1),
-            )
+            # The new name alone: Estuary's toast cuts long text off.
+            self._kodi.notify(self._kodi.localised(VIEWER_RENAMED_HEADING), new)
         if result.linked:
             _log.info("people.viewer_linked", count=result.linked)
 
