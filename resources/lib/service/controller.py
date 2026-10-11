@@ -381,14 +381,10 @@ class Controller:
                 media=session.media,
                 position_ms=session.position_ms,
                 thresholds=self._thresholds,
-                memory=self._memory,
                 movie_prompts_enabled=self._settings.movie_prompts,
                 dialog_id=self._kodi.topmost_dialog_id(),
                 shutting_down=self._shutting_down,
             )
-            if decision.remembered:
-                session.identity = identity_mod.Identity(decision.remembered, "prompt")
-                return ""
             if not decision.ask:
                 return ""
             names = prompt_mod.ask(self._kodi, viewers, session.media, PROMPT_AUTOCLOSE_SECONDS)

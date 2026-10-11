@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Ask who watched, but only when it is worth asking, and never before the stop is out.
+"""Ask who watched, but only when it is worth asking, and only at the end of playback.
 
 The gate is separate from the dialog so every suppression is unit testable and logged with
 a reason code. A silent branch here is indistinguishable from a bug.
@@ -75,7 +75,6 @@ def recall(memory: PromptMemory, media: MediaItem) -> tuple[str, ...]:
 class GateDecision:
     ask: bool
     reason: str = ""
-    remembered: tuple[str, ...] = ()
 
 
 def gate(
@@ -84,17 +83,18 @@ def gate(
     media: MediaItem,
     position_ms: int | None,
     thresholds: Thresholds,
-    memory: PromptMemory,
     movie_prompts_enabled: bool,
     dialog_id: int,
     shutting_down: bool,
 ) -> GateDecision:
-    def refuse(reason: str, remembered: tuple[str, ...] = ()) -> GateDecision:
+    def refuse(reason: str) -> GateDecision:
         _log.info(
             "prompt.suppressed", reason=reason, media_type=media.media_type, library_id=media.library_id
         )
-        return GateDecision(ask=False, reason=reason, remembered=remembered)
+        return GateDecision(ask=False, reason=reason)
 
+    # A remembered answer is not looked up here: start resolution used it, so a watch that
+    # has one arrives resolved.
     if identity.viewers:
         return refuse("resolved")
     if not viewers:
@@ -105,15 +105,6 @@ def gate(
         return refuse("movie_prompt_disabled")
     if (position_ms or 0) < thresholds.ignore_seconds_at_start * 1000:
         return refuse("below_ignore_seconds_at_start")
-
-    recalled = recall(memory, media)
-    # Reconcile: a viewer removed from the configuration must stop being reported.
-    known = {v.name for v in viewers}
-    surviving = tuple(name for name in recalled if name in known)
-    if surviving:
-        return refuse("remembered", surviving)
-    if recalled:
-        _log.info("prompt.memory_stale", dropped=len(recalled))
 
     if shutting_down:
         # Must be checked before the dialog: during shutdown Kodi refuses to draw one and

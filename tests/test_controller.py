@@ -1469,3 +1469,12 @@ def test_a_rating_follows_an_answered_who_watched_question_while_it_closes(tmp_p
     controller = _controller(tmp_path, kodi, LIVING, collector, settings=_rating_settings())
     _watch(controller, kodi)
     assert [(r.viewers, r.rating) for r in _rates(collector)] == [(("bob",), 5)]
+
+
+def test_a_remembered_name_that_is_no_longer_a_viewer_is_dropped_at_start(tmp_path):
+    collector = Collector()
+    kodi = _kodi([], profile="Guest")
+    PromptMemory(str(tmp_path / "prompts.json")).remember("show:tvdb:83462", ("anna", "carol"))
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
+    controller.on_av_started()
+    assert collector.playback()[0].viewers == ("anna",)
