@@ -1,6 +1,6 @@
 import json
 
-from resources.lib.routes import RouteFacts, parse_routes
+from resources.lib.routes import Person, RouteFacts, parse_people, parse_routes
 from resources.lib.storage import RouteStore
 
 
@@ -56,3 +56,33 @@ def test_a_missing_or_broken_file_says_nothing(tmp_path):
     assert store.load("fp1") is None
     (tmp_path / "routes.json").write_text("{nope")
     assert store.load("fp1") is None
+
+
+def test_no_people_list_is_none_not_empty():
+    assert parse_people({"routes": []}) is None
+
+
+def test_an_empty_people_list_is_empty():
+    assert parse_people({"people": []}) == ()
+
+
+def test_people_keep_id_and_name_and_skip_what_is_malformed():
+    reply = {"people": [
+        {"id": "p-anna", "name": "Anna"},
+        {"id": "", "name": "Nobody"},
+        {"id": "p-x"},
+        "Ben",
+        {"id": "p-anna", "name": "Anna again"},
+        {"id": "p-tom", "name": " Tom "},
+    ]}
+    assert parse_people(reply) == (Person("p-anna", "Anna"), Person("p-tom", "Tom"))
+
+
+def test_route_facts_carry_the_people():
+    facts = parse_routes({"routes": [], "people": [{"id": "p1", "name": "Anna"}]}, ["anna"])
+    assert facts is not None and facts.people == (Person("p1", "Anna"),)
+
+
+def test_route_facts_from_an_older_crosswatch_have_no_people():
+    facts = parse_routes({"routes": []}, [])
+    assert facts is not None and facts.people is None

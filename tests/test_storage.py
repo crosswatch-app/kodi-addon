@@ -2,7 +2,8 @@ import json
 import os
 
 from resources.lib.models import Viewer
-from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer
+from resources.lib.routes import Person, RouteFacts
+from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer, RouteStore
 
 
 def test_missing_file_yields_no_viewers(tmp_path):
@@ -167,3 +168,25 @@ def test_drop_viewer_writes_once(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "_write_json", lambda p, v: writes.append(v) or real(p, v))
     memory.drop_viewer("anna")
     assert len(writes) == 1
+
+
+def test_route_store_keeps_the_people(tmp_path):
+    store = RouteStore(str(tmp_path / "routes.json"))
+    facts = RouteFacts(1, frozenset({"anna"}), frozenset({"anna"}), (Person("p1", "Anna"),))
+    store.save("fp", facts)
+    assert store.load("fp") == facts
+
+
+def test_route_store_without_people_loads_none(tmp_path):
+    """What beta2 wrote: no people key."""
+    path = tmp_path / "routes.json"
+    path.write_text(json.dumps({"fingerprint": "fp", "routes": 1, "accepted": [], "asked": []}))
+    facts = RouteStore(str(path)).load("fp")
+    assert facts is not None and facts.people is None
+
+
+def test_route_store_keeps_an_empty_people_list_apart_from_none(tmp_path):
+    store = RouteStore(str(tmp_path / "routes.json"))
+    store.save("fp", RouteFacts(0, frozenset(), frozenset(), ()))
+    loaded = store.load("fp")
+    assert loaded is not None and loaded.people == ()

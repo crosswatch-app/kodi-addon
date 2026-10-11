@@ -20,7 +20,7 @@ from typing import Any, Protocol
 
 from resources.lib.log import get_logger
 from resources.lib.models import Viewer
-from resources.lib.routes import RouteFacts
+from resources.lib.routes import RouteFacts, parse_people
 
 _log = get_logger("storage")
 
@@ -223,15 +223,16 @@ class RouteStore:
         self._path = path
 
     def save(self, fingerprint: str, facts: RouteFacts) -> bool:
-        return _write_json(
-            self._path,
-            {
-                "fingerprint": fingerprint,
-                "routes": facts.count,
-                "accepted": sorted(facts.accepted),
-                "asked": sorted(facts.asked),
-            },
-        )
+        data: dict[str, Any] = {
+            "fingerprint": fingerprint,
+            "routes": facts.count,
+            "accepted": sorted(facts.accepted),
+            "asked": sorted(facts.asked),
+        }
+        # Absent, not empty, when CrossWatch sent no people list: load() maps absent to None.
+        if facts.people is not None:
+            data["people"] = [{"id": p.id, "name": p.name} for p in facts.people]
+        return _write_json(self._path, data)
 
     def load(self, fingerprint: str) -> RouteFacts | None:
         data = _read_json(self._path, None)
@@ -246,4 +247,5 @@ class RouteStore:
             count,
             frozenset(str(n) for n in names if isinstance(n, str)),
             frozenset(str(n) for n in asked if isinstance(n, str)),
+            parse_people(data),
         )
