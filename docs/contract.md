@@ -217,7 +217,8 @@ A route can be assigned to a CrossWatch user profile. For a Kodi route that prof
 
 - A route with a profile and no whitelist takes the viewer whose name matches the profile's name. Nobody else, and never an event without a viewer.
 - A whitelist, when set, wins. The profile name is then not used.
-- Names are compared loosely, like whitelists: case, spaces and punctuation do not matter. `anna b` matches `Anna B.`.
+- Names are compared loosely: case, spaces and punctuation do not matter. `anna b` matches `Anna B.`.
+- When two profiles only differ in spaces or punctuation, such as `Anna B.` and `Annab`, each one only takes its own name written the same way, apart from case.
 - `viewers` still carries names. Nothing changes in the events.
 
 The `ping` reply lists the people: every user profile that has a route on this Kodi instance.
