@@ -410,16 +410,10 @@ def _add_typed(
     if name is None:
         return None
     person = match_person(name, people, {v.person_id for v in viewers if v.person_id})
+    # A linked viewer carries CrossWatch's spelling, as the service would rename it to anyway.
+    name = person.name if person else name
     selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers) or ()
-    viewers = [
-        *viewers,
-        Viewer(
-            name=name,
-            playlists=tuple(selected),
-            person_id=person.id if person else None,
-            person_name=person.name if person else None,
-        ),
-    ]
+    viewers = [*viewers, Viewer(name=name, playlists=tuple(selected), person_id=person.id if person else None)]
     _log.info("config.viewer_added", playlists=len(selected), linked=person is not None)
     _save(store, viewers)
     return name
@@ -461,7 +455,7 @@ def _add_viewer(
             _log.info("config.name_rejected", reason=str(exc))
             continue
         # Saved before the playlist step, so Back there keeps the person added.
-        viewers = [*viewers, Viewer(name=name, person_id=person.id, person_name=person.name)]
+        viewers = [*viewers, Viewer(name=name, person_id=person.id)]
         _save(store, viewers)
         first = first or name
         added += 1

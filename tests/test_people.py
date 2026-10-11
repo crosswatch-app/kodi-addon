@@ -97,28 +97,39 @@ def test_a_name_with_nothing_loose_links_only_on_its_exact_form():
     assert match_person(SUN, [heart], ()) is None
 
 
-def test_reconcile_links_a_typed_viewer_and_keeps_its_spelling():
-    result = reconcile([Viewer(name="anna b")], [ANNA])
-    assert result.viewers == [Viewer(name="anna b", person_id="p-anna", person_name="Anna B.")]
-    assert result.linked == 1 and result.renamed == ()
+def test_reconcile_links_a_typed_viewer_under_crosswatchs_spelling():
+    result = reconcile([Viewer(name="anna b", playlists=("A",))], [ANNA])
+    assert result.viewers == [Viewer(name="Anna B.", playlists=("A",), person_id="p-anna")]
+    assert result.linked == 1 and result.renamed == (("anna b", "Anna B."),)
 
 
-def test_a_loosely_linked_viewer_keeps_its_spelling_on_the_next_ping():
+def test_a_viewer_linked_on_its_exact_spelling_is_not_renamed():
+    result = reconcile([Viewer(name="Ben")], [BEN])
+    assert result.viewers == [Viewer(name="Ben", person_id="p-ben")] and result.renamed == ()
+
+
+def test_a_respelled_viewer_is_left_alone_on_the_next_ping():
     first = reconcile([Viewer(name="anna-lee")], [Person("p1", "Anna Lee")])
     second = reconcile(first.viewers, [Person("p1", "Anna Lee")])
-    assert second.viewers == first.viewers and second.viewers[0].name == "anna-lee"
-    assert not second.changed and second.renamed == ()
+    assert second.viewers == first.viewers and second.viewers[0].name == "Anna Lee"
+    assert not second.changed
+
+
+def test_a_link_whose_respelling_clashes_is_skipped():
+    viewers = [Viewer(name="anna b"), Viewer(name="Anna B.", person_id="p-gone")]
+    result = reconcile(viewers, [ANNA])
+    assert result.viewers == viewers and result.skipped == 1 and not result.changed
 
 
 def test_reconcile_renames_a_linked_viewer():
-    old = Viewer(name="Anna", playlists=("A",), person_id="p-anna", person_name="Anna")
+    old = Viewer(name="Anna", playlists=("A",), person_id="p-anna")
     result = reconcile([old], [ANNA])
-    assert result.viewers == [Viewer(name="Anna B.", playlists=("A",), person_id="p-anna", person_name="Anna B.")]
+    assert result.viewers == [Viewer(name="Anna B.", playlists=("A",), person_id="p-anna")]
     assert result.renamed == (("Anna", "Anna B."),)
 
 
 def test_a_rename_onto_another_viewers_name_is_skipped():
-    viewers = [Viewer(name="Anna", person_id="p-anna", person_name="Anna"), Viewer(name="anna b.")]
+    viewers = [Viewer(name="Anna", person_id="p-anna"), Viewer(name="anna b.")]
     result = reconcile(viewers, [ANNA])
     assert result.viewers == viewers and result.skipped == 1 and result.renamed == ()
 
@@ -134,13 +145,8 @@ def test_nothing_to_do_reports_no_change():
 
 
 def test_a_case_only_rename_is_taken_over():
-    result = reconcile([Viewer(name="ben", person_id="p-ben", person_name="ben")], [BEN])
+    result = reconcile([Viewer(name="ben", person_id="p-ben")], [BEN])
     assert result.renamed == (("ben", "Ben"),)
-
-
-def test_a_link_without_a_last_seen_name_compares_against_the_viewer_name():
-    viewers = [Viewer(name="Ben", person_id="p-ben")]
-    assert reconcile(viewers, [BEN]).viewers == viewers
 
 
 def test_a_taken_person_does_not_make_its_loose_twin_unambiguous():

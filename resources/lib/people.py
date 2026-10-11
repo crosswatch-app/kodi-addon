@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Viewers and the people CrossWatch lists (docs/contract.md, People).
 
-A viewer linked to a person keeps that person's id and takes over the person's name when it
-changes, because the profile name is what CrossWatch routes on. Pure, so the service and the
+A viewer linked to a person keeps that person's id and carries the person's exact name, taken
+over at the link and again whenever it changes, because the profile name is what CrossWatch
+routes on. Pure, so the service and the
 settings script share it without either importing the other.
 """
 
@@ -96,32 +97,45 @@ class Reconciled:
         return bool(self.renamed or self.linked)
 
 
+def _clashes(viewers: Sequence[Viewer], index: int, name: str) -> bool:
+    """A second viewer under the same name would merge two people's playlists and answers."""
+    return any(v.name.casefold() == name.casefold() for i, v in enumerate(viewers) if i != index)
+
+
 def reconcile(viewers: Sequence[Viewer], people: Sequence[Person]) -> Reconciled:
+    """Rename linked viewers to their person's current name, then link the rest.
+
+    A viewer linked on a loose match is renamed to the person's spelling in the same pass, and
+    reported in renamed like any other rename, so remembered answers and kept watches follow.
+    A rename that would clash with another viewer is skipped, link included.
+    """
     by_id = {p.id: p for p in people}
     out = list(viewers)
     renamed: list[tuple[str, str]] = []
     skipped = 0
     for index, viewer in enumerate(out):
         person = by_id.get(viewer.person_id or "")
-        # Against the name CrossWatch last listed, so a link made on a loose match keeps the
-        # viewer's own spelling until the person is renamed.
-        if person is None or person.name == (viewer.person_name or viewer.name):
+        if person is None or person.name == viewer.name:
             continue
-        # A second viewer under the same name would merge two people's playlists and answers.
-        clash = any(v.name.casefold() == person.name.casefold() for i, v in enumerate(out) if i != index)
-        if clash:
+        if _clashes(out, index, person.name):
             skipped += 1
             continue
         renamed.append((viewer.name, person.name))
-        out[index] = replace(viewer, name=person.name, person_name=person.name)
+        out[index] = replace(viewer, name=person.name)
     linked = 0
     taken = {v.person_id for v in out if v.person_id}
     for index, viewer in enumerate(out):
         if viewer.person_id:
             continue
         person = match_person(viewer.name, people, taken)
-        if person is not None:
-            out[index] = replace(viewer, person_id=person.id, person_name=person.name)
-            taken.add(person.id)
-            linked += 1
+        if person is None:
+            continue
+        if person.name != viewer.name:
+            if _clashes(out, index, person.name):
+                skipped += 1
+                continue
+            renamed.append((viewer.name, person.name))
+        out[index] = replace(viewer, name=person.name, person_id=person.id)
+        taken.add(person.id)
+        linked += 1
     return Reconciled(out, tuple(renamed), linked, skipped)

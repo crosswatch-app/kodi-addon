@@ -716,9 +716,8 @@ def test_a_plain_duplicate_stays_a_silent_refusal(tmp_path):
 
 
 def test_editing_playlists_keeps_the_person_id():
-    viewers = [Viewer(name="Anna", person_id="p1", person_name="Anna")]
-    edited = viewer_config.apply_edit(viewers, "Anna", ("X",), ())[0]
-    assert (edited.person_id, edited.person_name) == ("p1", "Anna")
+    viewers = [Viewer(name="Anna", person_id="p1")]
+    assert viewer_config.apply_edit(viewers, "Anna", ("X",), ())[0].person_id == "p1"
 
 
 # --- CrossWatch's people ---------------------------------------------------
@@ -740,8 +739,8 @@ def test_picking_several_people_adds_them_linked_and_asks_playlists_for_each(tmp
     kodi = ScriptedKodi(["Kids"], windows=[("close", "")], picks=[["p1", "p2"], ["Kids"], None])
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
     assert store.viewers() == [
-        Viewer(name="Anna", playlists=("Kids",), person_id="p1", person_name="Anna"),
-        Viewer(name="Ben", person_id="p2", person_name="Ben"),
+        Viewer(name="Anna", playlists=("Kids",), person_id="p1"),
+        Viewer(name="Ben", person_id="p2"),
     ]
 
 
@@ -749,7 +748,7 @@ def test_type_a_name_opens_the_keyboard_and_links_a_match(tmp_path):
     store, memory = _stores(tmp_path, [Viewer(name="Ben", person_id="p2")])
     kodi = ScriptedKodi([], windows=[("add", "Ben"), ("close", "")], picks=[("extra", []), None], inputs=["anna"])
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben"), Person("p3", "Cy")))
-    assert Viewer(name="anna", person_id="p1", person_name="Anna") in store.viewers()
+    assert Viewer(name="Anna", person_id="p1") in store.viewers()
 
 
 def test_without_people_add_goes_straight_to_the_keyboard(tmp_path):
@@ -823,7 +822,7 @@ def test_a_fresh_install_is_offered_the_people_too(tmp_path):
     store, memory = _stores(tmp_path, [])
     kodi = ScriptedKodi([], windows=[("close", "")], picks=[["p1"]])
     run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
-    assert store.viewers() == [Viewer(name="Anna", person_id="p1", person_name="Anna")]
+    assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
 
 
 def test_a_picked_person_loosely_equal_to_an_unlinked_viewer_is_not_added(tmp_path):

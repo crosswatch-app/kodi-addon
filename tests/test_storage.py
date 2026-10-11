@@ -192,9 +192,9 @@ def test_route_store_keeps_an_empty_people_list_apart_from_none(tmp_path):
     assert loaded is not None and loaded.people == ()
 
 
-def test_a_viewer_keeps_its_person_id_and_last_seen_name(tmp_path):
+def test_a_viewer_keeps_its_person_id(tmp_path):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
-    viewers = [Viewer(name="anna-lee", person_id="p-anna", person_name="Anna Lee"), Viewer(name="bob")]
+    viewers = [Viewer(name="Anna Lee", person_id="p-anna"), Viewer(name="bob")]
     store.save(viewers)
     assert store.viewers() == viewers
 
@@ -203,13 +203,12 @@ def test_an_unlinked_viewer_is_written_without_a_person_id(tmp_path):
     """So the file still reads the same in beta2."""
     path = tmp_path / "viewers.json"
     JsonViewerStore(str(path)).save([Viewer(name="bob")])
-    assert {"person_id", "person_name"}.isdisjoint(json.loads(path.read_text())[0])
+    assert "person_id" not in json.loads(path.read_text())[0]
 
 
 def test_a_blank_or_odd_person_id_reads_as_unlinked(tmp_path):
     path = tmp_path / "viewers.json"
     path.write_text(
-        json.dumps([{"name": "a", "person_id": "", "person_name": ""}, {"name": "b", "person_id": 7, "person_name": 7}])
+        json.dumps([{"name": "a", "person_id": ""}, {"name": "b", "person_id": 7}])
     )
-    viewers = JsonViewerStore(str(path)).viewers()
-    assert [(v.person_id, v.person_name) for v in viewers] == [(None, None), (None, None)]
+    assert [v.person_id for v in JsonViewerStore(str(path)).viewers()] == [None, None]

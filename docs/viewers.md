@@ -49,7 +49,8 @@ keyboard instead.
 3. Tick their playlists and press Done, or press Cancel to add the viewer without playlists.
 
 A typed name that matches one of CrossWatch's people is linked to that person, just as if you
-had picked them. It keeps the spelling you typed until the profile is renamed in CrossWatch.
+had picked them, and saved with the profile's exact spelling: typing "anna-lee" for the profile
+"Anna Lee" adds the viewer "Anna Lee".
 
 CrossWatch ignores upper and lower case, spaces and punctuation when it compares names, so
 "Anna-Lee" and "annalee" are the same name to it. Accents and letters of any script count, so
@@ -115,9 +116,10 @@ name. If another viewer already has the new name, the add-on leaves both alone; 
 rename that other viewer, and the rename follows at the next check-in.
 
 Existing viewers whose names match one of CrossWatch's people are linked at the add-on's first
-check-in with a CrossWatch that lists people. A linked viewer keeps the spelling it was typed
-with, such as "anna-lee" for the profile "Anna Lee", until the profile is renamed in
-CrossWatch; only then does it take over the profile's name.
+check-in with a CrossWatch that lists people, and take the profile's exact spelling. A viewer
+typed as "anna-lee" for the profile "Anna Lee" becomes "Anna Lee", with the same message and
+the same move of remembered answers and waiting watches as a rename. If another viewer already
+has that spelling, the viewer is left unlinked and unchanged.
 
 ## Remove a viewer
 
