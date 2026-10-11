@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Actions are pinned to commit SHAs; Dependabot bumps the SHA and its version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Freshly published versions are where a compromised release shows up before it is caught.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+  # The direct pins in requirements-dev.txt and requirements-docs.txt. Dependabot does not
+  # regenerate the hash locks: on its PR, run the command in the file's header and push the
+  # lock to the same branch (tests/test_locks.py fails until then).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
