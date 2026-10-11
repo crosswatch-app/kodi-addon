@@ -1,6 +1,87 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.0.0~beta2 (2026-10-11)
+-------------------------
+New Features:
+  - Custom CrossWatch windows in CrossWatch's flat dark palette replace
+    Kodi's standard dialogs: the who-watched question at the end of
+    playback (poster or a "No poster" placeholder, title, season and
+    episode or year, Everyone row, Done, Skip, a 120-second countdown;
+    it closes when the next item starts), the Viewers settings screen,
+    Remembered answers, and the playlist and profile pickers.
+  - The Viewers screen is one split window: viewers on the left, the
+    highlighted viewer's playlists, profiles and warnings on the right.
+    Add viewer, Playlists, Profiles, Rename and Remove; every change is
+    saved at once.
+  - Remembered answers is one split window: search, a viewer filter,
+    and each show with its poster and why an answer needs attention.
+    Change, Forget and Forget all (Forget N shown while filtered).
+  - The playlist and profile pickers have search and ticks, show
+    "Also <names>" for a playlist another viewer already has, and list
+    missing ones.
+  - The windows adapt their fonts to the active skin; checked in Estuary
+    and Arctic Zephyr Mod.
+  - Rating at the end of playback (issue #26, contract v1.5 `rate`
+    event), off by default. Settings under Viewers: "Ask for a rating"
+    (Off, Films, Episodes, Films and episodes), "When to ask" (after
+    each watch, or at the end for everything watched, so a binge is
+    rated newest first when playback stops), "Shared rating" (one
+    question for everyone who watched) and "Write the rating to Kodi's
+    library" (only when all scores given agree; library items only).
+    The window takes a score from 1 to 10 with Skip (focused first) and
+    Remove rating, and has a 60-second countdown. Nothing is sent on
+    Skip, Back or timeout. One rate event is sent per viewer, and it is
+    kept on disk through an outage like a completed watch. Needs a
+    CrossWatch release with rating support (the release after v0.13.3;
+    tested against CrossWatch's development build). v0.13.3 ignores
+    ratings.
+  - The Viewers window shows for each viewer whether a CrossWatch route
+    accepts their name ("CrossWatch route" or "No CrossWatch route"),
+    taken from CrossWatch's answer to the add-on's check-in.
+  - The playlist picker offers only smart playlists of TV shows or
+    films, the only kinds that can credit anyone. A playlist of another
+    kind that a viewer already had is tagged "unusable" and removed on
+    Done.
+  - A viewer name that CrossWatch would treat as another viewer's (it
+    ignores case and anything but a to z and 0 to 9, for example
+    "Anna-Lee" and "annalee") is refused with a message naming that
+    viewer.
+  - User documentation moved to a documentation site
+    (https://crosswatch-app.github.io/kodi-addon/), one page per task.
+    The README is a short front page. Every page was checked against
+    the add-on's behaviour.
+
+Bug Fixes:
+  - Fixed: with exactly one viewer configured, playback went out with no
+    viewer when no playlist or profile named one. It is now credited to
+    that viewer.
+  - Fixed: the pairing message for too many tries said to wait a
+    minute. CrossWatch allows 10 wrong codes in 10 minutes and forgets
+    each one only as it expires, so a minute was not always enough; the
+    message now says to wait a few minutes.
+  - Fixed: removed the pairing message for a switched-off add-on.
+    CrossWatch never sends that answer (switching the add-on off removes
+    the token and codes, so the code is reported as wrong or expired).
+
+Internal:
+  - prompt.gate no longer looks up the remembered answer; identity
+    resolution at playback start does it.
+  - Rate events are persisted in the outbox like completed stops, are
+    kept out of the reporter's per-session latest table, and
+    reporter.rated logs per-route results.
+  - Custom windows use inline skin XML with skin-mapped fonts
+    (resources/lib/ui/skin_fonts.py, ported from easyTV) and a shared
+    CrossWatchDialog base. A style test checks every window against one
+    palette and size set. The screenshot tool
+    (docker/scripts/screenshots.py) has scenes for every window.
+  - Material Symbols icons (Apache 2.0) are used for the status icons;
+    the licence is now GPL-2.0-only AND Apache-2.0.
+  - Docs are built with Zensical in CI (strict) and deployed to GitHub
+    Pages. Dependabot covers the actions and the pinned tools with a
+    7-day cooldown, and a test keeps the hash locks in step with the
+    pins.
+
 v1.0.0~beta1 (2026-10-07)
 -------------------------
 New Features:

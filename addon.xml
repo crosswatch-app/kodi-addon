@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <addon id="service.crosswatch"
        name="CrossWatch"
-       version="1.0.0~beta1"
+       version="1.0.0~beta2"
        provider-name="Rouzax">
     <requires>
         <import addon="xbmc.python" version="3.0.1"/>
@@ -15,13 +15,13 @@
         <license>GPL-2.0-only AND Apache-2.0</license>
         <source>https://github.com/crosswatch-app/kodi-addon</source>
         <website>https://crosswatch-app.github.io/kodi-addon/</website>
-        <news>v1.0.0~beta1 (2026-10-07)
-- Reports what you watch in Kodi to your own CrossWatch, including who in the household watched it.
-- Works out who watched using smart playlists, your Kodi profile, or a question at the end of playback that is remembered per show.
-- Pair with CrossWatch using an address and a one-time code, or link it from CrossWatch with a confirmation on the TV. No restart needed.
-- Settings to manage viewers, their playlists or profiles, and remembered answers.
-- Keeps a finished watch safe through an outage or restart, and sends it once CrossWatch is back.
-- Supports connecting to CrossWatch over HTTPS.</news>
+        <news>v1.0.0~beta2 (2026-10-11)
+- Questions and settings now use CrossWatch-styled windows instead of Kodi's standard dialogs.
+- Optionally rate what you watched at the end of playback (off by default). Needs a CrossWatch release with rating support.
+- The Viewers screen shows whether CrossWatch has a route for each viewer.
+- With a single viewer, playback is now credited to that viewer.
+- Playlist pickers offer only usable playlists, and clashing viewer names are refused.
+- Clearer pairing message when you try too often. New documentation site.</news>
         <assets>
             <icon>icon.png</icon>
         </assets>
