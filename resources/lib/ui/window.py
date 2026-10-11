@@ -345,10 +345,11 @@ class ViewersDialog(CrossWatchDialog):
         if controlId == VIEWERS_ROWS:
             # The row has no action of its own; OK there means "go to the actions".
             self.setFocusId(BUTTON_PLAYLISTS)
-        elif controlId == BUTTON_RENAME and self._selected_row_linked():
-            return
         elif action and self._request.rows:
-            self.finish(action, vw.ViewersResult(action, self._selected()))
+            # A linked viewer's name is CrossWatch's: Rename is hidden on its row, and a stray
+            # click there does nothing.
+            if controlId != BUTTON_RENAME or not self._selected_row_linked():
+                self.finish(action, vw.ViewersResult(action, self._selected()))
         elif controlId == BUTTON_ADD:
             self.finish("add", vw.ViewersResult("add", self._selected()))
         elif controlId == BUTTON_VIEWERS_CLOSE:

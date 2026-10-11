@@ -66,8 +66,8 @@ class ListRequest:
 @dataclass(frozen=True)
 class ListResult:
     # "bulk" (the bulk button), "done" (Done on a pick list), "extra" (its extra button, with
-    # the ticked rows in keys), "change" and "forget" (the
-    # Remembered answers window) or "close"
+    # the ticked rows in keys), "change" and "forget" (the Remembered answers window) or
+    # "close"
     action: str
     state: ListState
     key: str = ""

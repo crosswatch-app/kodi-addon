@@ -71,6 +71,8 @@ def test_people_keep_id_and_name_and_skip_what_is_malformed():
         {"id": "p-anna", "name": "Anna"},
         {"id": "", "name": "Nobody"},
         {"id": "p-x"},
+        {"id": 7, "name": "Seven"},
+        {"id": "p-blank", "name": "   "},
         "Ben",
         {"id": "p-anna", "name": "Anna again"},
         {"id": "p-tom", "name": " Tom "},

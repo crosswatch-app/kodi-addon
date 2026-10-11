@@ -506,7 +506,9 @@ def _add_viewer(
     return _add_people(kodi, store, memory, playlists, chosen, people or ())
 
 
-def _link_existing(viewers: list[Viewer], person: Person, people: Sequence[Person]) -> tuple[list[Viewer], str] | None:
+def _link_existing(
+    viewers: list[Viewer], person: Person, people: Sequence[Person]
+) -> tuple[list[Viewer], str] | None:
     """The viewers with the unlinked viewer already named like the person linked to them, and
     that viewer's old name; or None.
 

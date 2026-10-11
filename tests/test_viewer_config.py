@@ -309,6 +309,12 @@ def test_rename_viewer_keeps_playlists_and_profiles():
     ]
 
 
+def test_rename_viewer_keeps_the_person_id():
+    assert rename_viewer([Viewer(name="Anna", person_id="p1")], "Anna", "Anna B.") == [
+        Viewer(name="Anna B.", person_id="p1")
+    ]
+
+
 def test_available_profiles_reads_kodis_labels():
     profiles = {"profiles": [{"label": "Master user"}, {"label": " Kids "}, {}]}
     kodi = FakeKodi(rpc_handlers={"Profiles.GetProfiles": lambda p: profiles})
@@ -818,7 +824,7 @@ def test_a_rename_saved_while_the_screen_is_open_survives(tmp_path):
 
     kodi = RenamingKodi(["X"], windows=[("playlists", "bob"), ("close", "")], picks=[["X"]])
     run_dialog(kodi, store, memory)
-    assert [v.name for v in store.viewers()] == ["Anna B.", "bob"]
+    assert store.viewers() == [Viewer(name="Anna B.", person_id="p1"), Viewer(name="bob", playlists=("X",))]
 
 
 def test_a_fresh_install_is_offered_the_people_too(tmp_path):
@@ -1089,3 +1095,30 @@ def test_a_profile_edit_or_remove_of_a_viewer_gone_meanwhile_is_dropped(tmp_path
     run_dialog(kodi, store, memory)
     assert store.viewers() == [Viewer(name="Anna", person_id="p1")]
     assert kodi.windows_shown[1][1] == ""
+
+
+def test_a_picked_person_links_an_unlinked_viewer_with_exactly_their_name(tmp_path):
+    store, memory = _stores(tmp_path, [Viewer(name="Anna", playlists=("Kids",))], answers={"show:tvdb:1": ["Anna"]})
+    moved: list[tuple[str, str]] = []
+
+    class Watching(PromptMemory):
+        def rename_viewer(self, old, new):
+            moved.append((old, new))
+            return super().rename_viewer(old, new)
+
+    memory = Watching(memory._path)
+    kodi = ScriptedKodi([], windows=[("add", "Anna"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
+    assert store.viewers() == [Viewer(name="Anna", playlists=("Kids",), person_id="p1")]
+    assert moved == []
+    answer = memory.recall("show:tvdb:1")
+    assert answer is not None and answer.viewers == ("Anna",)
+
+
+def test_a_picked_person_with_a_same_named_twin_does_not_link_the_viewer(tmp_path):
+    """Two people with the same exact name take nobody, as CrossWatch routes them."""
+    store, memory = _stores(tmp_path, [Viewer(name="anna")])
+    kodi = ScriptedKodi([], windows=[("add", "anna"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "ANNA")))
+    assert store.viewers() == [Viewer(name="anna")]
+    assert kodi.pick_requests[1:] == []
