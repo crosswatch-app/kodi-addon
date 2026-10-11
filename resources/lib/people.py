@@ -6,7 +6,7 @@ changes, because the profile name is what CrossWatch routes on. Pure, so the ser
 settings script share it without either importing the other.
 """
 
-import re
+import unicodedata
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 
@@ -14,28 +14,61 @@ from resources.lib.models import Viewer
 from resources.lib.routes import Person
 
 
+def _folded(name: str) -> str:
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFC", name).casefold())
+
+
 def crosswatch_name(name: str) -> str:
-    """The name as CrossWatch compares it: lower case, everything but a to z and 0 to 9 dropped
-    (normalize_media_account_name in CrossWatch's cw_platform/account_match.py)."""
-    return re.sub(r"[^a-z0-9]+", "", name.lower())
+    """The name as CrossWatch compares it loosely (normalize_media_account_name in CrossWatch's
+    cw_platform/account_match.py): case folded, invisible format characters dropped, and only
+    letters and digits kept, each with the marks attached to it. An accent therefore counts, so
+    "José" is not "Jose", and a name in any script has a key.
+    """
+    visible = "".join(ch for ch in name if unicodedata.category(ch) != "Cf")
+    out: list[str] = []
+    attached = False
+    for ch in _folded(visible):
+        kind = unicodedata.category(ch)[0]
+        if kind in "LN":
+            out.append(ch)
+            attached = True
+        elif kind == "M" and attached:
+            out.append(ch)
+        else:
+            attached = False
+    return "".join(out)
+
+
+def exact_name(name: str) -> str:
+    """The form CrossWatch compares where the loose key is empty or ambiguous
+    (exact_media_account_name)."""
+    return _folded(name).strip()
+
+
+def same_name(a: str, b: str) -> bool:
+    """Whether CrossWatch reads the two names as one (media_account_names_match)."""
+    loose = crosswatch_name(a)
+    if loose:
+        return loose == crosswatch_name(b)
+    exact = exact_name(a)
+    return bool(exact) and exact == exact_name(b)
 
 
 def match_person(name: str, people: Sequence[Person], taken: Collection[str]) -> Person | None:
     """The person a viewer name links to, as CrossWatch would route it.
 
     CrossWatch compares loosely, except between two profiles that differ only in spaces or
-    punctuation: each of those takes only its own spelling, apart from case. A name with
-    nothing CrossWatch can read compares by case only, so it is not linked to every other
-    such name.
+    punctuation: each of those takes only its own spelling, apart from case. A name with no
+    letter or digit compares by its exact form, so it is not linked to every other such name.
     """
     free = [p for p in people if p.id not in taken]
     key = crosswatch_name(name)
     if not key:
-        return next((p for p in free if p.name.casefold() == name.casefold()), None)
+        return next((p for p in free if exact_name(p.name) == exact_name(name)), None)
     loose = [p for p in free if crosswatch_name(p.name) == key]
     if len(loose) == 1:
         return loose[0]
-    return next((p for p in loose if p.name.casefold() == name.casefold()), None)
+    return next((p for p in loose if exact_name(p.name) == exact_name(name)), None)
 
 
 @dataclass(frozen=True)

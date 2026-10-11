@@ -1,21 +1,74 @@
 import pytest
 
 from resources.lib.models import Viewer
-from resources.lib.people import crosswatch_name, match_person, reconcile
+from resources.lib.people import crosswatch_name, exact_name, match_person, reconcile, same_name
 from resources.lib.routes import Person
 
 ANNA = Person("p-anna", "Anna B.")
 ANNAB = Person("p-annab", "Annab")
 BEN = Person("p-ben", "Ben")
 
+# Written as code points, as CrossWatch's own tests do, so an editor cannot normalise them.
+JOSE = "Jos" + chr(0xE9)
+JOSE_DECOMPOSED = "Jose" + chr(0x301)
+ELOISE = chr(0xC9) + "lo" + chr(0xEF) + "se"
+WANG = chr(0x738B) + chr(0x660E)
+LI = chr(0x674E) + chr(0x96F7)
+KA = chr(0x915)
+KI = chr(0x915) + chr(0x93F)
+ZERO_WIDTH_SPACE = chr(0x200B)
+ZERO_WIDTH_JOINER = chr(0x200D)
+HEART = chr(0x2764) + chr(0xFE0F)
+SUN = chr(0x2600) + chr(0xFE0F)
 
-@pytest.mark.parametrize(("name", "key"), [("Anna-Lee", "annalee"), ("anna lee!", "annalee"), ("Zoë", "zo"), ("Ægir", "gir"), ("李", "")])
+
+@pytest.mark.parametrize(
+    ("name", "key"),
+    [("Dad", "dad"), ("  Anna B. ", "annab"), ("john_doe-99", "johndoe99"), ("", ""), ("!!!", ""), ("Zoë", "zoë"), (WANG, WANG)],
+)
 def test_crosswatch_name_is_crosswatchs_own_comparison(name, key):
     assert crosswatch_name(name) == key
 
 
 def test_crosswatch_name_drops_case_spaces_and_punctuation():
     assert crosswatch_name("Anna B.") == crosswatch_name("annab") == "annab"
+
+
+def test_accented_names_are_kept_apart_from_their_stripped_form():
+    assert same_name(ELOISE, ELOISE.lower())
+    assert not same_name(ELOISE, "lose")
+    assert not same_name(JOSE, "Jos")
+
+
+def test_composed_and_decomposed_accents_are_the_same_name():
+    assert JOSE != JOSE_DECOMPOSED
+    assert same_name(JOSE, JOSE_DECOMPOSED) and same_name(JOSE_DECOMPOSED, JOSE.upper())
+
+
+def test_non_latin_names_compare_loosely_and_only_with_themselves():
+    assert same_name(WANG, f" {WANG} ")
+    assert not same_name(WANG, LI)
+    assert not same_name(WANG, "")
+
+
+def test_marks_count_only_after_a_letter_or_digit():
+    assert not same_name(KA, KI)
+    assert crosswatch_name(chr(0x301) + "a") == "a"
+    assert crosswatch_name("!" + chr(0x301)) == ""
+
+
+def test_invisible_format_characters_are_ignored():
+    for hidden in (ZERO_WIDTH_SPACE, ZERO_WIDTH_JOINER):
+        assert crosswatch_name(KA + hidden + chr(0x93F)) == KI
+        assert same_name(JOSE, "Jose" + hidden + chr(0x301))
+    assert same_name("anna", "an" + ZERO_WIDTH_SPACE + "na")
+
+
+def test_a_name_with_nothing_loose_compares_by_its_exact_form():
+    assert same_name("!!!", " !!! ")
+    assert not same_name("!!!", "???") and not same_name("!!!", "! ! !")
+    assert not same_name(HEART, SUN) and same_name(HEART, HEART)
+    assert exact_name(" Anna B. ") == "anna b."
 
 
 def test_a_loose_match_links_when_only_one_person_fits():
@@ -32,10 +85,16 @@ def test_a_person_already_linked_is_not_linked_twice():
     assert match_person("anna b", [ANNA], {"p-anna"}) is None
 
 
-def test_a_name_with_nothing_crosswatch_reads_matches_by_case_only():
+def test_a_non_latin_name_links_loosely():
     zoe = Person("p-z", "Зоя")
-    assert match_person("зоя", [zoe], ()) == zoe
+    assert match_person(" зоя!", [zoe], ()) == zoe
     assert match_person("Ηλίας", [zoe], ()) is None
+
+
+def test_a_name_with_nothing_loose_links_only_on_its_exact_form():
+    heart = Person("p-h", HEART)
+    assert match_person(HEART, [heart], ()) == heart
+    assert match_person(SUN, [heart], ()) is None
 
 
 def test_reconcile_links_a_typed_viewer_and_keeps_its_spelling():

@@ -682,8 +682,14 @@ def test_a_rename_may_change_punctuation_of_the_viewers_own_name():
     assert validate_name("Anna-Lee", [Viewer(name="annalee")], own="annalee") == "Anna-Lee"
 
 
-def test_names_crosswatch_cannot_read_are_compared_by_case_only():
+def test_non_latin_names_are_compared_as_crosswatch_compares_them():
     assert validate_name("王", [Viewer(name="李")]) == "王"
+    with pytest.raises(NameClash):
+        validate_name("王明!", [Viewer(name="王明")])
+
+
+def test_names_without_a_letter_or_digit_compare_by_their_exact_form():
+    assert validate_name("!!!", [Viewer(name="???")]) == "!!!"
 
 
 def test_a_clashing_new_viewer_is_explained_and_not_added(tmp_path):

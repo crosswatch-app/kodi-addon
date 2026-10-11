@@ -58,7 +58,7 @@ from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.log import get_logger
 from resources.lib.models import Viewer
 from resources.lib.outbox import config_fingerprint
-from resources.lib.people import crosswatch_name, match_person
+from resources.lib.people import match_person, same_name
 from resources.lib.playlist_index import INDEXABLE_TYPES, PLAYLIST_DIR, declared_type
 from resources.lib.routes import Person, RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore, ViewerStore
@@ -142,15 +142,11 @@ def validate_name(name: str, existing: list[Viewer], own: str | None = None, pic
     mine = own.casefold() if own else None
     if any(v.name.casefold() == cleaned.casefold() and v.name.casefold() != mine for v in existing):
         raise ValueError("taken")
-    # A name with nothing CrossWatch can read compares as "" to every other such name; that is
-    # CrossWatch's limit to lift, and refusing them all would leave non-Latin names no way in.
-    key = crosswatch_name(cleaned)
-    if key:
-        for viewer in existing:
-            if picked and viewer.person_id:
-                continue
-            if crosswatch_name(viewer.name) == key and viewer.name.casefold() != mine:
-                raise NameClash(viewer.name)
+    for viewer in existing:
+        if picked and viewer.person_id:
+            continue
+        if same_name(cleaned, viewer.name) and viewer.name.casefold() != mine:
+            raise NameClash(viewer.name)
     return cleaned
 
 

@@ -51,8 +51,10 @@ keyboard instead.
 A typed name that matches one of CrossWatch's people is linked to that person, just as if you
 had picked them. It keeps the spelling you typed until the profile is renamed in CrossWatch.
 
-CrossWatch ignores upper and lower case and everything except the letters a to z and digits
-when it compares names, so "Anna-Lee" and "annalee" are the same name to it. The add-on
+CrossWatch ignores upper and lower case, spaces and punctuation when it compares names, so
+"Anna-Lee" and "annalee" are the same name to it. Accents and letters of any script count, so
+"José" and "Jose" are two names. A name without any letter or digit, such as an emoji, is
+compared as typed, apart from case and surrounding spaces. The add-on
 therefore refuses a typed name that CrossWatch would confuse with an existing viewer:
 "CrossWatch treats this name as the same as `<name>`. Choose another name." An empty name, or
 an exact copy of an existing one, is refused without a message. Two people picked from
