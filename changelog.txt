@@ -1,6 +1,56 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.0.0~beta3 (2026-10-15)
+-------------------------
+New Features:
+  - People from CrossWatch (issue #51, contract 1.6). When CrossWatch's
+    check-in reply lists people (user profiles assigned to a route on
+    this Kodi without a username whitelist; CrossWatch v0.13.5), Add
+    viewer offers the ones not yet added in a list with ticks, several
+    at once, and asks for playlists per person. "Type a name" opens the
+    keyboard for anyone else. With an older CrossWatch, Add viewer opens
+    the keyboard as before.
+  - A viewer picked from that list, or a typed viewer whose name matches
+    exactly one person, is linked to that person by id (person_id in
+    viewers.json) and takes the profile's exact spelling. Existing
+    viewers are linked at the first check-in.
+  - A profile renamed in CrossWatch renames the linked viewer at the
+    next check-in, together with its remembered answers and the
+    completed watches kept in outbox.json, and shows a "Renamed in
+    CrossWatch" toast. A rename that would give two viewers one name is
+    skipped and logged as people.rename_skipped.
+  - A linked viewer shows "Name from CrossWatch" in the Viewers window
+    and has no Rename: it is renamed in CrossWatch.
+
+Improvements:
+  - Viewer names are compared as CrossWatch v0.13.5 does: accents count
+    ("Renée" and "Rene" are different names), names in other scripts
+    compare loosely, and a name of only symbols needs the exact text.
+    Two people picked from CrossWatch may differ only in spaces or
+    punctuation ("Anna B." and "Annab"); a typed name that CrossWatch
+    would read as an existing viewer's is still refused.
+
+Internal:
+  - New pure module resources/lib/people.py: crosswatch_name mirrors
+    CrossWatch's normalize_media_account_name, match_person its route
+    profile rule, and reconcile links and renames viewers. routes.py
+    parses people; routes.json stores them per pairing, and a missing
+    list means an older CrossWatch.
+  - The service reconciles viewers only after a ping from the current
+    pairing, and moves remembered answers (PromptMemory.rename_viewer)
+    and outbox entries (Outbox.rename_viewer) with a rename.
+  - The Viewers screen applies each edit to viewers.json as it is when
+    the edit is saved, finding a linked viewer by its id, so a rename
+    from CrossWatch is not overwritten. An edit to a viewer that is gone
+    or was linked meanwhile is dropped and logged as config.edit_dropped.
+  - viewers.json writes person_id only when set, so beta2 still reads
+    the file.
+  - User docs rewritten around tasks; pages updated for people, for
+    routing of events with no viewer, and for the CrossWatch versions
+    each feature needs. Coverage floor raised from 94 to 95. Test rig
+    pinned to CrossWatch v0.13.5.
+
 v1.0.0~beta2 (2026-10-11)
 -------------------------
 New Features:
