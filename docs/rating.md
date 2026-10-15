@@ -3,7 +3,7 @@
 After you finish an episode or a film, the add-on can ask how it was and send the score to
 CrossWatch, which passes it on to services such as Trakt or Plex.
 
-This needs a CrossWatch release newer than v0.13.3; an older one ignores ratings.
+This needs CrossWatch v0.13.4 or newer; an older one ignores ratings.
 
 ## Switch it on
 

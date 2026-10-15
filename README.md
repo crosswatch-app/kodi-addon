@@ -7,7 +7,7 @@ Plex, Emby or Jellyfin account, so a household sharing one Kodi profile does not
 sharing one watch history. See the [CrossWatch wiki](https://wiki.crosswatch.app) for how
 CrossWatch itself is set up.
 
-This is a beta (1.0.0~beta2), installed from a GitHub release. It has been tested on Kodi
+This is a beta (1.0.0~beta3), installed from a GitHub release. It has been tested on Kodi
 21.3 (Omega) with the Estuary and Arctic Zephyr Mod skins. Kodi on Android and other skins have
 not been tested yet.
 
@@ -17,7 +17,8 @@ not been tested yet.
 
 - Kodi 21 (Omega). Earlier versions are not supported; later versions have not been tested.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support (marked
-  experimental there). Rating needs a newer release than v0.13.3.
+  experimental there). Rating needs v0.13.4 or later, and picking viewers from CrossWatch's
+  user profiles needs v0.13.5 or later.
 - Kodi able to reach CrossWatch over the network, for example both on the same home network.
   CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority. Self-signed
@@ -27,7 +28,7 @@ not been tested yet.
 
 This add-on has not reached the official Kodi add-on repository yet.
 
-1. Download `service.crosswatch-v1.0.0-beta2.zip` from the
+1. Download `service.crosswatch-v1.0.0-beta3.zip` from the
    [releases page](https://github.com/crosswatch-app/kodi-addon/releases).
 2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources".
 3. Go to Add-ons, open the add-on browser (the open box icon at the top left), choose
