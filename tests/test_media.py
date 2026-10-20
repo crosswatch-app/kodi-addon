@@ -118,6 +118,53 @@ def test_leaves_a_path_without_a_key_value_query_unchanged(path):
     assert strip_credentials(path) == path
 
 
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("zip://smb%3a%2f%2fuser%3apass%40nas%2ftv%2fa.zip/a.mkv", "zip://smb%3a%2f%2fnas%2ftv%2fa.zip/a.mkv"),
+        (
+            "rar://smb%3a%2f%2fuser%3apass%40nas%2ftv%2fshow.rar/ep.mkv",
+            "rar://smb%3a%2f%2fnas%2ftv%2fshow.rar/ep.mkv",
+        ),
+        # The archive's own password rides as the user part of the archive URL.
+        ("rar://secret@smb%3a%2f%2fuser%3apass%40nas%2fshow.rar/ep.mkv", "rar://smb%3a%2f%2fnas%2fshow.rar/ep.mkv"),
+        (
+            "iso9660://smb%3a%2f%2fDOMAIN%3buser%3apass%40nas%2fdisc.iso/VIDEO_TS/VTS_01_1.VOB",
+            "iso9660://smb%3a%2f%2fnas%2fdisc.iso/VIDEO_TS/VTS_01_1.VOB",
+        ),
+        (
+            "bluray://smb%3a%2f%2fuser%3apass%40nas%2fFilm%20(2020)%2f/BDMV/PLAYLIST/00800.mpls",
+            "bluray://smb%3a%2f%2fnas%2fFilm%20(2020)%2f/BDMV/PLAYLIST/00800.mpls",
+        ),
+        # A zip inside a rar: the parent of the parent is encoded twice.
+        (
+            "rar://zip%3a%2f%2fsmb%253a%252f%252fuser%253apass%2540nas%252ftv%252fouter.zip%2finner.rar/ep.mkv",
+            "rar://zip%3a%2f%2fsmb%253a%252f%252fnas%252ftv%252fouter.zip%2finner.rar/ep.mkv",
+        ),
+        (
+            "zip://https%3a%2f%2fcdn%2fa.zip%3ftoken%3dsecret/a.mkv",
+            "zip://https%3a%2f%2fcdn%2fa.zip%3f%3credacted%3e/a.mkv",
+        ),
+    ],
+)
+def test_strips_credentials_from_the_url_an_archive_path_encodes(path, expected):
+    assert strip_credentials(path) == expected
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "zip://smb%3a%2f%2fnas%2ftv%2fa.zip/a.mkv",
+        "zip://%2fstorage%2ftv%2fa.zip/a.mkv",
+        # Left exactly as Kodi wrote it, escapes and all, when there is nothing to strip.
+        "rar://smb%3A%2F%2Fnas%2Fmy+show.rar/ep.mkv",
+        "udf://%2fmedia%2fdisc.iso/BDMV/STREAM/00001.m2ts",
+    ],
+)
+def test_leaves_an_archive_path_without_credentials_unchanged(path):
+    assert strip_credentials(path) == path
+
+
 def test_a_query_string_credential_never_reaches_the_model():
     item = {"item": {**EPISODE_ITEM["item"], "file": "https://cdn/tv/S01E01.mkv?token=s3cret"}}
     media = MediaResolver(_kodi(item=item)).resolve()

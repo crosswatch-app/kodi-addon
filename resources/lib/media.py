@@ -15,7 +15,7 @@ sees an item that is in fact unidentifiable.
 
 import re
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote_to_bytes, urlsplit, urlunsplit
 
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger, log_timing, redact
@@ -26,6 +26,13 @@ _log = get_logger("media")
 PKC_PREFIX = "plugin://plugin.video.plexkodiconnect"
 _RATING_KEY = re.compile(r"/(\d+)/?$")
 _REDACTED = "<redacted>"
+
+# Protocols whose hostname is the parent URL, percent-encoded: URIUtils::HasParentInHostname,
+# plus the archive protocols the official vfs add-ons register with encodedhostname
+# (vfs.rar, vfs.libarchive). The parent can carry credentials of its own.
+_PARENT_IN_HOSTNAME = frozenset({"zip", "apk", "bluray", "udf", "iso9660", "xbt", "rar", "archive"})
+# What CURL::Encode leaves as is.
+_UNENCODED = frozenset(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._!()")
 
 _ITEM_PROPERTIES = ["title", "showtitle", "season", "episode", "year", "tvshowid", "file", "uniqueid"]
 
@@ -67,6 +74,8 @@ def _strip_url(text: str) -> str:
     netloc, query, fragment = parts.netloc, parts.query, parts.fragment
     if "@" in netloc:
         netloc = netloc.rsplit("@", 1)[-1]
+    if parts.scheme in _PARENT_IN_HOSTNAME:
+        netloc = _strip_parent(netloc)
     if "=" in query:
         query, fragment = _REDACTED, ""
     elif "=" in fragment:
@@ -74,6 +83,19 @@ def _strip_url(text: str) -> str:
     if (netloc, query, fragment) == (parts.netloc, parts.query, parts.fragment):
         return text
     return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
+
+
+def _strip_parent(hostname: str) -> str:
+    """The parent URL in an archive path's hostname, stripped as CURL::GetWithoutUserDetails
+    does: decoded, stripped, and encoded again. A nested archive recurses, one encoding per
+    level. Returned untouched when nothing was stripped, so a path keeps Kodi's own escapes."""
+    # CURL::Decode, which reads "+" as a space; surrogateescape round-trips non-UTF-8 bytes.
+    parent = unquote_to_bytes(hostname.replace("+", " ")).decode("utf-8", "surrogateescape")
+    stripped = strip_credentials(parent)
+    if stripped == parent:
+        return hostname
+    raw = stripped.encode("utf-8", "surrogateescape")
+    return "".join(chr(b) if b in _UNENCODED else f"%{b:02x}" for b in raw)
 
 
 def clean_ids(uniqueid: Any) -> dict[str, str]:
