@@ -6,6 +6,7 @@ turns one into a new delivery path without a Kodi restart.
 """
 
 import threading
+from collections.abc import Callable
 
 from resources.lib import status
 from resources.lib.config import Settings
@@ -49,6 +50,7 @@ class Delivery:
         routes: RouteStore | None = None,
         viewers: ViewerStore | None = None,
         memory: PromptMemory | None = None,
+        on_renamed: Callable[[str, str], None] | None = None,
     ) -> None:
         self._kodi = kodi
         self._outbox_path = outbox_path
@@ -60,6 +62,7 @@ class Delivery:
         self._routes = routes
         self._viewers = viewers
         self._memory = memory
+        self._on_renamed = on_renamed
         self._route_facts: tuple[Endpoint, RouteFacts] | None = None
 
     def changed(self, settings: Settings) -> bool:
@@ -121,6 +124,8 @@ class Delivery:
         for old, new in result.renamed:
             answers = self._memory.rename_viewer(old, new) if self._memory is not None else 0
             kept = self._outbox.rename_viewer(old, new) if self._outbox is not None else 0
+            if self._on_renamed is not None:
+                self._on_renamed(old, new)
             _log.info("people.viewer_renamed", answers=answers, kept=kept)
             # The new name alone: Estuary's toast cuts long text off.
             self._kodi.notify(self._kodi.localised(VIEWER_RENAMED_HEADING), new)

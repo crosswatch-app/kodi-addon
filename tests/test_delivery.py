@@ -171,7 +171,7 @@ def test_route_facts_from_a_replaced_connection_are_ignored(tmp_path):
     assert store.load(config_fingerprint("new")) is None
 
 
-def _people_delivery(tmp_path, viewers):
+def _people_delivery(tmp_path, viewers, on_renamed=None):
     kodi = FakeKodi()
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save(viewers)
@@ -179,6 +179,7 @@ def _people_delivery(tmp_path, viewers):
     delivery = Delivery(
         kodi, str(tmp_path / "outbox.json"), threading.Event(),
         routes=RouteStore(str(tmp_path / "routes.json")), viewers=store, memory=memory,
+        on_renamed=on_renamed,
     )
     sink, lane = delivery.build(_settings())
     assert isinstance(sink, HttpReporter) and sink._on_routes is not None and lane is not None
@@ -201,6 +202,20 @@ def test_a_ping_with_people_renames_the_viewer_everywhere(tmp_path):
     assert remembered is not None and remembered.viewers == ("Anna B.",)
     assert lane.store._entries[0].body["viewers"] == ["Anna B."]
     assert kodi.notifications == [(f"#{VIEWER_RENAMED_HEADING}", "Anna B.")]
+
+
+def test_every_rename_in_one_reply_is_passed_on_in_order_after_viewers_json_is_saved(tmp_path):
+    linked = [Viewer(name="anna", person_id="p1"), Viewer(name="bob", person_id="p2")]
+    passed: list[tuple[str, str, list[str]]] = []
+
+    def on_renamed(old: str, new: str) -> None:
+        passed.append((old, new, [v.name for v in store.viewers()]))
+
+    _, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, linked, on_renamed=on_renamed)
+    on_routes(_facts(Person("p1", "Annie"), Person("p2", "Bobby")))
+    delivery.publish_status()
+    saved = ["Annie", "Bobby"]
+    assert passed == [("anna", "Annie", saved), ("bob", "Bobby", saved)]
 
 
 def test_a_ping_with_people_links_a_typed_viewer_without_a_toast(tmp_path):

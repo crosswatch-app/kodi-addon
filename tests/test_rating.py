@@ -112,3 +112,11 @@ def test_clearing_the_queue_reports_how_many_were_dropped():
     queue.add(watch(session_id="s-2"))
     assert queue.clear() == 2
     assert len(queue) == 0 and queue.clear() == 0
+
+
+def test_a_rename_reaches_every_queued_watch_naming_the_viewer():
+    queue = RatingQueue()
+    queue.add(watch(session_id="s-1", viewers=("anna", "bob")))
+    queue.add(watch(session_id="s-2", viewers=("bob",)))
+    queue.rename_viewer("anna", "Annie")
+    assert [w.viewers for w in queue.take_all()] == [("bob",), ("Annie", "bob")]

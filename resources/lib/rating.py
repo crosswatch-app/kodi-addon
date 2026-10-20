@@ -11,9 +11,7 @@ Skip, Back, the countdown and playback starting send nothing; a score is sent on
 is chosen, and 0 only for a deliberate Remove (contract, Ratings).
 """
 
-from __future__ import annotations
-
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from resources.lib.config import Settings
 from resources.lib.kodi import WINDOW_INVALID
@@ -81,6 +79,10 @@ def questions(watch: Watch, configured: list[Viewer], shared: bool) -> list[Ques
     return [Question(name, (name,)) for name in names]
 
 
+def _renamed(names: tuple[str, ...], old: str, new: str) -> tuple[str, ...]:
+    return tuple(new if n == old else n for n in names)
+
+
 def single_score(scores: list[int]) -> int | None:
     """The one score to write into Kodi's library, which holds one rating per item.
 
@@ -112,6 +114,9 @@ class RatingQueue:
     def clear(self) -> int:
         dropped, self._watches = len(self._watches), []
         return dropped
+
+    def rename_viewer(self, old: str, new: str) -> None:
+        self._watches = [replace(w, viewers=_renamed(w.viewers, old, new)) for w in self._watches]
 
     def __len__(self) -> int:
         return len(self._watches)
