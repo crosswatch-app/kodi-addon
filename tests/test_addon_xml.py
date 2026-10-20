@@ -66,12 +66,24 @@ def test_every_declared_asset_ships_with_the_addon():
     for asset in assets:
         assert (ADDON_XML.parent / (asset.text or "")).is_file(), asset.tag
     assert assets.findtext("icon") == "icon.png"
+    assert assets.findtext("fanart") == "fanart.jpg"
+
+
+def test_fanart_has_a_size_the_official_repository_accepts():
+    """The add-on rules allow 1280x720, 1920x1080 or 3840x2160; read from the JPEG's SOF header."""
+    data = (ADDON_XML.parent / "fanart.jpg").read_bytes()
+    i = 2
+    while data[i] == 0xFF and data[i + 1] not in (0xC0, 0xC1, 0xC2):
+        i += 2 + int.from_bytes(data[i + 2 : i + 4], "big")
+    height = int.from_bytes(data[i + 5 : i + 7], "big")
+    width = int.from_bytes(data[i + 7 : i + 9], "big")
+    assert (width, height) in {(1280, 720), (1920, 1080), (3840, 2160)}
 
 
 def test_the_licence_names_the_icons_licence_and_ships_its_text():
     """The status icons are Material Symbols, Apache-2.0, shipped as separate assets."""
     assert _root().findtext(".//license") == "GPL-2.0-only AND Apache-2.0"
-    assert (ADDON_XML.parent / "resources" / "licences" / "Apache-2.0.txt").is_file()
+    assert (ADDON_XML.parent / "resources" / "licences" / "apache-2.0.txt").is_file()
 
 
 def test_the_website_is_the_published_docs_site():

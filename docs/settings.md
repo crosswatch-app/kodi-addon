@@ -1,8 +1,8 @@
 # Settings
 
 Every add-on setting, with its default. Open them under Add-ons > My add-ons > Services >
-CrossWatch > Configure. Settings marked "Advanced level" only show after you switch Kodi's
-settings screen to the Advanced level.
+CrossWatch for Kodi > Configure. Settings marked "Advanced level" only show after you switch
+Kodi's settings screen to the Advanced level.
 
 ## CrossWatch
 

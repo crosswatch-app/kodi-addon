@@ -22,12 +22,12 @@ def _shipped(folder: Path) -> set[str]:
 def test_a_staged_folder_holds_only_what_kodi_loads(tmp_path):
     _run("folder", str(tmp_path / "out"))
     shipped = _shipped(tmp_path / "out")
-    assert {"addon.xml", "service.py", "configure.py", "LICENSE", "changelog.txt"} <= shipped
+    assert {"addon.xml", "service.py", "configure.py", "LICENSE.txt", "changelog.txt"} <= shipped
     assert "resources/settings.xml" in shipped
     assert "resources/lib/service/main.py" in shipped
     for path in shipped:
         top = path.split("/")[0]
-        assert top in {"addon.xml", "service.py", "configure.py", "LICENSE", "changelog.txt", "resources", "icon.png", "fanart.jpg"}, path
+        assert top in {"addon.xml", "service.py", "configure.py", "LICENSE.txt", "changelog.txt", "resources", "icon.png", "fanart.jpg"}, path
         assert "__pycache__" not in path and not path.endswith(".pyc"), path
 
 

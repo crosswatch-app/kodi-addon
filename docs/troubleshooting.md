@@ -120,8 +120,11 @@ Look in Kodi's log for:
 
 ## Logs
 
-The add-on's normal lines (failures, refusals, check-ins) go to Kodi's log, `kodi.log`. The
-[Kodi wiki](https://kodi.wiki/view/Log_file) says where to find it.
+Failures and refusals, such as `reporter.failed` and `reporter.rejected`, always go to Kodi's
+log, `kodi.log`. The add-on's routine lines, such as check-ins and each event it sends, appear
+there only with Kodi's own debug logging on (Settings > System > Logging > "Enable debug
+logging"), as Kodi's add-on rules ask. The [Kodi wiki](https://kodi.wiki/view/Log_file) says
+where to find the log.
 
 For more detail, switch on "Enable debug logging" in the [Advanced settings](settings.md#advanced).
 The add-on then also writes `crosswatch.log` in the `logs` folder of its data folder,

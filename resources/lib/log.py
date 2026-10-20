@@ -2,7 +2,7 @@
 """Structured logging: fixed event names, key-value fields, no interpolated prose.
 
 INFO and above reach Kodi's log and carry mechanism only: no names, no titles, no paths.
-DEBUG carries identity and goes only to the addon's own file, only on opt-in, because that
+INFO arrives there at Kodi's debug level (see KodiRuntime.log). DEBUG carries identity and goes only to the addon's own file, only on opt-in, because that
 file is what users paste into public issues.
 
 Every value is escaped and redacted on the way out. The webhook token is a query parameter

@@ -44,6 +44,18 @@ def test_a_negative_position_is_clamped_to_zero():
     assert KodiRuntime(player=RecordingPlayer(-0.028, 120.0)).player_times() == (0, 120_000)
 
 
+def test_only_warnings_and_errors_reach_kodi_log_without_debug_logging(runtime, monkeypatch):
+    """Kodi's add-on rules allow only the debug level for routine lines, so a normal kodi.log
+    shows what needs attention and nothing else."""
+    import xbmc
+
+    sent: list[tuple[str, int]] = []
+    monkeypatch.setattr(xbmc, "log", lambda message, level: sent.append((message, level)), raising=False)
+    for level in (20, 30, 40):
+        runtime.log(f"line{level}", level)
+    assert sent == [("line20", xbmc.LOGDEBUG), ("line30", xbmc.LOGWARNING), ("line40", xbmc.LOGERROR)]
+
+
 def test_a_zero_duration_is_reported_as_unknown():
     got = KodiRuntime(player=RecordingPlayer(30.0, 0.0)).player_times()
     assert got == (30_000, None)

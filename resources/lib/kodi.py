@@ -85,7 +85,9 @@ class KodiRuntime:
         self._xbmcvfs = xbmcvfs
         self._addon = xbmcaddon.Addon()
         self._player = player if player is not None else xbmc.Player()
-        self._levels = {10: xbmc.LOGDEBUG, 20: xbmc.LOGINFO, 30: xbmc.LOGWARNING, 40: xbmc.LOGERROR}
+        # Kodi's add-on rules allow only the debug level for routine output, so INFO lines
+        # show in kodi.log only with Kodi's debug logging on; warnings and errors always do.
+        self._levels = {10: xbmc.LOGDEBUG, 20: xbmc.LOGDEBUG, 30: xbmc.LOGWARNING, 40: xbmc.LOGERROR}
 
     def jsonrpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         request = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
@@ -329,4 +331,4 @@ class KodiRuntime:
             return ""
 
     def log(self, message: str, level: int) -> None:
-        self._xbmc.log(message, self._levels.get(level, self._xbmc.LOGINFO))
+        self._xbmc.log(message, self._levels.get(level, self._xbmc.LOGDEBUG))

@@ -214,6 +214,23 @@ def test_rated_routes_are_logged_and_count_as_delivered(lines, reporter_factory)
     assert any("reporter.rated" in line and "routes=2" in line and "failed=1" in line for line in lines)
 
 
+@pytest.mark.parametrize(("body", "level"), [
+    (b'{"ok": true, "ignored": false, "rated": [{"id": "R1", "sink": "trakt", "ok": false}]}', logmod.WARNING),
+    (b'{"ok": true, "ignored": false, "rated": [{"id": "R1", "sink": "trakt", "ok": true}]}', logmod.INFO),
+])
+def test_a_rating_a_service_refused_is_a_warning(body, level, reporter_factory):
+    """Routine lines reach a normal kodi.log only as warnings, and a refused rating needs the
+    user to look at CrossWatch's log."""
+    logmod.reset()
+    levels: list[int] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda msg, lvl: levels.append(lvl) if "reporter.rated" in msg else None)
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory("http://host/webhook/kodi", connection_factory=lambda *a, **k: connection)
+    assert reporter.report(_event("rate"), DEVICE) is True
+    assert levels == [level]
+    logmod.reset()
+
+
 @pytest.mark.parametrize("reason", ["no_matching_route", "no_rating_target", "invalid_rating", "unsupported_event"])
 def test_an_ignored_rate_is_logged_with_its_reason_and_not_retried(reason, lines, reporter_factory):
     body = json.dumps({"ok": True, "ignored": True, "error": reason}).encode()
