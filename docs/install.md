@@ -1,23 +1,37 @@
 # Install
 
-How to install the beta from a GitHub release, until the add-on reaches the official Kodi
-add-on repository.
+Install the add-on from the Rouzax Repository, which keeps it up to date. It has also been
+submitted to the official Kodi add-on repository; until it is listed there, use the Rouzax
+Repository.
 
-## Beta
+## From the Rouzax Repository
 
-This add-on has not reached the official Kodi add-on repository yet. Install the beta from a
-[GitHub release](https://github.com/crosswatch-app/kodi-addon/releases) instead:
-
-1. Download `service.crosswatch-v1.0.0-beta3.zip` from that release's assets.
+1. Download the latest `repository.rouzax` zip from its
+   [releases page](https://github.com/Rouzax/repository.rouzax/releases).
 2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources". Kodi warns that add-ons
-   get access to personal data; choose Yes to continue.
+   get access to personal data; choose Yes to continue. This is needed once, for the
+   repository.
 3. Go to Add-ons, open the add-on browser (the open box icon at the top left), choose
-   "Install from zip file" and pick the zip.
-4. Follow the [Quick start](quick-start.md).
+   "Install from zip file" and pick the repository zip.
+4. In the add-on browser, choose "Install from repository" > Rouzax Repository > Services >
+   CrossWatch for Kodi > Install.
+5. Follow the [Quick start](quick-start.md).
 
-A zip install does not update itself: to update, install the next zip over it.
+Kodi updates the add-on from the repository by itself, as it does for any repository
+add-on.
 
-## Later
+## From the Kodi repository
 
-Once the beta has run for a while, this add-on will come first to the author's own
-repository, with automatic updates, and later to the official Kodi add-on repository.
+Once listed: in the add-on browser, choose "Install from repository" > Kodi Add-on
+repository > Services > CrossWatch for Kodi > Install. No "Unknown sources" needed.
+
+## From a zip
+
+Every release also has a zip on the
+[releases page](https://github.com/crosswatch-app/kodi-addon/releases). Install it as in
+steps 2 and 3 above. A zip install does not update itself.
+
+## Coming from a beta
+
+Install from the Rouzax Repository over the beta. Viewers, remembered answers and the
+pairing are kept.

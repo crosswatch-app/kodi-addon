@@ -18,15 +18,15 @@ Kodi cannot tell who pressed play, so the add-on works it out, first match wins:
 With only one viewer, everything is credited to that viewer and nothing is asked. See
 [Who watched](who-watched.md).
 
-!!! warning "Beta"
+!!! note "Tested on"
 
-    This is a beta (1.0.0~beta3), installed from a GitHub release; see [Install](install.md).
-    It has been tested on Kodi 21.3 (Omega) with the Estuary and Arctic Zephyr Mod skins.
-    Kodi on Android and other skins have not been tested yet.
+    Kodi 21.3 (Omega) and the Kodi 22 (Piers) release candidate, with the Estuary and
+    Arctic Zephyr Mod skins. Kodi on Android and other skins have not been tested yet.
 
 ## Requirements
 
-- Kodi 21 (Omega). Earlier versions are not supported; later versions have not been tested.
+- Kodi 21 (Omega) or newer. Earlier versions are not supported. Tested on Kodi 21.3 and the
+  Kodi 22 (Piers) release candidate.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support (marked
   experimental there). Rating needs v0.13.4 or later, and picking viewers from CrossWatch's
   user profiles needs v0.13.5 or later.
@@ -47,7 +47,7 @@ Kodi's web server and JSON-RPC interface are not needed; only the optional
 
     ---
 
-    Install the beta from a GitHub release.
+    From the Rouzax Repository, the Kodi repository or a zip.
 
     [:octicons-arrow-right-24: Install](install.md)
 

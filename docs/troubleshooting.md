@@ -118,6 +118,14 @@ Look in Kodi's log for:
 | `reporter.rejected` with `reason=no_matching_route` | No route accepts the viewer; see [No CrossWatch route](#a-viewer-shows-no-crosswatch-route). |
 | `reporter.rated` with `failed=` above 0 | A service refused the rating. CrossWatch's log has the reason. |
 
+## The add-on stopped reporting after an update
+
+If Kodi updated or stopped the add-on while a "Who watched it?" or rating question was on
+screen, Kodi stops it forcefully, and it does not start again until Kodi restarts. Restart
+Kodi. If Kodi was shutting down at that moment, it can hang while closing; close it fully
+and start it again. This comes from how Kodi stops add-ons
+([#60](https://github.com/crosswatch-app/kodi-addon/issues/60)).
+
 ## Logs
 
 Failures and refusals, such as `reporter.failed` and `reporter.rejected`, always go to Kodi's
@@ -144,4 +152,5 @@ Open an issue at [crosswatch-app/kodi-addon](https://github.com/crosswatch-app/k
 Attach `kodi.log`, and `crosswatch.log` if you have one, but check them for anything you would
 rather not share first.
 
-A Kodi forum thread will follow with the first stable release.
+Questions are welcome in the [Kodi forum thread](https://forum.kodi.tv/showthread.php?tid=389119);
+bug reports go to GitHub.
