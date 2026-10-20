@@ -47,7 +47,7 @@ Nothing changes: an earlier connection stays as it was. The message says what we
 | Can't reach CrossWatch at `<address>`. | Check the address and port, and that Kodi can reach that machine. |
 | Pairing failed: CrossWatch answered HTTP `<code>`. | Something went wrong on CrossWatch's side; check CrossWatch's log. |
 | The certificate of `<address>` was not accepted. | An `https://` address needs a certificate from a public authority such as Let's Encrypt. Self-signed certificates do not work; use `http://` on your home network instead. |
-| Not a CrossWatch address: `<address>` | Use an `http://` or `https://` address. A URL containing `?token=` belongs in [Manual setup](#manual-setup-advanced). |
+| Not a CrossWatch address: `<address>` | Use an `http://` or `https://` address, with a port from 1 to 65535 if you give one. A URL containing `?token=` belongs in [Manual setup](#manual-setup-advanced). |
 
 ![Wrong code message](https://github.com/user-attachments/assets/12e7591b-ac25-4e7e-915d-02ef55248283)
 

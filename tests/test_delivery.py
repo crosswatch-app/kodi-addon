@@ -1,5 +1,7 @@
 import threading
 
+import pytest
+
 from resources.lib.config import KEY_STATUS, Settings
 from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED, VIEWER_RENAMED_HEADING
 from resources.lib.models import Viewer
@@ -39,6 +41,23 @@ def test_an_invalid_url_falls_back_to_logging_rather_than_posting(tmp_path):
     sink, lane = _delivery(tmp_path).build(_settings(url="file:///etc/passwd"))
     assert isinstance(sink, LogReporter)
     assert lane is None
+
+
+@pytest.mark.parametrize("port", ["99999", "abc"])
+def test_a_bad_port_falls_back_to_logging(tmp_path, port):
+    sink, lane = _delivery(tmp_path).build(_settings(url=f"http://nas:{port}/webhook/kodiwatcher"))
+    assert isinstance(sink, LogReporter)
+    assert lane is None
+
+
+def test_a_valid_address_after_a_rejected_one_is_applied(tmp_path):
+    delivery = _delivery(tmp_path)
+    delivery.build(_settings())
+    delivery.build(_settings(url="http://nas:99999/webhook/kodiwatcher"))
+    assert delivery.changed(_settings()) is True
+    sink, lane = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter)
+    assert lane is not None
 
 
 def test_the_lane_is_loaded_from_disk_for_the_token(tmp_path):

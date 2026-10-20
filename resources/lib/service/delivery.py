@@ -5,8 +5,6 @@ Pairing, a Link, a pasted URL and Unpair all end as a settings change, and this 
 turns one into a new delivery path without a Kodi restart.
 """
 
-from __future__ import annotations
-
 import threading
 
 from resources.lib import status
@@ -69,10 +67,10 @@ class Delivery:
 
     def build(self, settings: Settings) -> tuple[EventSink, OutboxLane | None]:
         endpoint = _endpoint(settings)
-        self._endpoint = endpoint
         url, token = endpoint
         if url is None:
             status.write(self._kodi, status.not_paired(self._kodi))
+            self._endpoint = endpoint
             return LogReporter(), None
         try:
             sink = HttpReporter(
@@ -85,6 +83,7 @@ class Delivery:
         except InvalidWebhookUrl as exc:
             # Fall back to logging rather than posting somewhere unexpected.
             _log.error("service.webhook_url_rejected", error=str(exc))
+            self._endpoint = endpoint
             return LogReporter(), None
         fingerprint = config_fingerprint(token)
         if self._outbox is None:
@@ -92,6 +91,9 @@ class Delivery:
             self._outbox.load()
         else:
             self._outbox.rebind(fingerprint)
+        # Noted only once a sink exists for it: after a build that raised, the same settings
+        # must still count as a change, or the next settings change never builds again.
+        self._endpoint = endpoint
         return sink, OutboxLane(self._outbox, sink.send_once)
 
     def _note_instance(self, endpoint: Endpoint, instance: str) -> None:

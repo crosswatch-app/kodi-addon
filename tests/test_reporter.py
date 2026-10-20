@@ -26,6 +26,7 @@ from resources.lib.reporter import (
     ReporterQueue,
     Verdict,
     event_kind,
+    target_of,
     validate_webhook_url,
 )
 
@@ -143,6 +144,18 @@ def test_validate_rejects_a_file_url():
 def test_validate_rejects_a_scheme_less_url():
     with pytest.raises(InvalidWebhookUrl):
         validate_webhook_url("crosswatch.local/webhook/kodi?profile=t")
+
+
+@pytest.mark.parametrize("port", ["99999", "abc", "0", "-1"])
+def test_validate_rejects_a_port_no_server_listens_on(port):
+    with pytest.raises(InvalidWebhookUrl):
+        validate_webhook_url(f"http://host:{port}/webhook/kodiwatcher")
+    with pytest.raises(InvalidWebhookUrl):
+        target_of(f"http://host:{port}/webhook/kodiwatcher")
+
+
+def test_target_keeps_a_valid_port():
+    assert target_of("http://host:65535/webhook/kodiwatcher").port == 65535
 
 
 def test_validate_error_never_contains_the_token():

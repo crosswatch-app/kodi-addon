@@ -10,8 +10,6 @@ Each event is delivered only within two minutes of being handed over, which is t
 contract's retry window measured from the event rather than from the attempt.
 """
 
-from __future__ import annotations
-
 import http.client
 import json
 import queue
@@ -69,8 +67,14 @@ def validate_webhook_url(url: str) -> str:
     """
     try:
         parts = urlsplit(url)
+        # urlsplit checks the port only when it is read, so a bad one would otherwise surface
+        # later as a plain ValueError that no caller of this function expects.
+        port = parts.port
     except ValueError as exc:
         raise InvalidWebhookUrl(f"unparseable webhook URL: {redact(url)}") from exc
+    if port == 0:
+        # A valid number, but no server listens on it: the connect would only fail later.
+        raise InvalidWebhookUrl(f"webhook URL has port 0: {redact(url)}")
     if parts.scheme.lower() not in ALLOWED_SCHEMES or not parts.netloc:
         raise InvalidWebhookUrl(f"webhook URL must be http or https: {redact(url)}")
     if parts.fragment:
