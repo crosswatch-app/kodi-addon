@@ -11,8 +11,6 @@ token itself. A duplicate caused by a crash between acceptance and removal is ha
 receiving sinks dedupe or set an idempotent watched flag.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import os
@@ -91,9 +89,7 @@ class Outbox:
             for entry in entries:
                 if entry.fingerprint != self._fingerprint:
                     dropped["config"] += 1
-                # An entry stamped in the future was stored or is being judged on a clock
-                # that had not synced yet. Neither says it is old.
-                elif now - entry.stored_at > self._max_age:
+                elif self._too_old(entry, now):
                     dropped["age"] += 1
                 else:
                     kept.append(entry)
@@ -148,6 +144,14 @@ class Outbox:
     def next_due(self) -> OutboxEntry | None:
         now = self._clock()
         with self._lock:
+            # Kodi can run for longer than the age limit, so the limit applied at load has to
+            # hold here too; this is the one place every replay passes through.
+            wall = self._wall()
+            kept = [e for e in self._entries if not self._too_old(e, wall)]
+            if len(kept) != len(self._entries):
+                _log.warning("reporter.outbox_dropped", reason="age", count=len(self._entries) - len(kept))
+                self._entries = kept
+                self._save()
             return next((e for e in self._entries if e.due_at <= now), None)
 
     def defer(self, event_id: str) -> None:
@@ -183,6 +187,11 @@ class Outbox:
     def pending(self) -> int:
         with self._lock:
             return len(self._entries)
+
+    def _too_old(self, entry: OutboxEntry, wall: float) -> bool:
+        # An entry stamped in the future was stored or is being judged on a clock that had
+        # not synced yet. Neither says it is old.
+        return wall - entry.stored_at > self._max_age
 
     def _remove(self, event_id: str) -> bool:
         with self._lock:

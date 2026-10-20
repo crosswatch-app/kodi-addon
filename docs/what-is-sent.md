@@ -50,8 +50,9 @@ sending, so it survives CrossWatch being down and Kodi restarting. It is then:
 - delivered with its original time, marked as a late delivery. Plex, Emby and Jellyfin record
   the watch at the time it happened; Trakt, Simkl and CrossWatch's own history record it when
   it arrives.
-- dropped, with a warning in the log, when CrossWatch itself refuses it, when it is more than seven
-  days old at Kodi's start, when more than 200 are waiting (the oldest goes), or when the token
+- dropped, with a warning in the log, when CrossWatch itself refuses it, when it was saved more
+  than seven days ago (checked when Kodi starts and before each retry, so a Kodi that keeps
+  running drops it too), when more than 200 are waiting (the oldest goes), or when the token
   has changed since, for example by pairing with a different CrossWatch. A stored watch is never
   sent to a different CrossWatch.
 
