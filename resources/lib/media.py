@@ -46,14 +46,24 @@ def strip_credentials(path: str) -> str:
     value may hold dots, spaces or quotes, and any boundary rule leaves what follows it in
     place. A query or fragment counts only when it holds a "=", so a filename with a "?" or
     "#" in it ("S01E01.Are.You.My.Mummy?.mkv") is left intact.
+
+    Request headers ride after the first "|" ("...|User-Agent=Kodi&Cookie=s=1"). They are split
+    off first, as CURL::Parse does, and replaced whole by the same "=" rule.
     """
     text = str(path or "")
     if "://" not in text:
         return text
+    head, bar, options = text.partition("|")
+    # redact() still runs last: it catches what the URL parse cannot see, such as the
+    # userinfo of a URL nested in the path ("http://proxy/fetch/http://user:pass@inner/").
+    return redact(_strip_url(head) + bar + (_REDACTED if "=" in options else options))
+
+
+def _strip_url(text: str) -> str:
     try:
         parts = urlsplit(text)
     except ValueError:
-        return redact(text)
+        return text
     netloc, query, fragment = parts.netloc, parts.query, parts.fragment
     if "@" in netloc:
         netloc = netloc.rsplit("@", 1)[-1]

@@ -68,6 +68,38 @@ def test_redacts_the_whole_query_whatever_it_contains(path, expected):
     assert strip_credentials(path) == expected
 
 
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (
+            "https://host/live.m3u8|User-Agent=Kodi&Authorization=Bearer abc",
+            "https://host/live.m3u8|<redacted>",
+        ),
+        ("https://host/a.mkv?x=1|Cookie=s=1", "https://host/a.mkv?<redacted>|<redacted>"),
+        ("smb://user:pass@nas/tv/x.mkv|Cookie=s=1", "smb://nas/tv/x.mkv|<redacted>"),
+    ],
+)
+def test_redacts_request_headers_after_a_pipe(path, expected):
+    assert strip_credentials(path) == expected
+
+
+def test_redacts_credentials_of_a_url_nested_in_the_path():
+    got = strip_credentials("http://proxy/fetch/http://user:pass@inner/file.mkv")
+    assert "pass" not in got
+    assert got == "http://proxy/fetch/http://<redacted>@inner/file.mkv"
+
+
+def test_redacts_a_url_nested_in_a_pipe_option_value():
+    got = strip_credentials("https://host/a.mkv|Referer=http://user:pass@inner/page?token=secret")
+    assert "pass" not in got
+    assert "secret" not in got
+
+
+def test_leaves_a_pipe_in_a_filename_alone():
+    path = "nfs://nas/tv/Show|Special.mkv"
+    assert strip_credentials(path) == path
+
+
 def test_an_unparseable_url_still_loses_its_query():
     assert strip_credentials("http://[bad/x.mkv?token=secret") == "http://[bad/x.mkv?<redacted>"
 
