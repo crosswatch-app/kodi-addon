@@ -18,7 +18,8 @@ Each playback event carries:
 - the item: title, year, season, episode and episode title, and the ids Kodi has (such as TMDb,
   TVDb, IMDb).
 - playback: duration, position and progress.
-- the file path, with any user name, password and query string removed.
+- the file path, with any user name and password removed. For a stream URL, everything after
+  the `?` is replaced by `<redacted>`, since a query string often carries an access token.
 - this Kodi: its device name, the add-on's device id and the add-on version.
 - for PlexKodiConnect playback, the Plex rating key. That playback is only reported when "Skip
   PlexKodiConnect playback" is off; it is on by default.

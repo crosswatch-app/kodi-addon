@@ -13,8 +13,6 @@ reach the wire looking like ids, so the receiver routes on them and the no-usabl
 sees an item that is in fact unidentifiable.
 """
 
-from __future__ import annotations
-
 import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -27,6 +25,7 @@ _log = get_logger("media")
 
 PKC_PREFIX = "plugin://plugin.video.plexkodiconnect"
 _RATING_KEY = re.compile(r"/(\d+)/?$")
+_REDACTED = "<redacted>"
 
 _ITEM_PROPERTIES = ["title", "showtitle", "season", "episode", "year", "tvshowid", "file", "uniqueid"]
 
@@ -36,28 +35,35 @@ _PLACEHOLDER_IDS = frozenset({"none", "null", "nan", "unknown", "0", "-1", "fals
 
 
 def strip_credentials(path: str) -> str:
-    """Remove user:password@ and redact any query string from a VFS path.
+    """Remove user:password@ and the whole query string and fragment from a VFS URL.
 
     Kodi carries share credentials inline and strips them in FileOperations but not on the
-    Player.GetItem path, so without this they reach the payload and the log.
+    Player.GetItem path, so without this they reach the payload and the log. A token in a
+    stream URL is a credential too, and payload.py copies this value verbatim into the POST
+    body.
 
-    The query string goes through the logging layer's own redaction rather than a second
-    rule here. A token in a stream URL is a credential too, and payload.py copies this
-    value verbatim into the POST body, so the log being safe is not enough: one rule has to
-    cover both places or the two will drift apart.
+    The query is replaced as a whole rather than scanned for where it ends: a parameter
+    value may hold dots, spaces or quotes, and any boundary rule leaves what follows it in
+    place. A query or fragment counts only when it holds a "=", so a filename with a "?" or
+    "#" in it ("S01E01.Are.You.My.Mummy?.mkv") is left intact.
     """
     text = str(path or "")
     if "://" not in text:
         return text
-    if "@" in text:
-        try:
-            parts = urlsplit(text)
-        except ValueError:
-            return text
-        if "@" in parts.netloc:
-            host = parts.netloc.rsplit("@", 1)[-1]
-            text = urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
-    return redact(text)
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return redact(text)
+    netloc, query, fragment = parts.netloc, parts.query, parts.fragment
+    if "@" in netloc:
+        netloc = netloc.rsplit("@", 1)[-1]
+    if "=" in query:
+        query, fragment = _REDACTED, ""
+    elif "=" in fragment:
+        fragment = _REDACTED
+    if (netloc, query, fragment) == (parts.netloc, parts.query, parts.fragment):
+        return text
+    return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
 
 
 def clean_ids(uniqueid: Any) -> dict[str, str]:

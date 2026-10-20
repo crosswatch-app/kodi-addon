@@ -53,6 +53,23 @@ def test_redacting_a_url_does_not_eat_the_sentence_after_it():
     assert got.endswith(". Next sentence.")
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://host/play?name=a..b&token=secret",
+        "http://host/s.mkv?x=1...&api_key=secret",
+    ],
+)
+def test_a_run_of_dots_inside_a_query_does_not_end_it(text):
+    assert "secret" not in logmod.redact(text)
+
+
+def test_an_ellipsis_after_a_url_is_kept():
+    got = logmod.redact("See http://host/a?tok=1... Next sentence.")
+    assert "tok=1" not in got
+    assert got.endswith("... Next sentence.")
+
+
 def test_formats_event_name_and_fields(lines):
     logmod.get_logger("identity").info("identity.resolved", source="playlist", viewers_count=1)
     assert lines == ["[identity] identity.resolved | source=playlist, viewers_count=1"]

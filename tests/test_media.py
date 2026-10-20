@@ -1,3 +1,5 @@
+import pytest
+
 from resources.lib.media import MediaResolver, strip_credentials
 from tests.fakes import FakeKodi
 
@@ -47,6 +49,41 @@ def test_leaves_a_plugin_url_alone():
 
 def test_redacts_a_credential_carried_in_a_query_string():
     assert strip_credentials("https://cdn/media.mkv?token=s3cret") == "https://cdn/media.mkv?<redacted>"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("https://host/play?name=a..b&token=secret", "https://host/play?<redacted>"),
+        ("http://host/s.mkv?x=1...&api_key=secret", "http://host/s.mkv?<redacted>"),
+        ("http://h/p?title=My Show&token=secret", "http://h/p?<redacted>"),
+        ("http://h/s.mkv?token=secret.", "http://h/s.mkv?<redacted>"),
+        ("http://h/s.mkv?flag&token=secret", "http://h/s.mkv?<redacted>"),
+        ("http://h/s.mkv#access_token=secret", "http://h/s.mkv#<redacted>"),
+        ("http://h/s.mkv?a=1#access_token=secret", "http://h/s.mkv?<redacted>"),
+        ("smb://user:pass@nas/media/x.mkv?token=secret", "smb://nas/media/x.mkv?<redacted>"),
+    ],
+)
+def test_redacts_the_whole_query_whatever_it_contains(path, expected):
+    assert strip_credentials(path) == expected
+
+
+def test_an_unparseable_url_still_loses_its_query():
+    assert strip_credentials("http://[bad/x.mkv?token=secret") == "http://[bad/x.mkv?<redacted>"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "https://cdn/tv/S01E01.mkv",
+        "nfs://nas/tv/Doctor.Who/S01E01.Are.You.My.Mummy?.mkv",
+        "smb://nas/tv/Episode #1.mkv",
+        "/media/tv/Show/S01E01?.mkv",
+        r"C:\media\Whats.Up.Doc?.mkv",
+    ],
+)
+def test_leaves_a_path_without_a_key_value_query_unchanged(path):
+    assert strip_credentials(path) == path
 
 
 def test_a_query_string_credential_never_reaches_the_model():
