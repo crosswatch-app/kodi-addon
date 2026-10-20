@@ -10,7 +10,10 @@ is and what the add-on writes there.
 2. **Kodi's log.** `reporter.failed` means CrossWatch could not be reached: check that it runs
    and that Kodi can reach the paired address. With `CERTIFICATE_VERIFY_FAILED` in it, the
    `https://` certificate is not trusted; it must come from a public authority such as Let's
-   Encrypt. `reporter.rejected` with `status=401` means CrossWatch refused the token: pair again.
+   Encrypt. With `reason=not_crosswatch` in it, something else answered at that address, such
+   as a reverse proxy's login page: let Kodi's requests to `/webhook/kodiwatcher` past the
+   login, or pair with an address that reaches CrossWatch directly. `reporter.rejected` with
+   `status=401` means CrossWatch refused the token: pair again.
 3. **The Kodi add-on in CrossWatch.** It must be switched on for this Kodi instance. Switching it
    off throws away this Kodi's token without any sign in Kodi; turn it back on and pair again.
 4. **What you played.** Only episodes and films with a real id (TMDb, TVDb, IMDb and the like)

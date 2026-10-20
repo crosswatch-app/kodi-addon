@@ -300,13 +300,13 @@ class HttpReporter:
             # helps nobody and delays every event behind it.
             _log.warning("reporter.rejected", url=self._safe_url, event=kind, status=status)
             return False
-        return self._accepted(kind, raw, body)
+        return self._accepted(kind, status, raw, body)
 
-    def _accepted(self, kind: str, raw: bytes, body: bytes) -> bool:
+    def _accepted(self, kind: str, status: int, raw: bytes, body: bytes) -> bool | None:
         try:
-            parsed = json.loads(raw.decode("utf-8") or "{}")
+            parsed = json.loads(raw.decode("utf-8"))
         except ValueError:
-            parsed = {}
+            parsed = None
         if not isinstance(parsed, dict):
             parsed = {}
         if parsed.get("ignored") is True or parsed.get("activity_recorded") is False:
@@ -317,6 +317,13 @@ class HttpReporter:
                 reason=str(parsed.get("error") or "activity_not_recorded"),
             )
             return False
+        if "ok" not in parsed:
+            # Every CrossWatch reply carries "ok". A 200 without it is a proxy login page or a
+            # captive portal answering in CrossWatch's place, so nothing was delivered and a
+            # completed watch must stay on disk. The body is not logged: a login page is not
+            # ours to copy into kodi.log.
+            _log.warning("reporter.failed", url=self._safe_url, event=kind, status=status, reason="not_crosswatch")
+            return None
         rated = parsed.get("rated")
         if kind == "rate" and isinstance(rated, list):
             # A write that failed at a destination is still a 200: CrossWatch logs why, and

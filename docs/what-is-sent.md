@@ -38,6 +38,8 @@ Developers: the exact payload is the
 
 The add-on keeps trying each event for two minutes, then drops it. An old progress or pause
 event is useless later and could even overwrite a newer resume point, so it is never sent late.
+An answer that does not come from CrossWatch, such as a reverse proxy's login page, counts as
+not reached.
 
 **A finished watch is the exception.** When a stop completes a watch (played to the end, or
 past Kodi's watched threshold, 90 percent by default), the add-on saves it to disk before
