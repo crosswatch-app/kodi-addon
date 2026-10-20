@@ -5,8 +5,6 @@ The loop is the only pump for Kodi's Python callback queue, so it must survive a
 tick throws: a returned main() means no further callback is ever delivered.
 """
 
-from __future__ import annotations
-
 import threading
 import time
 import uuid
@@ -76,6 +74,9 @@ def main() -> None:
         routes=RouteStore(paths.routes_path(kodi)),
         viewers=viewer_store,
         memory=memory,
+        # The controller needs the sink built here, so it comes later; a rename is only
+        # applied from the tick loop below, by which time it exists.
+        on_renamed=lambda old, new: controller.rename_viewer(old, new),
     )
     sink, lane = delivery.build(settings)
     # device_identity owns identity, not versioning, and is used by tests that should not

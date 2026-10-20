@@ -18,7 +18,13 @@ Each playback event carries:
 - the item: title, year, season, episode and episode title, and the ids Kodi has (such as TMDb,
   TVDb, IMDb).
 - playback: duration, position and progress.
-- the file path, with any user name, password and query string removed.
+- the file path, with any user name and password removed, also from the share address inside
+  an archive path (a `zip://` or `rar://` path to an archive on an `smb://` share). A query
+  string (after `?`) that holds a `key=value` pair is replaced by `<redacted>`, together with
+  anything after it, since a query string often carries an access token. So is a fragment
+  (after `#`) that holds one, and so are request headers added after a `|` (such as a cookie
+  or an authorization header). A `?` or `#` in a filename, with no `=` after it, is left as
+  it is.
 - this Kodi: its device name, the add-on's device id and the add-on version.
 - for PlexKodiConnect playback, the Plex rating key. That playback is only reported when "Skip
   PlexKodiConnect playback" is off; it is on by default.
@@ -36,6 +42,9 @@ Developers: the exact payload is the
 
 The add-on keeps trying each event for two minutes, then drops it. An old progress or pause
 event is useless later and could even overwrite a newer resume point, so it is never sent late.
+An answer that does not come from CrossWatch, such as a reverse proxy's login page, counts as
+not reached. A saved watch survives it, even when the proxy answers with an error such as
+`401` or `403`, and is tried again later.
 
 **A finished watch is the exception.** When a stop completes a watch (played to the end, or
 past Kodi's watched threshold, 90 percent by default), the add-on saves it to disk before
@@ -45,8 +54,9 @@ sending, so it survives CrossWatch being down and Kodi restarting. It is then:
 - delivered with its original time, marked as a late delivery. Plex, Emby and Jellyfin record
   the watch at the time it happened; Trakt, Simkl and CrossWatch's own history record it when
   it arrives.
-- dropped, with a warning in the log, when CrossWatch refuses it, when it is more than seven
-  days old at Kodi's start, when more than 200 are waiting (the oldest goes), or when the token
+- dropped, with a warning in the log, when CrossWatch itself refuses it, when it was saved more
+  than seven days ago (checked when Kodi starts and before each retry, so a Kodi that keeps
+  running drops it too), when more than 200 are waiting (the oldest goes), or when the token
   has changed since, for example by pairing with a different CrossWatch. A stored watch is never
   sent to a different CrossWatch.
 

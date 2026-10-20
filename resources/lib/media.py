@@ -13,11 +13,9 @@ reach the wire looking like ids, so the receiver routes on them and the no-usabl
 sees an item that is in fact unidentifiable.
 """
 
-from __future__ import annotations
-
 import re
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote_to_bytes, urlsplit, urlunsplit
 
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger, log_timing, redact
@@ -27,6 +25,14 @@ _log = get_logger("media")
 
 PKC_PREFIX = "plugin://plugin.video.plexkodiconnect"
 _RATING_KEY = re.compile(r"/(\d+)/?$")
+_REDACTED = "<redacted>"
+
+# Protocols whose hostname is the parent URL, percent-encoded: URIUtils::HasParentInHostname,
+# plus the archive protocols the official vfs add-ons register with encodedhostname
+# (vfs.rar, vfs.libarchive). The parent can carry credentials of its own.
+_PARENT_IN_HOSTNAME = frozenset({"zip", "apk", "bluray", "udf", "iso9660", "xbt", "rar", "archive"})
+# What CURL::Encode leaves as is.
+_UNENCODED = frozenset(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._!()")
 
 _ITEM_PROPERTIES = ["title", "showtitle", "season", "episode", "year", "tvshowid", "file", "uniqueid"]
 
@@ -36,28 +42,60 @@ _PLACEHOLDER_IDS = frozenset({"none", "null", "nan", "unknown", "0", "-1", "fals
 
 
 def strip_credentials(path: str) -> str:
-    """Remove user:password@ and redact any query string from a VFS path.
+    """Remove user:password@ and the whole query string and fragment from a VFS URL.
 
     Kodi carries share credentials inline and strips them in FileOperations but not on the
-    Player.GetItem path, so without this they reach the payload and the log.
+    Player.GetItem path, so without this they reach the payload and the log. A token in a
+    stream URL is a credential too, and payload.py copies this value verbatim into the POST
+    body.
 
-    The query string goes through the logging layer's own redaction rather than a second
-    rule here. A token in a stream URL is a credential too, and payload.py copies this
-    value verbatim into the POST body, so the log being safe is not enough: one rule has to
-    cover both places or the two will drift apart.
+    The query is replaced as a whole rather than scanned for where it ends: a parameter
+    value may hold dots, spaces or quotes, and any boundary rule leaves what follows it in
+    place. A query or fragment counts only when it holds a "=", so a filename with a "?" or
+    "#" in it ("S01E01.Are.You.My.Mummy?.mkv") is left intact.
+
+    Request headers ride after the first "|" ("...|User-Agent=Kodi&Cookie=s=1"). They are split
+    off first, as CURL::Parse does, and replaced whole by the same "=" rule.
     """
     text = str(path or "")
     if "://" not in text:
         return text
-    if "@" in text:
-        try:
-            parts = urlsplit(text)
-        except ValueError:
-            return text
-        if "@" in parts.netloc:
-            host = parts.netloc.rsplit("@", 1)[-1]
-            text = urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
-    return redact(text)
+    head, bar, options = text.partition("|")
+    # redact() still runs last: it catches what the URL parse cannot see, such as the
+    # userinfo of a URL nested in the path ("http://proxy/fetch/http://user:pass@inner/").
+    return redact(_strip_url(head) + bar + (_REDACTED if "=" in options else options))
+
+
+def _strip_url(text: str) -> str:
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return text
+    netloc, query, fragment = parts.netloc, parts.query, parts.fragment
+    if "@" in netloc:
+        netloc = netloc.rsplit("@", 1)[-1]
+    if parts.scheme in _PARENT_IN_HOSTNAME:
+        netloc = _strip_parent(netloc)
+    if "=" in query:
+        query, fragment = _REDACTED, ""
+    elif "=" in fragment:
+        fragment = _REDACTED
+    if (netloc, query, fragment) == (parts.netloc, parts.query, parts.fragment):
+        return text
+    return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
+
+
+def _strip_parent(hostname: str) -> str:
+    """The parent URL in an archive path's hostname, stripped as CURL::GetWithoutUserDetails
+    does: decoded, stripped, and encoded again. A nested archive recurses, one encoding per
+    level. Returned untouched when nothing was stripped, so a path keeps Kodi's own escapes."""
+    # CURL::Decode, which reads "+" as a space; surrogateescape round-trips non-UTF-8 bytes.
+    parent = unquote_to_bytes(hostname.replace("+", " ")).decode("utf-8", "surrogateescape")
+    stripped = strip_credentials(parent)
+    if stripped == parent:
+        return hostname
+    raw = stripped.encode("utf-8", "surrogateescape")
+    return "".join(chr(b) if b in _UNENCODED else f"%{b:02x}" for b in raw)
 
 
 def clean_ids(uniqueid: Any) -> dict[str, str]:

@@ -274,3 +274,19 @@ def test_no_owners_for_an_unknown_show_or_no_id():
     index = _build(_kodi({"Anna TV": [{"id": 42, "type": "tvshow"}]}), [ANNA]).result()
     assert index is not None
     assert index.owners_for("tvshow", 7) == () and index.owners_for("tvshow", None) == ()
+
+
+def test_a_renamed_index_keeps_every_membership_under_the_new_name():
+    index = PlaylistIndex(
+        by_key={("tvshow", 7): ("Anna", "bob"), ("movie", 3): ("bob",)},
+        built_at=12.0,
+        degraded=frozenset({"Anna"}),
+        unreadable=frozenset({"Kids"}),
+        owners={("tvshow", 7): (("Anna", "Anna TV"), ("bob", "Shared"))},
+    )
+    renamed = index.renamed("Anna", "Anna Lee")
+    assert renamed.by_key == {("tvshow", 7): ("Anna Lee", "bob"), ("movie", 3): ("bob",)}
+    assert renamed.owners == {("tvshow", 7): (("Anna Lee", "Anna TV"), ("bob", "Shared"))}
+    assert renamed.degraded == frozenset({"Anna Lee"})
+    assert (renamed.built_at, renamed.unreadable) == (12.0, frozenset({"Kids"}))
+    assert index.by_key[("tvshow", 7)] == ("Anna", "bob")

@@ -130,6 +130,54 @@ def test_an_entry_from_the_future_is_kept_rather_than_judged_on_a_wrong_clock(tm
     assert _outbox(tmp_path, clocks).pending() == 1
 
 
+def _stored_ids(tmp_path) -> list[str]:
+    document = json.loads((tmp_path / "outbox.json").read_text(encoding="utf-8"))
+    return [entry["event_id"] for entry in document["entries"]]
+
+
+def test_an_entry_that_ages_out_while_running_is_dropped_and_saved(tmp_path, clocks, lines):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add(_body("e-1"), "stop")
+    clocks.wall += 10 * DAY
+    clocks.mono += 10 * DAY
+    assert outbox.next_due() is None
+    assert outbox.pending() == 0
+    assert _stored_ids(tmp_path) == []
+    dropped = [line for line in lines if "reporter.outbox_dropped" in line]
+    assert len(dropped) == 1 and "reason=age" in dropped[0] and "count=1" in dropped[0]
+
+
+def test_an_entry_inside_the_age_limit_while_running_is_still_due(tmp_path, clocks):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add(_body("e-1"), "stop")
+    clocks.wall += 6 * DAY
+    clocks.mono += 6 * DAY
+    entry = outbox.next_due()
+    assert entry is not None and entry.event_id == "e-1"
+
+
+def test_an_entry_from_the_future_is_kept_while_running(tmp_path, clocks):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add(_body("e-1"), "stop")
+    clocks.wall -= 30 * DAY
+    clocks.mono += PING_INTERVAL_SECONDS
+    entry = outbox.next_due()
+    assert entry is not None and entry.event_id == "e-1"
+
+
+def test_only_the_entries_past_the_age_limit_are_dropped_while_running(tmp_path, clocks, lines):
+    outbox = _outbox(tmp_path, clocks)
+    outbox.add(_body("e-1"), "stop")
+    clocks.wall += 4 * DAY
+    outbox.add(_body("e-2"), "stop")
+    clocks.wall += 4 * DAY
+    clocks.mono += PING_INTERVAL_SECONDS
+    entry = outbox.next_due()
+    assert entry is not None and entry.event_id == "e-2"
+    assert _stored_ids(tmp_path) == ["e-2"]
+    assert any("reporter.outbox_dropped" in line and "reason=age" in line for line in lines)
+
+
 def test_an_entry_stored_for_a_different_token_is_dropped_at_load(tmp_path, clocks, lines):
     _outbox(tmp_path, clocks).add(_body("e-1"), "stop")
     other = config_fingerprint("new-token")

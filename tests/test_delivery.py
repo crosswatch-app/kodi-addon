@@ -1,4 +1,7 @@
 import threading
+import time
+
+import pytest
 
 from resources.lib.config import KEY_STATUS, Settings
 from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED, VIEWER_RENAMED_HEADING
@@ -8,6 +11,7 @@ from resources.lib.reporter import HttpReporter, LogReporter
 from resources.lib.routes import Person, RouteFacts
 from resources.lib.service.delivery import Delivery
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
+from resources.lib.viewer_config import _update, apply_edit
 from tests.fakes import FakeKodi
 
 URL = "http://nas:8787/webhook/kodiwatcher"
@@ -39,6 +43,38 @@ def test_an_invalid_url_falls_back_to_logging_rather_than_posting(tmp_path):
     sink, lane = _delivery(tmp_path).build(_settings(url="file:///etc/passwd"))
     assert isinstance(sink, LogReporter)
     assert lane is None
+
+
+@pytest.mark.parametrize("port", ["99999", "abc"])
+def test_a_bad_port_falls_back_to_logging(tmp_path, port):
+    sink, lane = _delivery(tmp_path).build(_settings(url=f"http://nas:{port}/webhook/kodiwatcher"))
+    assert isinstance(sink, LogReporter)
+    assert lane is None
+
+
+def test_a_valid_address_after_a_rejected_one_is_applied(tmp_path):
+    delivery = _delivery(tmp_path)
+    delivery.build(_settings())
+    delivery.build(_settings(url="http://nas:99999/webhook/kodiwatcher"))
+    assert delivery.changed(_settings()) is True
+    sink, lane = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter)
+    assert lane is not None
+
+
+def test_a_build_that_raises_leaves_the_same_settings_to_build_again(tmp_path, monkeypatch):
+    def broken(_self: Outbox) -> None:
+        raise RuntimeError("boom")
+
+    delivery = _delivery(tmp_path)
+    monkeypatch.setattr(Outbox, "load", broken)
+    with pytest.raises(RuntimeError):
+        delivery.build(_settings())
+    assert delivery.changed(_settings()) is True
+    monkeypatch.undo()
+    sink, lane = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter)
+    assert lane is not None
 
 
 def test_the_lane_is_loaded_from_disk_for_the_token(tmp_path):
@@ -152,7 +188,7 @@ def test_route_facts_from_a_replaced_connection_are_ignored(tmp_path):
     assert store.load(config_fingerprint("new")) is None
 
 
-def _people_delivery(tmp_path, viewers):
+def _people_delivery(tmp_path, viewers, on_renamed=None):
     kodi = FakeKodi()
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save(viewers)
@@ -160,6 +196,7 @@ def _people_delivery(tmp_path, viewers):
     delivery = Delivery(
         kodi, str(tmp_path / "outbox.json"), threading.Event(),
         routes=RouteStore(str(tmp_path / "routes.json")), viewers=store, memory=memory,
+        on_renamed=on_renamed,
     )
     sink, lane = delivery.build(_settings())
     assert isinstance(sink, HttpReporter) and sink._on_routes is not None and lane is not None
@@ -182,6 +219,20 @@ def test_a_ping_with_people_renames_the_viewer_everywhere(tmp_path):
     assert remembered is not None and remembered.viewers == ("Anna B.",)
     assert lane.store._entries[0].body["viewers"] == ["Anna B."]
     assert kodi.notifications == [(f"#{VIEWER_RENAMED_HEADING}", "Anna B.")]
+
+
+def test_every_rename_in_one_reply_is_passed_on_in_order_after_viewers_json_is_saved(tmp_path):
+    linked = [Viewer(name="anna", person_id="p1"), Viewer(name="bob", person_id="p2")]
+    passed: list[tuple[str, str, list[str]]] = []
+
+    def on_renamed(old: str, new: str) -> None:
+        passed.append((old, new, [v.name for v in store.viewers()]))
+
+    _, delivery, on_routes, _, store, _ = _people_delivery(tmp_path, linked, on_renamed=on_renamed)
+    on_routes(_facts(Person("p1", "Annie"), Person("p2", "Bobby")))
+    delivery.publish_status()
+    saved = ["Annie", "Bobby"]
+    assert passed == [("anna", "Annie", saved), ("bob", "Bobby", saved)]
 
 
 def test_a_ping_with_people_links_a_typed_viewer_without_a_toast(tmp_path):
@@ -233,3 +284,35 @@ def test_a_rename_onto_another_viewers_name_is_skipped_with_a_warning(tmp_path):
     assert store.viewers() == viewers
     assert kodi.notifications == []
     assert [level for message, level in logged if "people.rename_skipped" in message] == [logmod.WARNING]
+
+
+class _SlowReader(JsonViewerStore):
+    """The Viewers screen's store, pausing between its read and its save: the window the
+    service's rename lands in."""
+
+    def __init__(self, path, read):
+        super().__init__(path)
+        self._read = read
+
+    def viewers(self):
+        found = super().viewers()
+        self._read.set()
+        time.sleep(0.2)
+        return found
+
+
+def test_a_service_rename_during_a_screen_edit_keeps_both(tmp_path):
+    linked = [Viewer(name="Anna", person_id="p1")]
+    _kodi, delivery, on_routes, _lane, store, _memory = _people_delivery(tmp_path, linked)
+    read = threading.Event()
+    screen = _SlowReader(str(tmp_path / "viewers.json"), read)
+    edit = threading.Thread(
+        target=_update,
+        args=(screen, linked[0], lambda vs, cur: apply_edit(vs, cur.name, ("Anna TV",), cur.profiles)),
+    )
+    edit.start()
+    read.wait()
+    on_routes(_facts(Person("p1", "Anna B.")))
+    delivery.publish_status()
+    edit.join()
+    assert store.viewers() == [Viewer(name="Anna B.", playlists=("Anna TV",), person_id="p1")]

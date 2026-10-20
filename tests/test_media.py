@@ -1,3 +1,5 @@
+import pytest
+
 from resources.lib.media import MediaResolver, strip_credentials
 from tests.fakes import FakeKodi
 
@@ -47,6 +49,120 @@ def test_leaves_a_plugin_url_alone():
 
 def test_redacts_a_credential_carried_in_a_query_string():
     assert strip_credentials("https://cdn/media.mkv?token=s3cret") == "https://cdn/media.mkv?<redacted>"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("https://host/play?name=a..b&token=secret", "https://host/play?<redacted>"),
+        ("http://host/s.mkv?x=1...&api_key=secret", "http://host/s.mkv?<redacted>"),
+        ("http://h/p?title=My Show&token=secret", "http://h/p?<redacted>"),
+        ("http://h/s.mkv?token=secret.", "http://h/s.mkv?<redacted>"),
+        ("http://h/s.mkv?flag&token=secret", "http://h/s.mkv?<redacted>"),
+        ("http://h/s.mkv#access_token=secret", "http://h/s.mkv#<redacted>"),
+        ("http://h/s.mkv?a=1#access_token=secret", "http://h/s.mkv?<redacted>"),
+        ("smb://user:pass@nas/media/x.mkv?token=secret", "smb://nas/media/x.mkv?<redacted>"),
+    ],
+)
+def test_redacts_the_whole_query_whatever_it_contains(path, expected):
+    assert strip_credentials(path) == expected
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (
+            "https://host/live.m3u8|User-Agent=Kodi&Authorization=Bearer abc",
+            "https://host/live.m3u8|<redacted>",
+        ),
+        ("https://host/a.mkv?x=1|Cookie=s=1", "https://host/a.mkv?<redacted>|<redacted>"),
+        ("smb://user:pass@nas/tv/x.mkv|Cookie=s=1", "smb://nas/tv/x.mkv|<redacted>"),
+    ],
+)
+def test_redacts_request_headers_after_a_pipe(path, expected):
+    assert strip_credentials(path) == expected
+
+
+def test_redacts_credentials_of_a_url_nested_in_the_path():
+    got = strip_credentials("http://proxy/fetch/http://user:pass@inner/file.mkv")
+    assert "pass" not in got
+    assert got == "http://proxy/fetch/http://<redacted>@inner/file.mkv"
+
+
+def test_redacts_a_url_nested_in_a_pipe_option_value():
+    got = strip_credentials("https://host/a.mkv|Referer=http://user:pass@inner/page?token=secret")
+    assert "pass" not in got
+    assert "secret" not in got
+
+
+def test_leaves_a_pipe_in_a_filename_alone():
+    path = "nfs://nas/tv/Show|Special.mkv"
+    assert strip_credentials(path) == path
+
+
+def test_an_unparseable_url_still_loses_its_query():
+    assert strip_credentials("http://[bad/x.mkv?token=secret") == "http://[bad/x.mkv?<redacted>"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "https://cdn/tv/S01E01.mkv",
+        "nfs://nas/tv/Doctor.Who/S01E01.Are.You.My.Mummy?.mkv",
+        "smb://nas/tv/Episode #1.mkv",
+        "/media/tv/Show/S01E01?.mkv",
+        r"C:\media\Whats.Up.Doc?.mkv",
+    ],
+)
+def test_leaves_a_path_without_a_key_value_query_unchanged(path):
+    assert strip_credentials(path) == path
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("zip://smb%3a%2f%2fuser%3apass%40nas%2ftv%2fa.zip/a.mkv", "zip://smb%3a%2f%2fnas%2ftv%2fa.zip/a.mkv"),
+        (
+            "rar://smb%3a%2f%2fuser%3apass%40nas%2ftv%2fshow.rar/ep.mkv",
+            "rar://smb%3a%2f%2fnas%2ftv%2fshow.rar/ep.mkv",
+        ),
+        # The archive's own password rides as the user part of the archive URL.
+        ("rar://secret@smb%3a%2f%2fuser%3apass%40nas%2fshow.rar/ep.mkv", "rar://smb%3a%2f%2fnas%2fshow.rar/ep.mkv"),
+        (
+            "iso9660://smb%3a%2f%2fDOMAIN%3buser%3apass%40nas%2fdisc.iso/VIDEO_TS/VTS_01_1.VOB",
+            "iso9660://smb%3a%2f%2fnas%2fdisc.iso/VIDEO_TS/VTS_01_1.VOB",
+        ),
+        (
+            "bluray://smb%3a%2f%2fuser%3apass%40nas%2fFilm%20(2020)%2f/BDMV/PLAYLIST/00800.mpls",
+            "bluray://smb%3a%2f%2fnas%2fFilm%20(2020)%2f/BDMV/PLAYLIST/00800.mpls",
+        ),
+        # A zip inside a rar: the parent of the parent is encoded twice.
+        (
+            "rar://zip%3a%2f%2fsmb%253a%252f%252fuser%253apass%2540nas%252ftv%252fouter.zip%2finner.rar/ep.mkv",
+            "rar://zip%3a%2f%2fsmb%253a%252f%252fnas%252ftv%252fouter.zip%2finner.rar/ep.mkv",
+        ),
+        (
+            "zip://https%3a%2f%2fcdn%2fa.zip%3ftoken%3dsecret/a.mkv",
+            "zip://https%3a%2f%2fcdn%2fa.zip%3f%3credacted%3e/a.mkv",
+        ),
+    ],
+)
+def test_strips_credentials_from_the_url_an_archive_path_encodes(path, expected):
+    assert strip_credentials(path) == expected
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "zip://smb%3a%2f%2fnas%2ftv%2fa.zip/a.mkv",
+        "zip://%2fstorage%2ftv%2fa.zip/a.mkv",
+        # Left exactly as Kodi wrote it, escapes and all, when there is nothing to strip.
+        "rar://smb%3A%2F%2Fnas%2Fmy+show.rar/ep.mkv",
+        "udf://%2fmedia%2fdisc.iso/BDMV/STREAM/00001.m2ts",
+    ],
+)
+def test_leaves_an_archive_path_without_credentials_unchanged(path):
+    assert strip_credentials(path) == path
 
 
 def test_a_query_string_credential_never_reaches_the_model():

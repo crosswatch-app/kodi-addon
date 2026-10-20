@@ -26,7 +26,10 @@ def test_an_address_is_normalised(typed, expected):
     assert normalise_address(typed) == expected
 
 
-@pytest.mark.parametrize("typed", ["", "   ", "ftp://nas", "http://", "http://nas/#x", "http://nas/?token=t"])
+@pytest.mark.parametrize(
+    "typed",
+    ["", "   ", "ftp://nas", "http://", "http://nas/#x", "http://nas/?token=t", "nas:99999", "nas:abc", "nas:0"],
+)
 def test_an_address_that_cannot_be_crosswatch_is_refused(typed):
     assert normalise_address(typed) is None
 

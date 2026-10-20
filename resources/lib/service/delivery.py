@@ -5,9 +5,8 @@ Pairing, a Link, a pasted URL and Unpair all end as a settings change, and this 
 turns one into a new delivery path without a Kodi restart.
 """
 
-from __future__ import annotations
-
 import threading
+from collections.abc import Callable
 
 from resources.lib import status
 from resources.lib.config import Settings
@@ -51,6 +50,7 @@ class Delivery:
         routes: RouteStore | None = None,
         viewers: ViewerStore | None = None,
         memory: PromptMemory | None = None,
+        on_renamed: Callable[[str, str], None] | None = None,
     ) -> None:
         self._kodi = kodi
         self._outbox_path = outbox_path
@@ -62,6 +62,7 @@ class Delivery:
         self._routes = routes
         self._viewers = viewers
         self._memory = memory
+        self._on_renamed = on_renamed
         self._route_facts: tuple[Endpoint, RouteFacts] | None = None
 
     def changed(self, settings: Settings) -> bool:
@@ -69,10 +70,10 @@ class Delivery:
 
     def build(self, settings: Settings) -> tuple[EventSink, OutboxLane | None]:
         endpoint = _endpoint(settings)
-        self._endpoint = endpoint
         url, token = endpoint
         if url is None:
             status.write(self._kodi, status.not_paired(self._kodi))
+            self._endpoint = endpoint
             return LogReporter(), None
         try:
             sink = HttpReporter(
@@ -85,6 +86,7 @@ class Delivery:
         except InvalidWebhookUrl as exc:
             # Fall back to logging rather than posting somewhere unexpected.
             _log.error("service.webhook_url_rejected", error=str(exc))
+            self._endpoint = endpoint
             return LogReporter(), None
         fingerprint = config_fingerprint(token)
         if self._outbox is None:
@@ -92,6 +94,9 @@ class Delivery:
             self._outbox.load()
         else:
             self._outbox.rebind(fingerprint)
+        # Noted only once a sink exists for it: after a build that raised, the same settings
+        # must still count as a change, or the next settings change never builds again.
+        self._endpoint = endpoint
         return sink, OutboxLane(self._outbox, sink.send_once)
 
     def _note_instance(self, endpoint: Endpoint, instance: str) -> None:
@@ -106,19 +111,24 @@ class Delivery:
         """Link and rename viewers to match CrossWatch's people (contract 1.6).
 
         On the service thread: the settings script applies each edit to viewers.json as it is
-        when saved, so a rename saved here is not overwritten by an open Viewers screen.
+        when saved, so a rename saved here is not overwritten by an open Viewers screen, and
+        both hold the store's lock from that read to the save.
         """
         if self._viewers is None:
             return
-        result = reconcile(self._viewers.viewers(), people)
+        with self._viewers.locked():
+            result = reconcile(self._viewers.viewers(), people)
+            if result.changed:
+                self._viewers.save(result.viewers)
         if result.skipped:
             _log.warning("people.rename_skipped", count=result.skipped)
         if not result.changed:
             return
-        self._viewers.save(result.viewers)
         for old, new in result.renamed:
             answers = self._memory.rename_viewer(old, new) if self._memory is not None else 0
             kept = self._outbox.rename_viewer(old, new) if self._outbox is not None else 0
+            if self._on_renamed is not None:
+                self._on_renamed(old, new)
             _log.info("people.viewer_renamed", answers=answers, kept=kept)
             # The new name alone: Estuary's toast cuts long text off.
             self._kodi.notify(self._kodi.localised(VIEWER_RENAMED_HEADING), new)

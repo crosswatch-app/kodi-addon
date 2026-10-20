@@ -10,8 +10,6 @@ and urllib puts whole URLs into exception messages, so one un-redacted error=str
 future call site would otherwise leak a credential at ERROR.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import threading
@@ -29,9 +27,12 @@ MAX_BYTES = LOG_MAX_BYTES
 # A query is only treated as one when it looks like key=value. Without that, any media
 # filename containing a question mark is mangled: "S01E01.Are.You.My.Mummy?.mkv" would
 # lose its extension, and that field is exactly what the debug log exists to carry.
-# The value stops before a trailing dot, so a URL ending a sentence keeps the full stop
+# The value stops before trailing dots, so a URL ending a sentence keeps the full stop
 # that follows it: "See http://host/a?tok=1. Next sentence." must not lose the period.
-_VALUE = r"(?:[^\s'\".]|\.(?=[^\s'\".]))*"
+# Dots followed by more value ("a..b") are part of it, or the pairs after them would leak.
+# A raw space still ends the value: prose cannot tell it from the end of the URL, which is
+# why media.strip_credentials drops the query whole instead of relying on this.
+_VALUE = r"(?:[^\s'\".]|\.+(?=[^\s'\".]))*"
 _PAIR = r"[\w.\-%~+]+=" + _VALUE
 _QUERY = re.compile(
     r"(?P<scheme>[a-z][a-z0-9+.\-]*://[^\s'\"]*?)\?" + _PAIR + r"(?:&" + _PAIR + r")*", re.IGNORECASE
@@ -218,7 +219,7 @@ class StructuredLogger:
         self._name = name
         self._bound = dict(bound or {})
 
-    def bind(self, **fields: Any) -> StructuredLogger:
+    def bind(self, **fields: Any) -> "StructuredLogger":
         return StructuredLogger(self._name, {**self._bound, **fields})
 
     def _emit(self, level: int, event: str, fields: dict[str, Any]) -> None:

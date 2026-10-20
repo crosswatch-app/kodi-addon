@@ -129,7 +129,7 @@ def test_an_ignored_response_is_not_delivery_and_is_not_retried(stub, reporter):
 
 
 def test_a_401_is_not_retried(stub, reporter):
-    stub.respond(401, {"error": "bad token"})
+    stub.respond(401, {"ok": False, "error": "invalid_token"})
     assert reporter().report(_event(), DEVICE) is False
     assert len(stub.received) == 1
 

@@ -87,6 +87,12 @@ def test_an_impossible_address_is_refused_before_the_code_is_asked():
     assert [heading for heading, _ in kodi.input_calls] == [kodi.input_calls[0][0]]
 
 
+def test_an_address_with_a_bad_port_is_refused_with_the_same_message():
+    kodi = FakeKodi(input_answers=["nas:99999"])
+    assert connect.pair(kodi, Exchange(PairResult("paired", token="t"))) is False
+    assert kodi.ok_calls[-1][1] == f"#{PAIR_BAD_ADDRESS}"
+
+
 def test_cancelling_the_code_sends_nothing():
     kodi = FakeKodi(input_answers=["nas:8787", "  "])
     exchange = Exchange(PairResult("paired", token="t"))
@@ -117,6 +123,15 @@ def test_link_answered_no_or_timed_out_never_spends_the_code():
     kodi = FakeKodi(settings=dict(STORED), confirm_answer=False)
     exchange = Exchange(PAIRED)
     assert connect.link(kodi, LINK, exchange) is False
+    assert exchange.calls == []
+    assert kodi.writes == []
+
+
+def test_a_link_with_a_bad_port_is_dropped_without_asking():
+    kodi = FakeKodi(settings=dict(STORED), confirm_answer=True)
+    exchange = Exchange(PAIRED)
+    assert connect.link(kodi, {**LINK, "url": "http://nas:99999/webhook/kodiwatcher"}, exchange) is False
+    assert kodi.confirm_calls == []
     assert exchange.calls == []
     assert kodi.writes == []
 

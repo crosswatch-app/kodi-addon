@@ -1,3 +1,5 @@
+import contextlib
+from collections.abc import Iterator
 from dataclasses import replace
 
 import pytest
@@ -1142,3 +1144,64 @@ def test_a_picked_person_with_a_same_named_twin_does_not_link_the_viewer(tmp_pat
     assert kodi.pick_requests[1:] == []
     # Refused as taken, not as a clash: the same name is already on screen, so no dialog.
     assert kodi.ok_calls == []
+
+
+# --- every save of a read, change and save holds the store's lock -------------
+
+
+class LockRecordingStore(JsonViewerStore):
+    """Counts the saves made outside locked(), where a save by the service could land between
+    the read and the write and be overwritten."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__(path)
+        self._held = 0
+        self.unlocked_saves = 0
+
+    @contextlib.contextmanager
+    def locked(self) -> Iterator[None]:
+        with super().locked():
+            self._held += 1
+            try:
+                yield
+            finally:
+                self._held -= 1
+
+    def save(self, viewers: list[Viewer]) -> None:
+        if not self._held:
+            self.unlocked_saves += 1
+        super().save(viewers)
+
+
+def _locked_stores(tmp_path, viewers, answers=None):
+    path = str(tmp_path / "viewers.json")
+    JsonViewerStore(path).save(viewers)
+    store = LockRecordingStore(path)
+    memory = PromptMemory(str(tmp_path / "prompts.json"))
+    for key, names in (answers or {}).items():
+        memory.remember(key, tuple(names))
+    return store, memory
+
+
+def test_a_typed_add_saves_under_the_lock(tmp_path):
+    store, memory = _locked_stores(tmp_path, [Viewer(name="bob")])
+    kodi = ScriptedKodi(["Shared"], windows=[("add", "bob"), ("close", "")], inputs=["chloe"], picks=[["Shared"]])
+    run_dialog(kodi, store, memory)
+    assert [v.name for v in store.viewers()] == ["bob", "chloe"]
+    assert store.unlocked_saves == 0
+
+
+def test_picked_people_are_saved_under_the_lock(tmp_path):
+    store, memory = _locked_stores(tmp_path, [])
+    kodi = ScriptedKodi(["Kids"], windows=[("close", "")], picks=[["p1", "p2"], ["Kids"], None])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna"), Person("p2", "Ben")))
+    assert [v.name for v in store.viewers()] == ["Anna", "Ben"]
+    assert store.unlocked_saves == 0
+
+
+def test_a_picked_person_linking_a_viewer_saves_under_the_lock(tmp_path):
+    store, memory = _locked_stores(tmp_path, [Viewer(name="anna"), Viewer(name="bob")])
+    kodi = ScriptedKodi([], windows=[("add", "anna"), ("close", "")], picks=[["p1"]])
+    run_dialog(kodi, store, memory, _with_people(Person("p1", "Anna")))
+    assert store.viewers()[0] == Viewer(name="Anna", person_id="p1")
+    assert store.unlocked_saves == 0

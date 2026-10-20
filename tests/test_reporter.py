@@ -26,6 +26,7 @@ from resources.lib.reporter import (
     ReporterQueue,
     Verdict,
     event_kind,
+    target_of,
     validate_webhook_url,
 )
 
@@ -102,6 +103,9 @@ def reporter_factory():
     return build
 
 
+CROSSWATCH_401 = b'{"ok": false, "error": "invalid_token", "crosswatch_version": "0.13.6"}'
+
+
 class FakeResponse:
     def __init__(self, status=200, body=b'{"ok": true}') -> None:
         self.status = status
@@ -143,6 +147,18 @@ def test_validate_rejects_a_file_url():
 def test_validate_rejects_a_scheme_less_url():
     with pytest.raises(InvalidWebhookUrl):
         validate_webhook_url("crosswatch.local/webhook/kodi?profile=t")
+
+
+@pytest.mark.parametrize("port", ["99999", "abc", "0", "-1"])
+def test_validate_rejects_a_port_no_server_listens_on(port):
+    with pytest.raises(InvalidWebhookUrl):
+        validate_webhook_url(f"http://host:{port}/webhook/kodiwatcher")
+    with pytest.raises(InvalidWebhookUrl):
+        target_of(f"http://host:{port}/webhook/kodiwatcher")
+
+
+def test_target_keeps_a_valid_port():
+    assert target_of("http://host:65535/webhook/kodiwatcher").port == 65535
 
 
 def test_validate_error_never_contains_the_token():
@@ -384,11 +400,26 @@ def test_a_4xx_is_never_retried(lines, reporter_factory):
 
     def factory(*args, **kwargs):
         made.append(1)
-        return FakeConnection(FakeResponse(401, b"nope"))
+        return FakeConnection(FakeResponse(401, CROSSWATCH_401))
 
     assert reporter_factory("http://host/hook?token=tok", connection_factory=factory).report(_event(), DEVICE) is False
     assert len(made) == 1
     assert any("reporter.rejected" in line and "401" in line for line in lines)
+
+
+@pytest.mark.parametrize(("status", "body"), [(401, b"<html>Login</html>"), (403, b"<html>Forbidden</html>"), (302, b"")])
+def test_a_live_event_a_proxy_turns_away_is_not_retried(status, body, lines, reporter_factory):
+    """Live events keep the no-retry rule for any 4xx, whoever sent it."""
+    made: list[int] = []
+
+    def factory(*args, **kwargs):
+        made.append(1)
+        return FakeConnection(FakeResponse(status, body))
+
+    assert reporter_factory("http://host/hook", connection_factory=factory).report(_event(), DEVICE) is False
+    assert len(made) == 1
+    failed = [line for line in lines if "reporter.failed" in line]
+    assert len(failed) == 1 and f"status={status}" in failed[0] and "reason=not_crosswatch" in failed[0]
 
 
 def test_a_5xx_is_retried_until_it_succeeds(reporter_factory):
@@ -723,9 +754,16 @@ def test_a_deadline_already_passed_still_makes_one_attempt(reporter_factory):
     [
         (FakeResponse(200), None, "accepted"),
         (FakeResponse(200, b'{"ok": true, "ignored": true}'), None, "refused"),
-        (FakeResponse(401, b"{}"), None, "refused"),
+        (FakeResponse(401, CROSSWATCH_401), None, "refused"),
+        (FakeResponse(200, b'{"ok": true, "ignored": true, "error": "invalid_payload"}'), None, "refused"),
         (FakeResponse(503, b"{}"), None, "unreachable"),
         (None, OSError("refused"), "unreachable"),
+        (FakeResponse(401, b"<html>Login</html>"), None, "unreachable"),
+        (FakeResponse(403, b"<html>Forbidden</html>"), None, "unreachable"),
+        (FakeResponse(302, b""), None, "unreachable"),
+        (FakeResponse(404, b"<html>Not found</html>"), None, "unreachable"),
+        (FakeResponse(407, b"<html>Proxy auth</html>"), None, "unreachable"),
+        (FakeResponse(429, b"slow down"), None, "unreachable"),
     ],
 )
 def test_send_once_reports_a_three_way_verdict(reporter_factory, response, raises, verdict):
@@ -733,6 +771,49 @@ def test_send_once_reports_a_three_way_verdict(reporter_factory, response, raise
     connection = FakeConnection(response, raises=raises)
     reporter = reporter_factory("http://host/hook", connection_factory=lambda *a, **k: connection)
     assert reporter.send_once({"event": "stop", "event_id": "e-1"}, "stop") == verdict
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>Login</html>", b"", b"not json", b"[1]", b'{"x": 1}', b"\xff\xfe"],
+)
+def test_a_200_that_is_not_a_crosswatch_reply_is_worth_retrying(body, lines, reporter_factory):
+    """A proxy login page or a captive portal answers 200 too, and CrossWatch never saw the event."""
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory("http://host/hook", connection_factory=lambda *a, **k: connection)
+    assert reporter.send_once({"event": "stop", "event_id": "e-1"}, "stop") == "unreachable"
+    failed = [line for line in lines if "reporter.failed" in line]
+    assert len(failed) == 1 and "reason=not_crosswatch" in failed[0] and "status=200" in failed[0]
+    assert not any("reporter.posted" in line for line in lines)
+    if body:
+        assert body.decode("utf-8", "replace") not in failed[0]
+
+
+@pytest.mark.parametrize(
+    ("body", "verdict"),
+    [
+        (b'{"ok": true}', "accepted"),
+        (b'{"ok": true, "ignored": false, "crosswatch_version": "0.13.3"}', "accepted"),
+        (b'{"ok": true, "ignored": true, "error": "no_matching_route"}', "refused"),
+    ],
+)
+def test_a_crosswatch_reply_is_judged_on_its_content(body, verdict, reporter_factory):
+    connection = FakeConnection(FakeResponse(200, body))
+    reporter = reporter_factory("http://host/hook", connection_factory=lambda *a, **k: connection)
+    assert reporter.send_once({"event": "stop", "event_id": "e-1"}, "stop") == verdict
+
+
+def test_a_live_event_answered_by_a_login_page_is_retried(reporter_factory):
+    replies = iter([FakeResponse(200, b"<html>Login</html>"), FakeResponse(200, b'{"ok": true}')])
+    made: list[FakeConnection] = []
+
+    def factory(*args, **kwargs):
+        made.append(FakeConnection(next(replies)))
+        return made[-1]
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    assert reporter.report(_event(), DEVICE) is True
+    assert len(made) == 2
 
 
 def test_send_once_never_retries(reporter_factory):
@@ -1025,6 +1106,57 @@ def test_an_unreachable_leftover_watch_is_kept_and_not_retried_at_once(tmp_path)
     store, sent = _idle_queue(tmp_path, "unreachable")
     assert store.pending() == 1
     assert len(sent) == 1, "deferred for an interval, not hammered every idle poll"
+
+
+def test_a_leftover_watch_answered_by_a_login_page_stays_until_crosswatch_takes_it(tmp_path, reporter_factory):
+    """The page answers 200, so counting it as delivered would delete the watch from disk."""
+    store = Outbox(str(tmp_path / "outbox.json"), config_fingerprint("tok"), retry_interval=0.0)
+    store.load()
+    store.add(_body_of(_watched()), "stop")
+    replies = iter([FakeResponse(200, b"<html>Login</html>"), FakeResponse(200, b'{"ok": true}')])
+    pending_after: list[int] = []
+    done = threading.Event()
+
+    def factory(*args, **kwargs):
+        if pending_after:
+            done.set()
+        pending_after.append(store.pending())
+        return FakeConnection(next(replies, FakeResponse()))
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, reporter.send_once))
+    assert done.wait(2.0)
+    queue.stop(deadline=2.0)
+    assert pending_after[:2] == [1, 1], "still on disk when the second attempt went out"
+    assert store.pending() == 0
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "pending"),
+    [
+        (401, b"<html>Login</html>", 1),
+        (403, b"<html>Forbidden</html>", 1),
+        (302, b"", 1),
+        (404, b"<html>Not found</html>", 1),
+        (401, CROSSWATCH_401, 0),
+        (200, b'{"ok": true, "ignored": true, "error": "no_matching_route"}', 0),
+    ],
+)
+def test_only_crosswatch_itself_can_refuse_a_leftover_watch(status, body, pending, tmp_path, reporter_factory):
+    """A proxy in front of CrossWatch answers 4xx and 3xx of its own, which say nothing about the watch."""
+    _store(tmp_path).add(_body_of(_watched()), "stop")
+    store = _store(tmp_path)
+    done = threading.Event()
+
+    def factory(*args, **kwargs):
+        done.set()
+        return FakeConnection(FakeResponse(status, body))
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, reporter.send_once))
+    assert done.wait(2.0)
+    queue.stop(deadline=2.0)
+    assert store.pending() == pending
 
 
 def test_the_outbox_is_not_attempted_once_stopping(tmp_path):

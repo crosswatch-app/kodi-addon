@@ -11,9 +11,8 @@ middle of _flush_pending, which is written for that, and so do the rating window
 follow a stop. The reporter worker is the only other thread and it touches only its own queue.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
+from dataclasses import replace
 
 from resources.lib import identity as identity_mod
 from resources.lib import prompt as prompt_mod
@@ -108,6 +107,26 @@ class Controller:
         reply names the instance for the status line.
         """
         self._last_ping_at = None
+
+    def rename_viewer(self, old: str, new: str) -> None:
+        """Carry a viewer renamed in CrossWatch into everything not yet sent or asked.
+
+        The names are fixed when playback starts, and a stop under the old name matches no
+        route: CrossWatch ignores it and the watch is lost. Called on the service thread
+        after viewers.json holds the new name, so a queued rating still finds the viewer.
+        """
+        for session in (self._session, self._pending_stop):
+            if session is not None and old in session.identity.viewers:
+                names = tuple(new if n == old else n for n in session.identity.viewers)
+                session.identity = replace(session.identity, viewers=names)
+        self._ratings.rename_viewer(old, new)
+        # The playlists are unchanged, so the index is renamed rather than rebuilt: the next
+        # episode of a binge starts before an idle tick could rebuild it. A build in progress
+        # holds the old names and starts again.
+        if self._index is not None:
+            self._index = self._index.renamed(old, new)
+            self._index_viewers = tuple(replace(v, name=new) if v.name == old else v for v in self._index_viewers)
+        self._builder = None
 
     def invalidate_index(self) -> None:
         self._index_dirty = True

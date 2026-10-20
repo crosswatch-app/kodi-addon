@@ -13,8 +13,6 @@ names come from playlists and prompts.
 This runs as a separate script with its own module state, so main() configures logging.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import NamedTuple
@@ -435,17 +433,19 @@ def _update(
     Read at save time because the service saves this file too, renaming and linking viewers
     when CrossWatch's people change, and a sub-dialog can be open for as long as the household
     likes: an edit made on the list read before it would save the stale copy over that.
-    None when the viewer is gone or edit returns None, and nothing is saved.
+    None when the viewer is gone or edit returns None, and nothing is saved. edit runs
+    under the store's lock, so it must not open a dialog.
     """
-    viewers = store.viewers()
-    current = _find(viewers, viewer)
-    if current is None:
-        _log.info("config.edit_dropped", count=1, reason="gone")
-        return None
-    edited = edit(viewers, current)
-    if edited is None:
-        return None
-    _save(store, edited)
+    with store.locked():
+        viewers = store.viewers()
+        current = _find(viewers, viewer)
+        if current is None:
+            _log.info("config.edit_dropped", count=1, reason="gone")
+            return None
+        edited = edit(viewers, current)
+        if edited is None:
+            return None
+        _save(store, edited)
     return _Updated(edited, current, viewers.index(current))
 
 
@@ -458,17 +458,19 @@ def _add_typed(kodi: KodiApi, store: ViewerStore, playlists: list[str], people: 
     # A linked viewer carries CrossWatch's spelling, as the service would rename it to anyway.
     name = person.name if person else name
     selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers) or ()
-    viewers = store.viewers()
     try:
-        # Again: the keyboard and the playlist step may have been open across a save by the
-        # service, which can have taken the name or linked the person since.
-        validate_name(name, viewers)
-        if person and any(v.person_id == person.id for v in viewers):
-            raise ValueError("taken")
+        with store.locked():
+            viewers = store.viewers()
+            # Again: the keyboard and the playlist step may have been open across a save by
+            # the service, which can have taken the name or linked the person since.
+            validate_name(name, viewers)
+            if person and any(v.person_id == person.id for v in viewers):
+                raise ValueError("taken")
+            row = Viewer(name=name, playlists=tuple(selected), person_id=person.id if person else None)
+            _save(store, [*viewers, row])
     except ValueError as exc:
         _refused(kodi, exc)
         return None
-    _save(store, [*viewers, Viewer(name=name, playlists=tuple(selected), person_id=person.id if person else None)])
     _log.info("config.viewer_added", playlists=len(selected), linked=person is not None)
     return name
 
@@ -536,28 +538,37 @@ def _add_people(
     first: str | None = None
     added = linked = 0
     for person in chosen:
-        # Per person: the playlist step for the one before may have been open across a save
-        # by the service.
-        viewers = store.viewers()
-        try:
-            name = validate_name(person.name, viewers, picked=True)
-        except ValueError as exc:
-            relinked = None if isinstance(exc, NameClash) else _link_existing(viewers, person, people)
-            if relinked is None:
-                _refused(kodi, exc, picked=person.name)
-                continue
-            viewers, old = relinked
-            # The list first, as a rename saves it: answers under a name no viewer has yet
-            # credit nobody.
-            _save(store, viewers)
+        refused: ValueError | None = None
+        old: str | None = None
+        with store.locked():
+            # Per person: the playlist step for the one before may have been open across a
+            # save by the service.
+            viewers = store.viewers()
+            try:
+                name = validate_name(person.name, viewers, picked=True)
+            except ValueError as exc:
+                name = person.name
+                relinked = None if isinstance(exc, NameClash) else _link_existing(viewers, person, people)
+                if relinked is None:
+                    refused = exc
+                else:
+                    viewers, old = relinked
+                    # The list first, as a rename saves it: answers under a name no viewer
+                    # has yet credit nobody.
+                    _save(store, viewers)
+            else:
+                # Saved before the playlist step, so Back there keeps the person added.
+                viewers = [*viewers, Viewer(name=name, person_id=person.id)]
+                _save(store, viewers)
+        if refused is not None:
+            _refused(kodi, refused, picked=person.name)
+            continue
+        if old is not None:
             if old != person.name:
                 memory.rename_viewer(old, person.name)
             first = first or person.name
             linked += 1
             continue
-        # Saved before the playlist step, so Back there keeps the person added.
-        viewers = [*viewers, Viewer(name=name, person_id=person.id)]
-        _save(store, viewers)
         first = first or name
         added += 1
         selected = _edit_playlists(kodi, Viewer(name=name), playlists, viewers=viewers) or ()

@@ -1,4 +1,5 @@
 import itertools
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -1478,3 +1479,145 @@ def test_a_remembered_name_that_is_no_longer_a_viewer_is_dropped_at_start(tmp_pa
     controller = _controller(tmp_path, kodi, [Viewer(name="anna"), Viewer(name="bob")], collector)
     controller.on_av_started()
     assert collector.playback()[0].viewers == ("anna",)
+
+
+# -- a viewer renamed in CrossWatch while something plays ---------------------
+
+
+def _rename_viewers(controller, tmp_path, *renames: tuple[str, str]) -> None:
+    """What the delivery does on a ping reply: viewers.json first, then the controller."""
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    names = dict(renames)
+    store.save([replace(v, name=names.get(v.name, v.name)) for v in store.viewers()])
+    for old, new in renames:
+        controller.rename_viewer(old, new)
+
+
+def _last_stop(collector) -> PlaybackEvent:
+    return [e for e in collector.playback() if e.kind == "stop"][-1]
+
+
+def test_a_stop_after_a_rename_mid_playback_carries_the_new_name(tmp_path):
+    collector = Collector()
+    kodi = _rated_kodi()
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=_rating_settings(rating_kinds=frozenset()))
+    controller.on_av_started()
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("anna", "Annie"))
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    kodi.playing = False
+    controller.on_tick()
+    stop = _last_stop(collector)
+    assert stop.viewers == ("Annie", "bob")
+    assert stop.viewers_source == "profile"
+
+
+def test_a_parked_stop_follows_a_rename_before_it_goes_out(tmp_path):
+    collector = Collector()
+    kodi = _rated_kodi()
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=_rating_settings(rating_kinds=frozenset()))
+    controller.on_av_started()
+    controller.on_tick()
+    # A stop with no callback is parked by the tick and sent by the next one.
+    kodi.playing = False
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("bob", "Bobby"))
+    controller.on_tick()
+    assert _last_stop(collector).viewers == ("anna", "Bobby")
+
+
+def test_a_queued_rating_asks_the_renamed_viewer(tmp_path):
+    collector = Collector()
+    kodi = _rated_kodi(overrides=_shows("First", "Second"))
+    kodi.rate_answers = [8, 6, 7, 5]
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=_rating_settings(rating_at_end=True))
+    # The next item starts at once, so the first watch's rating waits for the end of the session.
+    controller.on_av_started()
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    controller.on_av_started()
+    controller.on_tick()
+    first_session = collector.playback()[0].session_id
+    _rename_viewers(controller, tmp_path, ("anna", "Annie"))
+    controller.on_stopped(completed=True)
+    kodi.playing = False
+    controller.on_tick()
+    asked = [r.viewers for r in _rates(collector) if r.session_id == first_session]
+    assert asked == [("Annie",), ("bob",)]
+
+
+def test_a_rename_of_a_viewer_not_in_the_session_changes_nothing(tmp_path):
+    collector = Collector()
+    kodi = _rated_kodi()
+    viewers = [*LIVING, Viewer(name="carol", profiles=("Kids",))]
+    controller = _controller(tmp_path, kodi, viewers, collector, settings=_rating_settings(rating_kinds=frozenset()))
+    controller.on_av_started()
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("carol", "Caroline"))
+    controller.on_stopped(completed=True)
+    kodi.playing = False
+    controller.on_tick()
+    stop = _last_stop(collector)
+    assert stop.viewers == ("anna", "bob")
+    assert stop.viewers_source == "profile"
+
+
+def test_the_next_episode_after_a_rename_mid_binge_keeps_its_playlist_viewer(tmp_path):
+    # The next episode starts with no idle tick in between, so it is resolved from the index
+    # built under the old name.
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    controller.on_stopped(completed=True)
+    controller.on_av_started()
+    started = [e for e in collector.playback() if e.kind == "start"][-1]
+    assert started.viewers == ("Anna Lee",)
+    assert started.viewers_source == "playlist"
+
+
+def test_a_rename_mid_binge_does_not_rebuild_the_index(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    _warm_index(controller, kodi)
+    expanded = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) == expanded
+    controller.on_av_started()
+    assert collector.playback()[-1].viewers == ("Anna Lee",)
+
+
+def test_a_rename_during_an_index_build_starts_the_build_again(tmp_path):
+    # The build in progress holds the old names, and would publish them.
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV", "Shared")), Viewer(name="bob", playlists=("Shared",))]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    kodi.playing = False
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    assert collector.playback()[-1].viewers == ("Anna Lee", "bob")
+    assert collector.playback()[-1].viewers_source == "playlist"
+
+
+def test_two_renames_in_one_reply_both_reach_the_stop(tmp_path):
+    collector = Collector()
+    kodi = _rated_kodi()
+    controller = _controller(tmp_path, kodi, LIVING, collector, settings=_rating_settings(rating_kinds=frozenset()))
+    controller.on_av_started()
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("anna", "Annie"), ("bob", "Bobby"))
+    controller.on_stopped(completed=True)
+    kodi.playing = False
+    controller.on_tick()
+    assert _last_stop(collector).viewers == ("Annie", "Bobby")
