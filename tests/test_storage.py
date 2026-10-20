@@ -7,6 +7,7 @@ import time
 import pytest
 
 from resources.lib import log as logmod
+from resources.lib import storage
 from resources.lib.models import Viewer
 from resources.lib.routes import Person, RouteFacts
 from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer, RouteStore, file_lock
@@ -353,3 +354,121 @@ def test_a_lock_removed_under_its_holder_is_released_quietly(tmp_path):
     with file_lock(path):
         os.remove(f"{path}.lock")
     assert not os.path.exists(f"{path}.lock")
+
+
+def _retaken_before_the_rename(tmp_path, monkeypatch) -> tuple[str, list[int]]:
+    # Both waiters read the stale age; the other breaks it and takes a fresh lock before this
+    # one's rename, which then lands on the fresh lock instead of the stale one.
+    path = str(tmp_path / "viewers.json")
+    lock = f"{path}.lock"
+    with open(lock, "w"):
+        pass
+    old = time.time() - 60
+    os.utime(lock, (old, old))
+    real_rename = os.rename
+    other: list[int] = []
+
+    def retaken_first(src: str, dst: str) -> None:
+        if src == lock and not other:
+            real_rename(lock, f"{lock}.other-claim")
+            os.remove(f"{lock}.other-claim")
+            other.append(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+        real_rename(src, dst)
+
+    monkeypatch.setattr(os, "rename", retaken_first)
+    return lock, other
+
+
+def test_a_stale_lock_broken_and_retaken_by_another_waiter_is_not_taken_from_it(tmp_path, monkeypatch):
+    lock, other = _retaken_before_the_rename(tmp_path, monkeypatch)
+    with file_lock(lock.removesuffix(".lock"), timeout=0.1):
+        assert os.path.samestat(os.fstat(other[0]), os.stat(lock))
+    # Still the other holder's, for it to release.
+    assert os.path.samestat(os.fstat(other[0]), os.stat(lock))
+    assert [name for name in os.listdir(tmp_path) if ".stale." in name] == []
+    os.close(other[0])
+
+
+def test_a_retaken_lock_is_renamed_back_where_links_are_not_supported(tmp_path, monkeypatch):
+    lock, other = _retaken_before_the_rename(tmp_path, monkeypatch)
+
+    def unsupported(_src: str, _dst: str) -> None:
+        raise PermissionError
+
+    monkeypatch.setattr(os, "link", unsupported)
+    with file_lock(lock.removesuffix(".lock"), timeout=0.1):
+        assert os.path.samestat(os.fstat(other[0]), os.stat(lock))
+    assert [name for name in os.listdir(tmp_path) if ".stale." in name] == []
+    os.close(other[0])
+
+
+def test_a_lock_taken_while_the_name_was_free_is_not_overwritten(tmp_path, monkeypatch):
+    lock, other = _retaken_before_the_rename(tmp_path, monkeypatch)
+    third: list[int] = []
+    real_link = os.link
+
+    def taken_meanwhile(src: str, dst: str) -> None:
+        if not third:
+            third.append(os.open(dst, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+        real_link(src, dst)
+
+    monkeypatch.setattr(os, "link", taken_meanwhile)
+    with file_lock(lock.removesuffix(".lock"), timeout=0.1):
+        assert os.path.samestat(os.fstat(third[0]), os.stat(lock))
+    assert os.path.samestat(os.fstat(third[0]), os.stat(lock))
+    assert [name for name in os.listdir(tmp_path) if ".stale." in name] == []
+    os.close(other[0])
+    os.close(third[0])
+
+
+def test_a_lock_this_holder_does_not_own_is_never_removed_on_release(tmp_path):
+    path = str(tmp_path / "viewers.json")
+    lock = f"{path}.lock"
+    with file_lock(path):
+        # Broken as stale and retaken by another writer while this one still held it.
+        os.remove(lock)
+        theirs = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    assert os.path.samestat(os.fstat(theirs), os.stat(lock))
+    os.close(theirs)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda memory: memory.forget_many(["tvdb:1"]),
+        lambda memory: memory.rename_viewer("anna", "Annie"),
+        lambda memory: memory.drop_viewer("anna"),
+    ],
+    ids=["forget_many", "rename_viewer", "drop_viewer"],
+)
+def test_every_prompt_memory_change_writes_under_the_file_lock(tmp_path, monkeypatch, change):
+    # The settings screen edits the same file from another interpreter, which the thread
+    # lock does not reach.
+    path = str(tmp_path / "prompts.json")
+    memory = PromptMemory(path)
+    memory.remember("tvdb:1", ("anna", "bob"))
+    held: list[str] = []
+    unlocked: list[str] = []
+    writes: list[str] = []
+    real_lock, real_write = storage.file_lock, storage._write_json
+
+    @contextlib.contextmanager
+    def recording_lock(target: str, *args, **kwargs):
+        with real_lock(target, *args, **kwargs):
+            held.append(target)
+            try:
+                yield
+            finally:
+                held.remove(target)
+
+    def recording_write(target: str, value) -> bool:
+        writes.append(target)
+        if target not in held:
+            unlocked.append(target)
+        return real_write(target, value)
+
+    monkeypatch.setattr(storage, "file_lock", recording_lock)
+    monkeypatch.setattr(storage, "_write_json", recording_write)
+    change(memory)
+    assert writes == [path]
+    assert unlocked == []

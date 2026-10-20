@@ -50,12 +50,19 @@ def _take_lock(lock: str, stale: float) -> int | None:
         # as it would have.
         return None
     try:
-        if time.time() - os.path.getmtime(lock) <= stale:
+        seen = os.stat(lock)
+        if time.time() - seen.st_mtime <= stale:
             return None
-        # Renamed away rather than removed, so of two waiters that both found it stale only
-        # the one whose rename succeeds goes on; the other polls again.
+        # Renamed away rather than removed, and the claimed file checked afterwards: a second
+        # waiter that read the same stale age may already have broken it and taken a fresh
+        # lock, which this rename then lands on. The inode alone can match, since a freed one
+        # is often handed straight to the next file, so the mtime is compared too.
         claim = f"{lock}.stale.{os.getpid()}.{threading.get_ident()}"
         os.rename(lock, claim)
+        claimed = os.stat(claim)
+        if not (os.path.samestat(seen, claimed) and seen.st_mtime_ns == claimed.st_mtime_ns):
+            _put_back(claim, lock)
+            return None
         os.remove(claim)
         _log.warning("storage.lock_broken", name=os.path.basename(lock))
     except OSError:
@@ -64,6 +71,22 @@ def _take_lock(lock: str, stale: float) -> int | None:
         return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except OSError:
         return None
+
+
+def _put_back(claim: str, lock: str) -> None:
+    # Linked rather than renamed back where the filesystem allows it: a rename would replace
+    # a lock a third writer took while the name was free. If one did, both it and the holder
+    # of the claimed file go on, and neither release removes the other's lock.
+    try:
+        os.link(claim, lock)
+    except FileExistsError:
+        pass
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.rename(claim, lock)
+        return
+    with contextlib.suppress(OSError):
+        os.remove(claim)
 
 
 @contextlib.contextmanager

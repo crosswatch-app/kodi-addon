@@ -62,6 +62,21 @@ def test_a_valid_address_after_a_rejected_one_is_applied(tmp_path):
     assert lane is not None
 
 
+def test_a_build_that_raises_leaves_the_same_settings_to_build_again(tmp_path, monkeypatch):
+    def broken(_self: Outbox) -> None:
+        raise RuntimeError("boom")
+
+    delivery = _delivery(tmp_path)
+    monkeypatch.setattr(Outbox, "load", broken)
+    with pytest.raises(RuntimeError):
+        delivery.build(_settings())
+    assert delivery.changed(_settings()) is True
+    monkeypatch.undo()
+    sink, lane = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter)
+    assert lane is not None
+
+
 def test_the_lane_is_loaded_from_disk_for_the_token(tmp_path):
     Outbox(str(tmp_path / "outbox.json"), config_fingerprint("tok")).add({"event": "stop", "event_id": "e-1"}, "stop")
     _, lane = _delivery(tmp_path).build(_settings())
