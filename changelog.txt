@@ -1,6 +1,41 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.0.1 (2026-10-20)
+-------------------
+Bug Fixes:
+  - Fixed: a stream URL's query string, request headers after "|" and
+    credentials inside an archive path (zip://, rar:// over a share
+    with a user name and password) could reach the payload and the
+    debug log. strip_credentials now replaces a key=value query,
+    fragment and "|" options whole and decodes archive hostnames the
+    way Kodi does; redact() still runs last.
+  - Fixed: an address with a bad port (not a number, 0, above 65535)
+    raised a plain ValueError: pairing crashed without its message, a
+    manual address kept the service on the old one, and the service
+    did not start after a restart. validate_webhook_url now raises
+    InvalidWebhookUrl.
+  - Fixed: a 200 that was not a CrossWatch reply (a proxy login or
+    maintenance page, empty or non-JSON) counted as delivered, and a
+    proxy 3xx/4xx removed a saved watch from outbox.json. Only a JSON
+    object with "ok" now confirms or refuses; anything else is
+    "not reached" (reporter.failed reason=not_crosswatch) and the
+    outbox keeps the entry.
+  - Fixed: a profile renamed in CrossWatch during playback left the
+    watch in progress, the pending stop, queued ratings and the
+    playlist index under the old name, so the stop was refused and
+    the watch lost.
+  - Fixed: the outbox's seven-day limit was applied only at start-up;
+    it now applies before every retry.
+  - Fixed: the Viewers screen and the service could overwrite each
+    other's change to viewers.json or prompts.json. Each
+    read-modify-write now takes a lock file (storage.file_lock), since
+    the two run as interpreters of one Kodi process.
+
+Internal:
+  - Tested against CrossWatch v0.13.6 on Kodi 21.3 and the Kodi 22
+    release candidate.
+
 v1.0.0 (2026-10-20)
 -------------------
 Improvements:
