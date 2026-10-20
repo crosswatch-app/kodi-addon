@@ -103,6 +103,9 @@ def reporter_factory():
     return build
 
 
+CROSSWATCH_401 = b'{"ok": false, "error": "invalid_token", "crosswatch_version": "0.13.6"}'
+
+
 class FakeResponse:
     def __init__(self, status=200, body=b'{"ok": true}') -> None:
         self.status = status
@@ -397,11 +400,26 @@ def test_a_4xx_is_never_retried(lines, reporter_factory):
 
     def factory(*args, **kwargs):
         made.append(1)
-        return FakeConnection(FakeResponse(401, b"nope"))
+        return FakeConnection(FakeResponse(401, CROSSWATCH_401))
 
     assert reporter_factory("http://host/hook?token=tok", connection_factory=factory).report(_event(), DEVICE) is False
     assert len(made) == 1
     assert any("reporter.rejected" in line and "401" in line for line in lines)
+
+
+@pytest.mark.parametrize(("status", "body"), [(401, b"<html>Login</html>"), (403, b"<html>Forbidden</html>"), (302, b"")])
+def test_a_live_event_a_proxy_turns_away_is_not_retried(status, body, lines, reporter_factory):
+    """Live events keep the no-retry rule for any 4xx, whoever sent it."""
+    made: list[int] = []
+
+    def factory(*args, **kwargs):
+        made.append(1)
+        return FakeConnection(FakeResponse(status, body))
+
+    assert reporter_factory("http://host/hook", connection_factory=factory).report(_event(), DEVICE) is False
+    assert len(made) == 1
+    failed = [line for line in lines if "reporter.failed" in line]
+    assert len(failed) == 1 and f"status={status}" in failed[0] and "reason=not_crosswatch" in failed[0]
 
 
 def test_a_5xx_is_retried_until_it_succeeds(reporter_factory):
@@ -736,9 +754,16 @@ def test_a_deadline_already_passed_still_makes_one_attempt(reporter_factory):
     [
         (FakeResponse(200), None, "accepted"),
         (FakeResponse(200, b'{"ok": true, "ignored": true}'), None, "refused"),
-        (FakeResponse(401, b"{}"), None, "refused"),
+        (FakeResponse(401, CROSSWATCH_401), None, "refused"),
+        (FakeResponse(200, b'{"ok": true, "ignored": true, "error": "invalid_payload"}'), None, "refused"),
         (FakeResponse(503, b"{}"), None, "unreachable"),
         (None, OSError("refused"), "unreachable"),
+        (FakeResponse(401, b"<html>Login</html>"), None, "unreachable"),
+        (FakeResponse(403, b"<html>Forbidden</html>"), None, "unreachable"),
+        (FakeResponse(302, b""), None, "unreachable"),
+        (FakeResponse(404, b"<html>Not found</html>"), None, "unreachable"),
+        (FakeResponse(407, b"<html>Proxy auth</html>"), None, "unreachable"),
+        (FakeResponse(429, b"slow down"), None, "unreachable"),
     ],
 )
 def test_send_once_reports_a_three_way_verdict(reporter_factory, response, raises, verdict):
@@ -1104,6 +1129,34 @@ def test_a_leftover_watch_answered_by_a_login_page_stays_until_crosswatch_takes_
     queue.stop(deadline=2.0)
     assert pending_after[:2] == [1, 1], "still on disk when the second attempt went out"
     assert store.pending() == 0
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "pending"),
+    [
+        (401, b"<html>Login</html>", 1),
+        (403, b"<html>Forbidden</html>", 1),
+        (302, b"", 1),
+        (404, b"<html>Not found</html>", 1),
+        (401, CROSSWATCH_401, 0),
+        (200, b'{"ok": true, "ignored": true, "error": "no_matching_route"}', 0),
+    ],
+)
+def test_only_crosswatch_itself_can_refuse_a_leftover_watch(status, body, pending, tmp_path, reporter_factory):
+    """A proxy in front of CrossWatch answers 4xx and 3xx of its own, which say nothing about the watch."""
+    _store(tmp_path).add(_body_of(_watched()), "stop")
+    store = _store(tmp_path)
+    done = threading.Event()
+
+    def factory(*args, **kwargs):
+        done.set()
+        return FakeConnection(FakeResponse(status, body))
+
+    reporter = reporter_factory("http://host/hook", connection_factory=factory)
+    queue = ReporterQueue(LogReporter(), DEVICE, abort=threading.Event(), outbox=OutboxLane(store, reporter.send_once))
+    assert done.wait(2.0)
+    queue.stop(deadline=2.0)
+    assert store.pending() == pending
 
 
 def test_the_outbox_is_not_attempted_once_stopping(tmp_path):

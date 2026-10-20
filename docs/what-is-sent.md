@@ -39,7 +39,8 @@ Developers: the exact payload is the
 The add-on keeps trying each event for two minutes, then drops it. An old progress or pause
 event is useless later and could even overwrite a newer resume point, so it is never sent late.
 An answer that does not come from CrossWatch, such as a reverse proxy's login page, counts as
-not reached.
+not reached. A saved watch survives it, even when the proxy answers with an error such as
+`401` or `403`, and is tried again later.
 
 **A finished watch is the exception.** When a stop completes a watch (played to the end, or
 past Kodi's watched threshold, 90 percent by default), the add-on saves it to disk before
@@ -49,7 +50,7 @@ sending, so it survives CrossWatch being down and Kodi restarting. It is then:
 - delivered with its original time, marked as a late delivery. Plex, Emby and Jellyfin record
   the watch at the time it happened; Trakt, Simkl and CrossWatch's own history record it when
   it arrives.
-- dropped, with a warning in the log, when CrossWatch refuses it, when it is more than seven
+- dropped, with a warning in the log, when CrossWatch itself refuses it, when it is more than seven
   days old at Kodi's start, when more than 200 are waiting (the oldest goes), or when the token
   has changed since, for example by pairing with a different CrossWatch. A stored watch is never
   sent to a different CrossWatch.

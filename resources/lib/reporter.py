@@ -44,6 +44,11 @@ Event = PlaybackEvent | PingEvent
 # unreachable: nothing decided, so a later attempt may still succeed.
 Verdict = Literal["accepted", "refused", "unreachable"]
 
+# One attempt's result. foreign: a 3xx or 4xx without CrossWatch's reply shape, such as a
+# reverse proxy's login page. Not retried live, like any 4xx, but it says nothing about the
+# event, so the outbox keeps a stored watch rather than dropping it.
+_Outcome = Literal["delivered", "refused", "foreign", "retry"]
+
 
 def event_kind(event: Event) -> str:
     """The wire name of an event, for logging and for policy.
@@ -222,10 +227,10 @@ class HttpReporter:
             deadline = self._clock() + RETRY_BUDGET_SECONDS
         attempts = 0
         while True:
-            verdict = self._attempt(body, kind)
+            outcome = self._attempt(body, kind)
             attempts += 1
-            if verdict is not None:
-                return verdict
+            if outcome != "retry":
+                return outcome == "delivered"
 
             remaining = deadline - self._clock()
             # Refuse to start an attempt the budget cannot pay for. A socket timeout applies
@@ -245,13 +250,13 @@ class HttpReporter:
         One attempt rather than a retry loop: the outbox runs only while the live queue is
         idle, and a live event arriving meanwhile must wait at most one request timeout.
         """
-        verdict = self._attempt(json.dumps(body).encode("utf-8"), kind)
-        if verdict is None:
-            return "unreachable"
-        return "accepted" if verdict else "refused"
+        outcome = self._attempt(json.dumps(body).encode("utf-8"), kind)
+        if outcome == "delivered":
+            return "accepted"
+        return "refused" if outcome == "refused" else "unreachable"
 
-    def _attempt(self, body: bytes, kind: str) -> bool | None:
-        """True delivered, False refused for good, None worth retrying.
+    def _attempt(self, body: bytes, kind: str) -> _Outcome:
+        """One request, judged.
 
         A fresh connection per attempt, closed before returning. Events are a minute or more
         apart and CrossWatch's server closes an idle keep-alive after about five seconds, so
@@ -262,7 +267,7 @@ class HttpReporter:
             connection = self._connect()
         except Exception as exc:
             _log.warning("reporter.failed", url=self._safe_url, event=kind, error=str(exc))
-            return None
+            return "retry"
         try:
             return self._exchange(connection, body, kind)
         finally:
@@ -271,13 +276,13 @@ class HttpReporter:
             except Exception:
                 pass
 
-    def _exchange(self, connection: Any, body: bytes, kind: str) -> bool | None:
+    def _exchange(self, connection: Any, body: bytes, kind: str) -> _Outcome:
         try:
             connection.request("POST", self._path, body=body, headers=dict(self._headers))
         except Exception as exc:
             # Nothing was necessarily written, so this is safe to retry.
             _log.warning("reporter.failed", url=self._safe_url, event=kind, error=str(exc))
-            return None
+            return "retry"
 
         try:
             response = connection.getresponse()
@@ -290,25 +295,24 @@ class HttpReporter:
             # sinks set a watched flag, which is idempotent. So losing the response is worth
             # another attempt, where previously it cost the event.
             _log.warning("reporter.lost_response", url=self._safe_url, event=kind, error=str(exc))
-            return None
+            return "retry"
 
         if 500 <= status < 600:
             _log.warning("reporter.failed", url=self._safe_url, event=kind, status=status)
-            return None
+            return "retry"
+        parsed = _reply_of(raw)
         if status < 200 or status >= 300:
+            if "ok" not in parsed:
+                # Not retried live either: a login page answers every attempt the same way.
+                _log.warning("reporter.failed", url=self._safe_url, event=kind, status=status, reason="not_crosswatch")
+                return "foreign"
             # A 4xx is a decision, not a hiccup. 401 is a bad token; retrying for two minutes
             # helps nobody and delays every event behind it.
             _log.warning("reporter.rejected", url=self._safe_url, event=kind, status=status)
-            return False
-        return self._accepted(kind, status, raw, body)
+            return "refused"
+        return self._accepted(kind, status, parsed, body)
 
-    def _accepted(self, kind: str, status: int, raw: bytes, body: bytes) -> bool | None:
-        try:
-            parsed = json.loads(raw.decode("utf-8"))
-        except ValueError:
-            parsed = None
-        if not isinstance(parsed, dict):
-            parsed = {}
+    def _accepted(self, kind: str, status: int, parsed: dict[str, Any], body: bytes) -> _Outcome:
         if parsed.get("ignored") is True or parsed.get("activity_recorded") is False:
             _log.warning(
                 "reporter.rejected",
@@ -316,14 +320,14 @@ class HttpReporter:
                 event=kind,
                 reason=str(parsed.get("error") or "activity_not_recorded"),
             )
-            return False
+            return "refused"
         if "ok" not in parsed:
             # Every CrossWatch reply carries "ok". A 200 without it is a proxy login page or a
             # captive portal answering in CrossWatch's place, so nothing was delivered and a
             # completed watch must stay on disk. The body is not logged: a login page is not
             # ours to copy into kodi.log.
             _log.warning("reporter.failed", url=self._safe_url, event=kind, status=status, reason="not_crosswatch")
-            return None
+            return "retry"
         rated = parsed.get("rated")
         if kind == "rate" and isinstance(rated, list):
             # A write that failed at a destination is still a 200: CrossWatch logs why, and
@@ -346,7 +350,16 @@ class HttpReporter:
             except Exception as exc:
                 # As for the instance: a hint for the settings screen, never a delivery failure.
                 _log.warning("reporter.routes_not_noted", error=str(exc))
-        return True
+        return "delivered"
+
+
+def _reply_of(raw: bytes) -> dict[str, Any]:
+    """The reply as a JSON object, or empty when it is anything else."""
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _kept_on_disk(event: Event) -> bool:
