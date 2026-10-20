@@ -20,11 +20,10 @@ the shows it happens to contain and silently misses the rest, which reads as an 
 rather than as a failure.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import Self
 
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger, log_timing
@@ -71,6 +70,23 @@ class PlaylistIndex:
 
     def is_empty(self) -> bool:
         return not self.by_key
+
+    def renamed(self, old: str, new: str) -> Self:
+        """The same membership under a viewer's new name.
+
+        A rename in CrossWatch changes no playlist, so the index stays valid; without this
+        the next playback would find only the old name and drop it as no longer a viewer.
+        """
+
+        def swap(name: str) -> str:
+            return new if name == old else name
+
+        return replace(
+            self,
+            by_key={key: tuple(swap(n) for n in names) for key, names in self.by_key.items()},
+            degraded=frozenset(swap(n) for n in self.degraded),
+            owners={key: tuple((swap(n), p) for n, p in pairs) for key, pairs in self.owners.items()},
+        )
 
 
 def playlists_for(viewers: list[Viewer]) -> dict[str, list[str]]:

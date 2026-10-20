@@ -1,4 +1,5 @@
 import itertools
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -1487,7 +1488,7 @@ def _rename_viewers(controller, tmp_path, *renames: tuple[str, str]) -> None:
     """What the delivery does on a ping reply: viewers.json first, then the controller."""
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     names = dict(renames)
-    store.save([Viewer(name=names.get(v.name, v.name), profiles=v.profiles) for v in store.viewers()])
+    store.save([replace(v, name=names.get(v.name, v.name)) for v in store.viewers()])
     for old, new in renames:
         controller.rename_viewer(old, new)
 
@@ -1560,6 +1561,53 @@ def test_a_rename_of_a_viewer_not_in_the_session_changes_nothing(tmp_path):
     stop = _last_stop(collector)
     assert stop.viewers == ("anna", "bob")
     assert stop.viewers_source == "profile"
+
+
+def test_the_next_episode_after_a_rename_mid_binge_keeps_its_playlist_viewer(tmp_path):
+    # The next episode starts with no idle tick in between, so it is resolved from the index
+    # built under the old name.
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    controller.on_stopped(completed=True)
+    controller.on_av_started()
+    started = [e for e in collector.playback() if e.kind == "start"][-1]
+    assert started.viewers == ("Anna Lee",)
+    assert started.viewers_source == "playlist"
+
+
+def test_a_rename_mid_binge_does_not_rebuild_the_index(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    _warm_index(controller, kodi)
+    expanded = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    _warm_index(controller, kodi)
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) == expanded
+    controller.on_av_started()
+    assert collector.playback()[-1].viewers == ("Anna Lee",)
+
+
+def test_a_rename_during_an_index_build_starts_the_build_again(tmp_path):
+    # The build in progress holds the old names, and would publish them.
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV", "Shared")), Viewer(name="bob", playlists=("Shared",))]
+    controller = _controller(tmp_path, kodi, viewers, collector)
+    kodi.playing = False
+    controller.on_tick()
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    _warm_index(controller, kodi)
+    controller.on_av_started()
+    assert collector.playback()[-1].viewers == ("Anna Lee", "bob")
+    assert collector.playback()[-1].viewers_source == "playlist"
 
 
 def test_two_renames_in_one_reply_both_reach_the_stop(tmp_path):

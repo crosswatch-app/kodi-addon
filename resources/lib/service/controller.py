@@ -120,6 +120,13 @@ class Controller:
                 names = tuple(new if n == old else n for n in session.identity.viewers)
                 session.identity = replace(session.identity, viewers=names)
         self._ratings.rename_viewer(old, new)
+        # The playlists are unchanged, so the index is renamed rather than rebuilt: the next
+        # episode of a binge starts before an idle tick could rebuild it. A build in progress
+        # holds the old names and starts again.
+        if self._index is not None:
+            self._index = self._index.renamed(old, new)
+            self._index_viewers = tuple(replace(v, name=new) if v.name == old else v for v in self._index_viewers)
+        self._builder = None
 
     def invalidate_index(self) -> None:
         self._index_dirty = True

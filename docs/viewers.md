@@ -123,8 +123,9 @@ To rename a linked viewer, rename the user profile in CrossWatch. At its next ch
 add-on takes over the new name, shows a short "Renamed in CrossWatch" notification with the new name, and moves
 the viewer's remembered answers and any finished watches still waiting for delivery to the new
 name. The add-on checks in every few minutes, also while something plays, so a rename can land
-in the middle of an episode or film: that watch is reported under the new name when it ends, and
-a rating still to be asked for it goes to the new name too.
+in the middle of an episode or film: that watch is reported under the new name when it ends, the
+next episode is still credited through the viewer's playlists, and a rating still to be asked for
+it goes to the new name too.
 If another viewer already has the new name, the add-on leaves both alone. Remove that
 other viewer, or rename its profile in CrossWatch if it is linked, and the rename follows at
 the next check-in.
