@@ -1,6 +1,43 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.0.0 (2026-10-20)
+-------------------
+Improvements:
+  - First stable release. The add-on is now called "CrossWatch for Kodi"
+    in Kodi (add-on browser, settings, notification heading), as agreed
+    with the CrossWatch maintainer, so add-on problems are not reported
+    as CrossWatch problems. The settings category for the server keeps
+    "CrossWatch".
+  - The add-on's summary and description say what CrossWatch is, that
+    the add-on needs one, and that add-on problems go to the add-on's
+    GitHub issues.
+  - Fanart (fanart.jpg, 1920x1080) for the add-on browser and skins.
+  - <forum> points at the Kodi forum thread.
+  - Tested on Kodi 22 (Piers) RC1: live checks and every window.
+
+Changed behaviour:
+  - INFO lines reach kodi.log at Kodi's debug level, as the official
+    repository's add-on rules ask: a normal kodi.log shows only the
+    add-on's warnings and errors. A rating a service refused
+    (reporter.rated with failed above 0) is now a warning, so it still
+    shows.
+
+Known issues:
+  - When Kodi stops the add-on (an update, disabling it, or Kodi
+    shutting down) while a question window is open, Kodi's script
+    manager lock blocks the GUI thread for the whole stop, so the
+    window cannot close and Kodi kills the service after 5 s. The
+    service then only starts again after a Kodi restart. Present since
+    beta2; issue #60.
+
+Internal:
+  - LICENSE renamed to LICENSE.txt and resources/licences/Apache-2.0.txt
+    to apache-2.0.txt, for the repository's file rules.
+  - docker/scripts/fanart.sh renders fanart.jpg and the repository's
+    social banner (docs/assets/banner.png) from icon.png.
+  - pytest 9.1.1 and ruff 0.17.0.
+
 v1.0.0~beta3 (2026-10-15)
 -------------------------
 New Features:
