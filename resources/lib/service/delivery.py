@@ -111,16 +111,19 @@ class Delivery:
         """Link and rename viewers to match CrossWatch's people (contract 1.6).
 
         On the service thread: the settings script applies each edit to viewers.json as it is
-        when saved, so a rename saved here is not overwritten by an open Viewers screen.
+        when saved, so a rename saved here is not overwritten by an open Viewers screen, and
+        both hold the store's lock from that read to the save.
         """
         if self._viewers is None:
             return
-        result = reconcile(self._viewers.viewers(), people)
+        with self._viewers.locked():
+            result = reconcile(self._viewers.viewers(), people)
+            if result.changed:
+                self._viewers.save(result.viewers)
         if result.skipped:
             _log.warning("people.rename_skipped", count=result.skipped)
         if not result.changed:
             return
-        self._viewers.save(result.viewers)
         for old, new in result.renamed:
             answers = self._memory.rename_viewer(old, new) if self._memory is not None else 0
             kept = self._outbox.rename_viewer(old, new) if self._outbox is not None else 0

@@ -1,9 +1,15 @@
+import contextlib
 import json
 import os
+import threading
+import time
 
+import pytest
+
+from resources.lib import log as logmod
 from resources.lib.models import Viewer
 from resources.lib.routes import Person, RouteFacts
-from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer, RouteStore
+from resources.lib.storage import JsonViewerStore, PromptMemory, RememberedAnswer, RouteStore, file_lock
 
 
 def test_missing_file_yields_no_viewers(tmp_path):
@@ -212,3 +218,138 @@ def test_a_blank_or_odd_person_id_reads_as_unlinked(tmp_path):
         json.dumps([{"name": "a", "person_id": ""}, {"name": "b", "person_id": 7}])
     )
     assert [v.person_id for v in JsonViewerStore(str(path)).viewers()] == [None, None]
+
+
+def _append_slowly(path, item, guard, ready):
+    """Read the list, pause, write it back with item added: the window a second writer
+    lands in when nothing spans the read and the write."""
+    ready.wait()
+    with guard():
+        rows = json.loads(path.read_text()) if path.exists() else []
+        time.sleep(0.2)
+        path.write_text(json.dumps([*rows, item]))
+
+
+def _two_writers(path, guard):
+    ready = threading.Barrier(2)
+    threads = [threading.Thread(target=_append_slowly, args=(path, item, guard, ready)) for item in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return sorted(json.loads(path.read_text()))
+
+
+def test_two_writers_without_the_lock_lose_an_update(tmp_path):
+    assert len(_two_writers(tmp_path / "viewers.json", contextlib.nullcontext)) == 1
+
+
+def test_two_writers_under_the_lock_keep_both_updates(tmp_path):
+    path = tmp_path / "viewers.json"
+    assert _two_writers(path, lambda: file_lock(str(path))) == ["a", "b"]
+    assert not os.path.exists(f"{path}.lock")
+
+
+def test_the_lock_file_is_removed_after_use(tmp_path):
+    path = str(tmp_path / "viewers.json")
+    with file_lock(path):
+        assert os.path.exists(f"{path}.lock")
+    assert not os.path.exists(f"{path}.lock")
+
+
+def test_the_lock_file_is_removed_after_an_exception(tmp_path):
+    path = str(tmp_path / "viewers.json")
+    with pytest.raises(RuntimeError), file_lock(path):
+        raise RuntimeError("boom")
+    assert not os.path.exists(f"{path}.lock")
+
+
+def test_a_stale_lock_is_broken(tmp_path):
+    path = str(tmp_path / "viewers.json")
+    lock = f"{path}.lock"
+    with open(lock, "w"):
+        pass
+    old = time.time() - 60
+    os.utime(lock, (old, old))
+    start = time.monotonic()
+    with file_lock(path, timeout=1.0):
+        # Ours now, not the dead writer's.
+        assert os.path.getmtime(lock) > old
+    assert time.monotonic() - start < 1.0
+    assert not os.path.exists(lock)
+
+
+def test_a_held_lock_past_the_timeout_writes_anyway_and_warns_once(tmp_path):
+    captured: list[str] = []
+    logmod.configure(log_dir=None, debug=False, sink=lambda msg, level: captured.append(msg))
+    path = str(tmp_path / "viewers.json")
+    lock = f"{path}.lock"
+    with open(lock, "w"):
+        pass
+    entered = False
+    with file_lock(path, timeout=0.2):
+        entered = True
+    assert entered
+    # The holder's lock is left alone: it is not ours to remove.
+    assert os.path.exists(lock)
+    assert sum("storage.lock_timeout" in line for line in captured) == 1
+
+
+def test_a_lock_is_waited_for_until_its_holder_lets_go(tmp_path):
+    path = str(tmp_path / "prompts.json")
+    held = threading.Event()
+
+    def hold():
+        with file_lock(path):
+            held.set()
+            time.sleep(0.3)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    held.wait()
+    start = time.monotonic()
+    PromptMemory(path).remember("tvdb:1", ("anna",))
+    waited = time.monotonic() - start
+    holder.join()
+    assert waited >= 0.25
+    assert PromptMemory(path).recall("tvdb:1") == RememberedAnswer(viewers=("anna",))
+
+
+def test_the_viewer_store_locks_its_own_file(tmp_path):
+    path = str(tmp_path / "viewers.json")
+    with JsonViewerStore(path).locked():
+        assert os.path.exists(f"{path}.lock")
+    assert not os.path.exists(f"{path}.lock")
+
+
+def test_an_unwritable_folder_is_waited_out_and_never_raises(tmp_path):
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("")
+    path = str(blocker / "viewers.json")
+    with file_lock(path, timeout=0.05):
+        pass
+    assert JsonViewerStore(path).viewers() == []
+
+
+def test_a_stale_lock_another_waiter_claimed_first_is_left_to_it(tmp_path, monkeypatch):
+    path = str(tmp_path / "viewers.json")
+    lock = f"{path}.lock"
+    with open(lock, "w"):
+        pass
+    old = time.time() - 60
+    os.utime(lock, (old, old))
+
+    def claimed_already(_src, _dst):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(os, "rename", claimed_already)
+    with file_lock(path, timeout=0.05):
+        pass
+    assert os.path.exists(lock)
+
+
+def test_a_lock_removed_under_its_holder_is_released_quietly(tmp_path):
+    path = str(tmp_path / "viewers.json")
+    with file_lock(path):
+        os.remove(f"{path}.lock")
+    assert not os.path.exists(f"{path}.lock")

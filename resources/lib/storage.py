@@ -8,13 +8,14 @@ Neither reads nor writes raise. A write sits on the stop path, so a full disk mu
 attribution rather than a watch.
 """
 
-from __future__ import annotations
-
+import contextlib
 import json
 import os
 import tempfile
 import threading
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -28,6 +29,87 @@ _log = get_logger("storage")
 class ViewerStore(Protocol):
     def viewers(self) -> list[Viewer]: ...
     def save(self, viewers: list[Viewer]) -> None: ...
+    def locked(self) -> AbstractContextManager[None]: ...
+
+
+# A holder only ever reads, changes and writes one small file, so a lock this old belongs to
+# a writer that died; the wait is short enough that nobody notices it on a settings screen
+# or at the end of playback.
+LOCK_TIMEOUT_SECONDS = 2.0
+LOCK_STALE_SECONDS = 10.0
+_LOCK_POLL_SECONDS = 0.02
+
+
+def _take_lock(lock: str, stale: float) -> int | None:
+    try:
+        return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        pass
+    except OSError:
+        # Unwritable folder: waited out like a held lock, and the write then fails and logs
+        # as it would have.
+        return None
+    try:
+        if time.time() - os.path.getmtime(lock) <= stale:
+            return None
+        # Renamed away rather than removed, so of two waiters that both found it stale only
+        # the one whose rename succeeds goes on; the other polls again.
+        claim = f"{lock}.stale.{os.getpid()}.{threading.get_ident()}"
+        os.rename(lock, claim)
+        os.remove(claim)
+        _log.warning("storage.lock_broken", name=os.path.basename(lock))
+    except OSError:
+        return None
+    try:
+        return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except OSError:
+        return None
+
+
+@contextlib.contextmanager
+def file_lock(
+    path: str, timeout: float = LOCK_TIMEOUT_SECONDS, stale: float = LOCK_STALE_SECONDS
+) -> Iterator[None]:
+    """Hold <path>.lock across a read, change and write of path.
+
+    The service and each settings script are Python sub-interpreters of one Kodi process,
+    so a threading lock does not reach across them, fcntl record locks are per process, and
+    flock does not exist on Windows. Creating the lock file exclusively works on every
+    platform Kodi runs on.
+
+    Past the timeout the write goes ahead unlocked, with one warning: losing the edit in
+    hand for certain is worse than the chance of losing a concurrent one. Never hold this
+    across a dialog.
+    """
+    lock = f"{path}.lock"
+    with contextlib.suppress(OSError):
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    fd = _take_lock(lock, stale)
+    while fd is None and time.monotonic() < deadline:
+        time.sleep(_LOCK_POLL_SECONDS)
+        fd = _take_lock(lock, stale)
+    if fd is None:
+        _log.warning("storage.lock_timeout", name=os.path.basename(path), timeout_s=timeout)
+    try:
+        yield
+    finally:
+        if fd is not None:
+            _release_lock(fd, lock)
+
+
+def _release_lock(fd: int, lock: str) -> None:
+    # Only the file this holder created: one held past the stale age may have been broken
+    # and retaken by another writer since.
+    try:
+        ours = os.path.samestat(os.fstat(fd), os.stat(lock))
+    except OSError:
+        ours = False
+    with contextlib.suppress(OSError):
+        os.close(fd)
+    if ours:
+        with contextlib.suppress(OSError):
+            os.remove(lock)
 
 
 def _read_json(path: str, default: Any) -> Any:
@@ -67,6 +149,11 @@ def _write_json(path: str, value: Any) -> bool:
 class JsonViewerStore:
     def __init__(self, path: str) -> None:
         self._path = path
+
+    def locked(self) -> AbstractContextManager[None]:
+        """Around a read of the list, the change, and its save: the service and the
+        Viewers screen both save it."""
+        return file_lock(self._path)
 
     def viewers(self) -> list[Viewer]:
         rows = _read_json(self._path, [])
@@ -138,7 +225,9 @@ class PromptMemory:
     """Answers to the who-watched prompt, one per show.
 
     Read from disk on every call rather than cached: the settings screen edits the same
-    file from another interpreter, and a change there has to reach the next playback.
+    file from another interpreter, and a change there has to reach the next playback. Each
+    change holds the file lock as well as the thread lock, since the thread lock does not
+    reach that interpreter.
     """
 
     def __init__(self, path: str) -> None:
@@ -157,7 +246,7 @@ class PromptMemory:
         return {key: answer for key, answer in parsed.items() if answer is not None}
 
     def remember(self, key: str, viewers: tuple[str, ...], title: str | None = None, year: int | None = None) -> None:
-        with self._lock:
+        with self._lock, file_lock(self._path):
             data = _read_json(self._path, {})
             if not isinstance(data, dict):
                 data = {}
@@ -165,7 +254,7 @@ class PromptMemory:
             _write_json(self._path, data)
 
     def forget(self, key: str) -> None:
-        with self._lock:
+        with self._lock, file_lock(self._path):
             data = _read_json(self._path, {})
             if isinstance(data, dict) and key in data:
                 del data[key]
@@ -174,7 +263,7 @@ class PromptMemory:
     def forget_many(self, keys: list[str]) -> bool:
         """One write for any number of answers: a long list is cleared in one go on slow
         storage, and a failed write leaves every answer as it was."""
-        with self._lock:
+        with self._lock, file_lock(self._path):
             data = _read_json(self._path, {})
             if not isinstance(data, dict):
                 data = {}
@@ -192,7 +281,7 @@ class PromptMemory:
         return self._rewrite_names(lambda names: [n for n in names if n != name])
 
     def _rewrite_names(self, change: Callable[[list[str]], list[str]]) -> tuple[int, int]:
-        with self._lock:
+        with self._lock, file_lock(self._path):
             data = _read_json(self._path, {})
             if not isinstance(data, dict):
                 return 0, 0

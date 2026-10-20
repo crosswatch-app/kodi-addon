@@ -1,4 +1,5 @@
 import threading
+import time
 
 import pytest
 
@@ -10,6 +11,7 @@ from resources.lib.reporter import HttpReporter, LogReporter
 from resources.lib.routes import Person, RouteFacts
 from resources.lib.service.delivery import Delivery
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
+from resources.lib.viewer_config import _update, apply_edit
 from tests.fakes import FakeKodi
 
 URL = "http://nas:8787/webhook/kodiwatcher"
@@ -267,3 +269,35 @@ def test_a_rename_onto_another_viewers_name_is_skipped_with_a_warning(tmp_path):
     assert store.viewers() == viewers
     assert kodi.notifications == []
     assert [level for message, level in logged if "people.rename_skipped" in message] == [logmod.WARNING]
+
+
+class _SlowReader(JsonViewerStore):
+    """The Viewers screen's store, pausing between its read and its save: the window the
+    service's rename lands in."""
+
+    def __init__(self, path, read):
+        super().__init__(path)
+        self._read = read
+
+    def viewers(self):
+        found = super().viewers()
+        self._read.set()
+        time.sleep(0.2)
+        return found
+
+
+def test_a_service_rename_during_a_screen_edit_keeps_both(tmp_path):
+    linked = [Viewer(name="Anna", person_id="p1")]
+    _kodi, delivery, on_routes, _lane, store, _memory = _people_delivery(tmp_path, linked)
+    read = threading.Event()
+    screen = _SlowReader(str(tmp_path / "viewers.json"), read)
+    edit = threading.Thread(
+        target=_update,
+        args=(screen, linked[0], lambda vs, cur: apply_edit(vs, cur.name, ("Anna TV",), cur.profiles)),
+    )
+    edit.start()
+    read.wait()
+    on_routes(_facts(Person("p1", "Anna B.")))
+    delivery.publish_status()
+    edit.join()
+    assert store.viewers() == [Viewer(name="Anna B.", playlists=("Anna TV",), person_id="p1")]
