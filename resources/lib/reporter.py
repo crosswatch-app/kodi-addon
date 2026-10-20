@@ -318,7 +318,7 @@ class HttpReporter:
             # A write that failed at a destination is still a 200: CrossWatch logs why, and
             # sending the same score again would fail the same way.
             failed = sum(1 for route in rated if isinstance(route, dict) and route.get("ok") is False)
-            _log.info("reporter.rated", url=self._safe_url, routes=len(rated), failed=failed)
+            (_log.warning if failed else _log.info)("reporter.rated", url=self._safe_url, routes=len(rated), failed=failed)
         else:
             _log.info("reporter.posted", url=self._safe_url, event=kind)
         instance = parsed.get("instance")

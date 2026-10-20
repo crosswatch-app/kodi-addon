@@ -1,5 +1,5 @@
 # Kodi Media Center language file
-# Addon Name: CrossWatch
+# Addon Name: CrossWatch for Kodi
 # Addon id: service.crosswatch
 # Addon Provider: Rouzax
 msgid ""
@@ -56,7 +56,7 @@ msgid "Enable debug logging (records viewing history to disk)"
 msgstr ""
 
 msgctxt "#30030"
-msgid "CrossWatch"
+msgid "CrossWatch for Kodi"
 msgstr ""
 
 msgctxt "#30031"

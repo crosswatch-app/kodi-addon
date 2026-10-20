@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <addon id="service.crosswatch"
-       name="CrossWatch"
+       name="CrossWatch for Kodi"
        version="1.0.0~beta3"
        provider-name="Rouzax">
     <requires>
@@ -9,8 +9,8 @@
     <extension point="xbmc.service" library="service.py"/>
     <extension point="xbmc.python.script" library="configure.py"/>
     <extension point="xbmc.addon.metadata">
-        <summary lang="en_GB">Reports playback and who watched it to CrossWatch.</summary>
-        <description lang="en_GB">Sends Kodi playback events to CrossWatch, including which household member watched, resolved from smart playlist membership, the active Kodi profile, or a prompt at the end of playback.</description>
+        <summary lang="en_GB">Everyone in the household keeps their own watch history, through your own CrossWatch.</summary>
+        <description lang="en_GB">CrossWatch (crosswatch.app) is a free, self-hosted app that keeps watch history, ratings and playback progress in sync between media servers such as Plex, Jellyfin and Emby and trackers such as Trakt and Simkl, with a profile per person. This add-on needs a running CrossWatch on your network.[CR][CR]It reports what plays in Kodi, and who is watching, so each person's history reaches their own accounts. The viewer is worked out from smart playlist membership, the active Kodi profile, or a question when playback stops, remembered per show. Optionally, rate an episode or film after watching it.[CR][CR]Maintained by Rouzax, not by the CrossWatch project: report add-on problems on GitHub or in the forum thread.</description>
         <platform>all</platform>
         <license>GPL-2.0-only AND Apache-2.0</license>
         <source>https://github.com/crosswatch-app/kodi-addon</source>
@@ -22,6 +22,7 @@
 - Viewer names are compared the way CrossWatch v0.13.5 does: accents now count.</news>
         <assets>
             <icon>icon.png</icon>
+            <fanart>fanart.jpg</fanart>
         </assets>
     </extension>
 </addon>

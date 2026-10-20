@@ -20,7 +20,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[2]
-SHIPPED = ("addon.xml", "service.py", "configure.py", "LICENSE", "changelog.txt", "resources")
+SHIPPED = ("addon.xml", "service.py", "configure.py", "LICENSE.txt", "changelog.txt", "resources")
 # Shipped once they exist; the addon.xml <assets> entry is what makes Kodi use them.
 OPTIONAL = ("icon.png", "fanart.jpg")
 

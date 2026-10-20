@@ -12,7 +12,7 @@ Before you start, have CrossWatch open in a browser and know its address, for ex
 1. In CrossWatch, open the Kodi instance this device should use and ask it for a pairing code.
    The [CrossWatch wiki](https://wiki.crosswatch.app/crosswatch/settings/connections/media-clients/kodi/kodi-add-on)
    shows where.
-2. In Kodi, open the add-on settings (Add-ons > My add-ons > Services > CrossWatch > Configure)
+2. In Kodi, open the add-on settings (Add-ons > My add-ons > Services > CrossWatch for Kodi > Configure)
    and, in the CrossWatch category, select "Pair with CrossWatch".
 
     <img src="https://github.com/user-attachments/assets/a3cfda91-bc75-4deb-b217-530ee5abb142" alt="Add-on settings: Pair with CrossWatch, Status, Unpair" width="600">
