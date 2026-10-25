@@ -26,24 +26,18 @@ Arctic Zephyr Mod skins. Kodi on Android and other skins have not been tested ye
 
 ## Install
 
-From the Rouzax Repository, which keeps the add-on up to date:
+From the official Kodi add-on repository: in the add-on browser, choose "Install from
+repository" > Kodi Add-on repository > Services > CrossWatch for Kodi > Install, then follow
+the [Quick start](https://crosswatch-app.github.io/kodi-addon/quick-start/).
 
-1. Download the latest `repository.rouzax` zip from its
-   [releases page](https://github.com/Rouzax/repository.rouzax/releases).
-2. In Kodi, turn on Settings > System > Add-ons > "Unknown sources" (needed once, for the
-   repository).
-3. In the add-on browser, choose "Install from zip file" and pick the repository zip.
-4. Choose "Install from repository" > Rouzax Repository > Services > CrossWatch for Kodi.
-5. Follow the [Quick start](https://crosswatch-app.github.io/kodi-addon/quick-start/).
-
-The add-on has also been submitted to the official Kodi add-on repository. See
+New releases reach the Rouzax Repository first, on the day they are published. See
 [Install](https://crosswatch-app.github.io/kodi-addon/install/) for that and for zip installs.
 
 ## Documentation
 
 The full documentation is at <https://crosswatch-app.github.io/kodi-addon/>.
 
-- [Install](https://crosswatch-app.github.io/kodi-addon/install/): from the Rouzax Repository, the Kodi repository or a zip.
+- [Install](https://crosswatch-app.github.io/kodi-addon/install/): from the Kodi repository, the Rouzax Repository or a zip.
 - [Quick start](https://crosswatch-app.github.io/kodi-addon/quick-start/): from install to playback reported per person.
 - [Connect to CrossWatch](https://crosswatch-app.github.io/kodi-addon/connect/): pairing, Link, Unpair and manual setup.
 - [Who watched](https://crosswatch-app.github.io/kodi-addon/who-watched/): how the add-on decides who watched.
