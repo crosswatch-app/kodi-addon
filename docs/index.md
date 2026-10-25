@@ -47,7 +47,7 @@ Kodi's web server and JSON-RPC interface are not needed; only the optional
 
     ---
 
-    From the Rouzax Repository, the Kodi repository or a zip.
+    From the Kodi repository, the Rouzax Repository or a zip.
 
     [:octicons-arrow-right-24: Install](install.md)
 
