@@ -10,4 +10,4 @@
 # Kept apart from the dev lock so the gates' venv never mixes with the docs build's
 # Markdown and Pygments stack. CI installs from requirements-docs.lock with
 # --require-hashes. Neither file is packaged into the addon zip.
-zensical==0.0.69
+zensical==0.0.71
