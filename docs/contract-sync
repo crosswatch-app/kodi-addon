@@ -1,0 +1,276 @@
+# Kodi add-on pull sync contract
+
+Related issue: [kodi-addon #72](https://github.com/crosswatch-app/kodi-addon/issues/72)
+
+## Scope and responsibilities
+The add-on initiates every connection, on startup and at a configurable interval. CW does not connect to Kodi. Local Kodi API calls by the add-on do not require Kodi's HTTP JSON-RPC server.
+CW owns read authorization, viewer mappings, exported state and conflict handling for direct Kodi history/ratings pairs. This mode must disable remote polling fallback, including after heartbeat expiry. Kodi being offline is normal.
+The add-on owns scheduling, preview, local ownership resolution, library matching and local writes. Downloads run separately from playback reporting. Imported changes must not enter the outgoing playback/rating queue.
+
+## 1. Authentication and discovery
+
+Use the existing header on every request:
+
+```http
+X-CrossWatch-Token: <paired instance token>
+```
+
+Read access must be enabled separately in CW for that Kodi instance. The token grants access only to viewers explicitly mapped for that instance. Authorization is checked on every page request, not just when a snapshot is created.
+
+Add the following field to the existing ping response:
+
+```json
+{
+  "library_sync": {
+    "version": 1,
+    "enabled": true,
+    "features": ["history", "ratings"],
+    "viewers_url": "/api/kodi/addon/sync/v1/viewers",
+    "state_url": "/api/kodi/addon/sync/v1/state"
+  }
+}
+```
+
+These are proposed default paths. The add-on uses the advertised paths, including any deployment prefix, against its configured CW origin. 
+It must never forward the token to another origin.
+
+If `library_sync` is absent, the server does not support this API. If `enabled` is false, do not fetch. 
+An unsupported version must not be used. The read API has its own version; existing event `version: 1` stays unchanged.
+
+## 2. Viewer mapping
+
+```http
+GET /api/kodi/addon/sync/v1/viewers
+```
+
+Example response:
+
+```json
+{
+  "version": 1,
+  "mapping_revision": "m-12",
+  "viewers": [
+    {
+      "viewer_id": "p-anna",
+      "person_id": "p-anna",
+      "name": "Anna",
+      "status": "ready"
+    },
+    {
+      "viewer_id": "kv-7f21",
+      "person_id": null,
+      "name": "Tom",
+      "status": "ready"
+    },
+    {
+      "viewer_id": "kv-8b13",
+      "person_id": null,
+      "name": "Ben",
+      "status": "unmapped"
+    }
+  ]
+}
+```
+
+- `viewer_id` is the opaque, stable key used for reads.
+- For profile-linked viewers, it equals the existing CW person ID.
+- Whitelist-only viewers get a persistent CW mapping ID. CW configuration explicitly links it to a profile or provider account.
+- `person_id` identifies a linked profile when one exists.
+- Names are labels, not authorization keys. Existing outgoing events still carry viewer names.
+- Match locally linked viewers by `person_id`. For unlinked viewers, persist a confirmed association to `viewer_id`; do not guess ambiguous name matches.
+- `status` is `ready`, `unmapped` or `ambiguous`. Only `ready` viewers can be fetched.
+- `mapping_revision` changes when mappings or authorized data sources change.
+
+This list is separate from the existing `people` list. Its current meaning does not change. Readiness here means the mapping is resolved; data availability is reported separately.
+
+## 3. Reading state
+
+Request history and ratings separately:
+
+```http
+GET /api/kodi/addon/sync/v1/state?viewer_id=p-anna&feature=history&limit=500
+```
+
+`feature` is `history` or `ratings`. `limit` is an integer from 1 to 1000, default 500.
+
+Example history response:
+
+```json
+{
+  "version": 1,
+  "viewer_id": "p-anna",
+  "feature": "history",
+  "mapping_revision": "m-12",
+  "snapshot_id": "s-h41",
+  "generated_at": "2026-11-05T12:00:00Z",
+  "availability": {
+    "status": "partial",
+    "sources": [
+      {
+        "provider": "TRAKT",
+        "instance": "anna",
+        "status": "ready",
+        "last_successful_refresh_at": "2026-11-05T11:55:00Z"
+      },
+      {
+        "provider": "SIMKL",
+        "instance": "anna",
+        "status": "unavailable",
+        "last_successful_refresh_at": null
+      }
+    ]
+  },
+  "items": [
+    {
+      "key": "episode:tmdb_show:63639:2:5",
+      "media": {
+        "type": "episode",
+        "ids": {
+          "tmdb_show": "63639",
+          "tvdb_show": "280619"
+        },
+        "season": 2,
+        "episode": 5
+      },
+      "watched": true,
+      "play_count": null,
+      "last_watched_at": "2026-11-04T20:52:40Z"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+### Media identity
+- V1 supports `movie` and `episode`.
+- IDs use the existing flat format, with string values.
+- `tmdb`, `tvdb` and `imdb` identify the item. `tmdb_show`, `tvdb_show` and `imdb_show` identify its parent show.
+- Episodes include integer `season` and `episode`; season zero is valid. Movies omit those fields.
+- `key` is an opaque CW identity/deduplication key. Match Kodi items using media IDs and coordinates, not by parsing it.
+- CW omits items without usable identity. The add-on skips ambiguous matches.
+
+### History semantics
+- Rows represent known watched items; `watched` is true.
+- `play_count` is a positive integer only when CW can provide a reliable count; otherwise null. Merged provider observations must not be presented as exact plays.
+- `last_watched_at` is UTC RFC 3339 or null. CW does not invent a date.
+- V1 marks an unwatched Kodi item with play count **1**. Already-watched items remain unchanged, regardless of the exported count.
+- For an undated watch, use Kodi's item `dateadded` as the local fallback. If unavailable, skip and report it. The fallback is local and must not be submitted to CW as a real watch timestamp.
+
+### Ratings
+A ratings response uses the same envelope with `feature: "ratings"` and these item fields:
+
+```json
+{
+  "key": "movie:tmdb:550",
+  "media": {
+    "type": "movie",
+    "ids": {
+      "tmdb": "550",
+      "imdb": "tt0137523"
+    }
+  },
+  "rating_status": "rated",
+  "rating": 8,
+  "rated_at": null
+}
+```
+
+`rating` is an integer from 1 to 10. `rated_at` is UTC RFC 3339 or null.
+
+When mapped sources disagree, return `rating_status: "conflict"`, `rating: null` and `rated_at: null`. The add-on skips that item. No zero/removal ratings are returned by this read API.
+Only fill an empty Kodi rating. For shared items, all owners must have a usable rating and their scores must agree; otherwise skip.
+
+## 4. Availability and ownership
+
+Overall `availability.status` is:
+
+| Status | Meaning |
+| --- | --- |
+| `ready` | All selected sources have a usable completed import for this feature. |
+| `partial` | Some state is available, but coverage is incomplete or uncertain. |
+| `unavailable` | No usable imported state is available. |
+
+Source statuses are `ready`, `partial`, `unavailable` or `error`. Refresh timestamps may be null.
+
+Ready describes CW's imported coverage, not proof of someone's entire lifetime history. Refresh times tell the add-on how old the data is. A scrobble-only setup does not guarantee complete history.
+
+Positive rows from partial data may be used. **Missing rows always mean unknown**, never unwatch or remove rating. Unavailable data is returned with availability metadata and an empty item list; request/service failures use the error responses below.
+
+The add-on reuses its existing ownership resolver: playlist, Kodi profile, remembered answer, then sole viewer. Skip unresolved owners. For shared items, the default is all owners watched; an optional any-owner setting may be offered. All-owner mode requires positive watched evidence for every owner. Any-owner mode requires positive evidence for at least one owner.
+
+## 5. Pagination and unchanged checks
+
+The first response creates an immutable snapshot. Fetch subsequent pages with:
+
+```http
+GET /api/kodi/addon/sync/v1/state?cursor=<opaque cursor>
+```
+
+- The cursor binds the instance, viewer, feature, mapping revision, snapshot and page size.
+- Do not send other query parameters with a cursor.
+- Each page uses the same response envelope and snapshot metadata.
+- Items have a deterministic order within a snapshot, without duplicates or gaps across pages.
+- `next_cursor: null` means the snapshot is fully downloaded.
+- Repeating a cursor returns the same page while valid.
+- Snapshots remain available for 30 minutes after creation, unless access or mappings change.
+- Download all pages before applying that feature's snapshot.
+- A mapping change invalidates outstanding cursors. Refresh mappings and restart.
+- When combining viewers for shared-item decisions, use snapshots with the same current mapping revision.
+
+For later checks, repeat the initial request with the last **fully downloaded** snapshot:
+
+```http
+GET /api/kodi/addon/sync/v1/state?viewer_id=p-anna&feature=history&limit=500&known_snapshot=s-h41
+```
+
+If unchanged:
+
+```json
+{
+  "version": 1,
+  "viewer_id": "p-anna",
+  "feature": "history",
+  "mapping_revision": "m-12",
+  "snapshot_id": "s-h41",
+  "unchanged": true
+}
+```
+
+Otherwise, return a new first page. Unknown or expired `known_snapshot` values produce a fresh snapshot. Changes to exported items, availability/source refresh metadata or mappings require a fresh snapshot. `generated_at` is snapshot creation time, not a reason by itself to invalidate unchanged data.
+V1 uses this explicit mechanism rather than ETag/304. Successful responses, including unchanged responses, use HTTP 200. Keep downloaded state locally so newly scanned Kodi items can be reconciled even when CW is unchanged. If local state is missing, fetch without `known_snapshot`.
+Do not reuse cached state across different CW connections, paired instances or viewer mappings. Discard affected cached state when access is revoked or a mapping changes.
+
+## 6. Errors
+
+The new endpoints use HTTP status codes with a consistent JSON body:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "viewer_unmapped",
+    "message": "This viewer has no configured read source.",
+    "retryable": false
+  }
+}
+```
+
+Clients branch on `code`, not the human-readable message. `retryable` means the same request may be retried after a delay; mapping/snapshot errors require the recovery action below instead.
+
+| HTTP | Code | Retryable | Add-on action |
+| --- | --- | --- | --- |
+| 400 | `invalid_request` | false | Fix parameters; do not retry unchanged. |
+| 401 | `invalid_token` | false | Stop pulls until credentials change. |
+| 403 | `read_disabled` | false | Stop pulls; discard read caches and recheck permission through ping. |
+| 403 | `viewer_forbidden` | false | Discard that viewer's cached state; refresh mappings. |
+| 409 | `viewer_unmapped` / `viewer_ambiguous` | false | Skip viewer; configuration needs fixing. |
+| 409 | `mapping_changed` | false | Discard pending snapshot; refresh mappings and restart. |
+| 410 | `snapshot_expired` | false | Restart from the first page. |
+| 429 | `rate_limited` | true | Honour `Retry-After`. |
+| 503 | `temporarily_unavailable` | true | Retry with backoff. |
+
+Unknown or unauthorized viewer IDs return `viewer_forbidden`. Malformed cursors return `invalid_request`; valid but expired cursors return `snapshot_expired`. Revoked authorization takes precedence over snapshot access.
+
+Network errors and other 5xx responses also get bounded backoff. Never interpret an error, unexpected HTTP response or malformed payload as an empty snapshot. Stop pulls on an unknown non-retryable error and surface the problem.
+
+Existing webhook response behaviour stays unchanged.
