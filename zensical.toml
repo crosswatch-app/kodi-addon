@@ -73,7 +73,7 @@ auto_caption = false
 # The payload contract is CrossWatch's maintainer's document for developers, not a user
 # page; it stays in docs/ and is read on GitHub.
 [project.plugins.exclude]
-glob = ["contract.md"]
+glob = ["contract.md", "contract-sync.md"]
 
 [project.markdown_extensions]
 abbr = {}
