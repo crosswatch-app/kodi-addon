@@ -39,6 +39,8 @@ KODI_DATA = Path.home() / ".var" / "app" / "tv.kodi.Kodi" / "data"
 # Space kept around the window's panel, so its rounded corners and border are not clipped.
 MARGIN = 24
 SHOW_LOG_INFO = "debug.showloginfo"
+# Kodi's own default, used when guisettings.xml does not name a port.
+DEFAULT_WEBSERVER_PORT = 8080
 
 
 def rpc(url: str, method: str, params: dict | None = None) -> object:
@@ -49,6 +51,19 @@ def rpc(url: str, method: str, params: dict | None = None) -> object:
     if "error" in reply:
         raise RuntimeError(f"{method}: {reply['error']}")
     return reply.get("result")
+
+
+def default_rpc() -> str:
+    """JSON-RPC URL on the web server port set in the rig's guisettings.xml."""
+    port = DEFAULT_WEBSERVER_PORT
+    try:
+        node = ElementTree.parse(KODI_DATA / "userdata" / "guisettings.xml").find(".//setting[@id='services.webserverport']")
+    except (OSError, ElementTree.ParseError):
+        node = None
+    text = (node.text or "").strip() if node is not None else ""
+    if text.isdigit():
+        port = int(text)
+    return f"http://127.0.0.1:{port}/jsonrpc"
 
 
 def alive(url: str) -> bool:
@@ -181,7 +196,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("scenes", nargs="*", help="scene names (default: all)")
     parser.add_argument("--display", default=":20")
-    parser.add_argument("--rpc", default="http://127.0.0.1:8081/jsonrpc")
+    parser.add_argument("--rpc", default=default_rpc(), help="default: the port in the rig's guisettings.xml")
     parser.add_argument("--no-restart", action="store_true", help="skip install and restart")
     parser.add_argument("--show", help="library show title for the scenes that show one")
     parser.add_argument("--movie", help="library film title for the scenes that show one")
@@ -201,14 +216,13 @@ def main() -> None:
     if not isinstance(skin, dict) or skin.get("value") != "skin.estuary":
         sys.exit("switch Kodi to Estuary first: the committed screenshots are all taken in it")
 
-    library = {
-        "tvshow": pick(args.rpc, "tvshow", args.show, args.show_folder),
-        "movie": pick(args.rpc, "movie", args.movie, args.movie_folder),
-    }
+    show = pick(args.rpc, "tvshow", args.show, args.show_folder)
+    movie = pick(args.rpc, "movie", args.movie, args.movie_folder)
     # A list's rows: a handful of shows, sorted as the screens sort them.
-    library["shows"] = pick_many(args.rpc, "tvshow", args.show_folder, 8)
+    shows = pick_many(args.rpc, "tvshow", args.show_folder, 8)
+    library = {"tvshow": show, "movie": movie, "shows": shows}
     (KODI_DATA / "addons" / HELPER_ID / "library.json").write_text(json.dumps(library), encoding="utf-8")
-    print(f"show: {library['tvshow']['title']}, film: {library['movie']['title']}")
+    print(f"show: {show['title']}, film: {movie['title']}")
     OUT.mkdir(exist_ok=True)
     overlay = rpc(args.rpc, "Settings.GetSettingValue", {"setting": SHOW_LOG_INFO})
     was_on = isinstance(overlay, dict) and overlay.get("value") is True
