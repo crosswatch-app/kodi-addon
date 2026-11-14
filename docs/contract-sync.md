@@ -27,7 +27,7 @@ Each viewer becomes its own Kodi instance in CW: a sync user of the paired insta
 - Devices that report the same `library_id` share a library; the user picks the sync device in setup.
 - Turning sync off on the sync device releases it, so another device can take over. Pairing again also resets it.
 
-**One viewer per instance.** The paired instance is bound to the first viewer that uploads to it. Another viewer is refused until the binding is released, by turning sync off on the device or pairing again. When a viewer's first full upload commits, CW starts that Kodi instance fresh. Earlier JSON-RPC or add-on history for it can then never cause deletes on the other side.
+**One viewer per instance.** The paired instance is bound to the first viewer that uploads to it. Another viewer is refused until the binding is released, by turning sync off on the device or pairing again. When a viewer's first full upload commits, CW starts that Kodi instance fresh. Earlier JSON-RPC or add-on history for it can then never cause deletes on the other side. While a sync is running, that first full upload gets `503 temporarily_unavailable`; send that part again.
 
 An instance syncs either through the add-on or over JSON-RPC, never both. An instance with JSON-RPC configured keeps JSON-RPC, and its viewers aren't listed in the ping reply. A profile viewer only syncs when its profile has its own library id. Items without an owner aren't uploaded for anyone.
 
@@ -92,10 +92,10 @@ Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "
 **Order.**
 - Uploads for a viewer are sent one at a time, in order.
 - Every upload, full or delta, carries `upload_seq`: a whole number that increases per viewer across both modes. All parts of one full upload share it.
-- CW refuses anything that isn't newer than the last `upload_seq` it saw with `409 upload_stale`. An exact retry of the last full upload or the last delta is accepted without being applied twice.
+- CW refuses anything that isn't newer than the last `upload_seq` it saw with `409 upload_stale`. Parts of the full upload in progress are checked against that upload's own `upload_seq`, so deltas sent between its parts are fine and don't block the remaining parts. An exact retry of the last full upload or the last delta is accepted without being applied twice.
 - The ping reply shows the last `upload_seq`, so a reinstalled add-on continues above it.
 - A full upload reflects every delta sent before its first part. Deltas sent between its parts are kept on top of it.
-- A full upload that CW dropped can't be resumed: its parts get `409 upload_stale`. Send a new one with a higher `upload_seq`. CW drops a full upload when it's too large, replaced by a newer one, or the viewer or library changed.
+- A full upload that CW dropped can't be resumed: its parts get `409 upload_stale`. Send a new one with a higher `upload_seq`. CW drops a full upload when it's too large, invalid at commit (see Validation), replaced by a newer one, or the viewer or library changed.
 
 **Size.**
 - A request holds at most 10,000 rows per list. Keep each request under about 1 MB so reverse proxies let it through; use gzip and more parts.
@@ -110,19 +110,20 @@ Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "
 **Validation.**
 - Every full part carries the `movies`, `episodes` and `tvshows` lists, empty when there are none. A delta may leave lists out.
 - Every movie and episode row, live or removed, carries a valid `playcount` (whole number, 0 or more), `lastplayed` (string), `userrating` (0 to 10) and `resume` (`position` and `total`). `unwatched` is optional and must be true or false.
-- A row that isn't an object, a library row without a valid Kodi id, or an invalid `timezone` rejects the whole request with `400 invalid_request`. CW's state stays as it was.
+- Every live episode's show row is in the same full upload, or for a delta, in that delta or already sent to CW. A show row without ids keeps the ids CW already had for it when its `tvshowid` and title match.
+- A row that isn't an object, a library row without a valid Kodi id, an episode without its show row, or an invalid `timezone` rejects the whole request with `400 invalid_request`. CW's state stays as it was.
 
 **Viewer state, not Kodi state.** `playcount`, `lastplayed`, `userrating` and `resume` are the viewer's state from the add-on's record: what CW sent for them, plus changes assigned to them. They are never the raw play count. A change from CW always updates the record; the add-on's settings only decide what Kodi's own database gets.
 
 **Nothing leaves by absence.**
 - A watch only goes away with an explicit `"unwatched": true` on the row. The add-on only sends that for a real unwatch, with the unwatch setting on.
 - `playcount: 0` without it never removes a watch. `userrating: 0` and a cleared resume do count as a removal.
-- Rows left out of an upload, removed files, a new `library_id` or a reinstall never remove anything. CW keeps each viewer's state per item, by its ids, so it survives a new library and new Kodi ids.
+- Rows left out of an upload, removed files, a new `library_id` or a reinstall never remove anything. CW keeps each viewer's state per item, by its ids, so it survives a new library, new Kodi ids and ids that are added later.
 
 **Removed files.** A removed file keeps its row with `"in_library": false`:
 - The row carries no Kodi id, because Kodi ids aren't stable. CW gives it an internal id that can never be written to.
 - A removed episode also carries its show as `"show": {"uniqueid": {...}, "title": "...", "year": 2015}`, because the show row may be gone too.
-- A removed row in a delta replaces the live row with the same file, or with the same ids when the removed row has no file.
+- A removed row in a delta replaces the live row with the same file, unless their ids conflict. A removed row without a file replaces the live row with the same ids.
 - An item is never uploaded twice. When the file comes back, the same row gets the new Kodi id.
 - CW never writes to such a row and leaves it out of library presence and collection.
 - When Kodi reuses an id for a different item, the previous item keeps its history in CW.
@@ -130,7 +131,7 @@ Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "
 **Full and delta.**
 - `full` replaces CW's view of which items are in the library, with their Kodi ids, once all parts have arrived.
 - `delta` only updates the rows it contains and never removes any.
-- A delta needs a complete full upload for the same viewer and library first, otherwise `409 upload_incomplete`.
+- A delta needs a complete full upload for the same viewer and library first, otherwise `409 upload_incomplete`. CW also answers this when it lost its own stored state for a viewer; send a full upload as usual.
 - A new `library_id`, or a change in the viewer-to-instance mapping, makes the instance wait for a new full upload, even when it changes back. Queued changes stay, and after the full upload they're sent with the item's new Kodi id.
 
 **Send:**
@@ -159,7 +160,10 @@ With `has_more: true`, fetch the next page with `after` set to `next_after`.
 
 **What a change means.**
 - The params are exactly what CW's Kodi provider sends over JSON-RPC today, but each change is an intent for that viewer. `lastplayed` is UTC; the add-on converts it to Kodi's local format before writing.
-- `item` says which item CW matched (a movie gets `year` instead of the show fields). The add-on checks it against the current row. On a mismatch it acks `item_changed`, which CW treats as a failed write, never as a delete.
+- `item` says which item CW matched (a movie gets `year` instead of the show fields). The add-on checks it against the current row:
+  - When the Kodi id now points at something else or at nothing (for example after Refresh information), the add-on finds the item by its file and ids and applies the change there.
+  - When the item isn't in the library at all, the change still goes into the viewer's record.
+  - Both ack `applied`. `item_changed` is only for a change the add-on can't place anywhere; CW treats it as a failed write, never as a delete.
 - The add-on always updates the viewer's record, then decides what Kodi gets:
   - all or any owners for shared items
   - a resume point is cleared only when the watch is newer than the last play here
@@ -200,7 +204,7 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 
 | HTTP | Code | Add-on action |
 | --- | --- | --- |
-| 400 | invalid_request | Fix the request, for example a missing list or device id, a malformed row or an invalid timezone; don't resend it unchanged. |
+| 400 | invalid_request | Fix the request, for example a missing list or device id, a malformed row, a missing show row or an invalid timezone; don't resend it unchanged. |
 | 401 | invalid_token | Stop sync and reset the queue position. Keep the viewers' records. |
 | 403 | sync_disabled | Sync is off in CW or on this device. Stop uploads and queue fetches until the ping says enabled. |
 | 403 | not_sync_device | Another device is the sync device. Keep the watcher only. |
@@ -208,7 +212,7 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 | 409 | upload_incomplete | Send a full upload. |
 | 409 | upload_stale | Send a new upload with a higher upload_seq. |
 | 413 | payload_too_large | Split into smaller parts. |
-| 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. |
+| 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. A 503 on a viewer's first full upload means a sync is running; send that part again. |
 
 Network failures and other 5xx responses also get bounded backoff. Existing webhook behaviour stays unchanged.
 
