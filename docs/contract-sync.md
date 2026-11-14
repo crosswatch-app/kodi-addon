@@ -1,6 +1,6 @@
 # Kodi add-on sync contract
 
-**Working draft for v1. Not implemented or agreed yet.** Updated 2026-11-12.
+**Working draft for v1. Not implemented or agreed yet.** Updated 2026-11-14.
 Related: [kodi-addon #72](https://github.com/crosswatch-app/kodi-addon/issues/72)
 
 ## What we're building
@@ -22,7 +22,7 @@ CW never connects to Kodi, and Kodi's web server isn't needed. Pairing, playback
 
 Each viewer becomes its own Kodi instance in CW. With one viewer, that's the default instance.
 
-An instance syncs either through the add-on or over JSON-RPC, never both. One sync device per library: on a shared MariaDB library only one Kodi uploads and applies, and the others keep the watcher. Profile viewers sync on SQLite only. Items without an owner aren't uploaded for anyone.
+An instance syncs either through the add-on or over JSON-RPC, never both. One sync device per library: devices that report the same `library_id` share a library, the user picks the sync device in setup, and the others keep the watcher. The add-on also has a setting to turn sync off on a device. A profile viewer only syncs when its profile has its own library id. Items without an owner aren't uploaded for anyone.
 
 ## Connection
 
@@ -38,6 +38,10 @@ Authenticated ping replies, including those with `ignored: true`, carry:
 ```
 
 A missing block or an unsupported version means sync is off. The add-on reports its viewers in the ping (`viewer_id` stable, plus `name`). CW maps each viewer to an instance. `queue_pending` tells the add-on to fetch the queue.
+
+The ping also carries:
+- `library_id`: a hash of the database type, host, port, name and Kodi's major version, per device on SQLite. Only the hash leaves Kodi.
+- Kodi's version and JSON-RPC version. The transport answers the health check from these.
 
 ## Upload
 
@@ -66,7 +70,13 @@ A missing block or an unsupported version means sync is off. The add-on reports 
 
 **Viewer state, not Kodi state.** `playcount`, `lastplayed`, `userrating` and `resume` are the viewer's state from the add-on's record: what CW applied for them, plus changes assigned to them. They are never the raw play count.
 
-**The upload is a ledger.** A watched item only leaves a viewer's state on an explicit unwatch, and only with the unwatch setting on. A show moving to another viewer, a lost owner or a removed file never clears it. A removed file keeps its row with `"in_library": false`. CW never writes to such a row and leaves it out of library presence and collection.
+**The upload is a ledger.** A watched item only leaves a viewer's state on an explicit unwatch, and only with the unwatch setting on. A show moving to another viewer, a lost owner or a removed file never clears it.
+
+**Removed files.** A removed file keeps its row with `"in_library": false`:
+- The row carries no Kodi id, because Kodi ids aren't stable. CW gives it an internal id that can never be written to.
+- A removed episode also carries its show as `"show": {"uniqueid": {...}, "title": "...", "year": 2015}`, because the show row may be gone too.
+- An item is never uploaded twice. When the file comes back, the same row gets the new Kodi id.
+- CW never writes to such a row and leaves it out of library presence and collection.
 
 **Full and delta.**
 - `full` replaces the viewer's rows once all parts have arrived.
@@ -80,9 +90,11 @@ A missing block or an unsupported version means sync is off. The add-on reports 
 
 **Changes made in Kodi.** Manual watched, manual unwatched (with the setting on) and Kodi's own ratings reach CW through uploads. CW's pairs carry them on to the providers. Shared items wait in the add-on's assignment list until someone assigns them. On the first run, sending existing ratings is an explicit step in the add-on.
 
+**First run.** Before the record holds anything, an item with one owner starts from Kodi's own state, and a shared item stays out until it's assigned. So the first full upload doesn't hold every watched item; the pairs fill in the rest as queued changes.
+
 ## Queue
 
-`GET sync/v1/queue?viewer_id=kv-1` returns the changes in order:
+`GET sync/v1/queue?viewer_id=kv-1` returns the changes in order. `seq` counts per viewer:
 
 ```json
 {"version": 1, "changes": [{"seq": 121, "method": "VideoLibrary.SetEpisodeDetails",
@@ -94,7 +106,7 @@ A missing block or an unsupported version means sync is off. The add-on reports 
 - a resume point is cleared only when the watch is newer than the last play here
 - an unwatch only lands with the setting on
 
-Only these methods are allowed. The add-on refuses anything else.
+Only these methods are allowed. Besides the item id, a change may only carry `playcount`, `lastplayed`, `userrating` and `resume`. The add-on refuses anything else.
 
 **Confirming.** `POST sync/v1/queue/ack`:
 
@@ -108,7 +120,9 @@ Only these methods are allowed. The add-on refuses anything else.
 
 ## Health
 
-An instance is ready when it has a complete full upload and the add-on has been seen recently. Otherwise the pair's read fails and the pair is skipped for that run. An upload that is missing, partial or stale is never treated as an empty library.
+An instance is ready once it has a complete full upload. Kodi doesn't need to be on: changes queue while it's off, and the add-on applies them when it starts. Without a complete full upload, the pair's read fails and the pair is skipped for that run. An upload that is missing or partial is never treated as an empty library.
+
+When a full upload completes, CW runs the managed pairs for that instance right away, unless a run is already going.
 
 ## Errors
 
@@ -119,7 +133,7 @@ An instance is ready when it has a complete full upload and the add-on has been 
 | HTTP | Code | Add-on action |
 | --- | --- | --- |
 | 400 | invalid_request | Fix the request; don't resend it unchanged. |
-| 401 | invalid_token | Stop sync and clear this connection's records of CW. |
+| 401 | invalid_token | Stop sync and reset the queue position. Keep the viewers' records. |
 | 403 | sync_disabled | Stop uploads and queue fetches until the ping says enabled. |
 | 409 | viewer_unknown / upload_incomplete | Refresh the viewers from the ping, or restart the full upload. |
 | 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. |
