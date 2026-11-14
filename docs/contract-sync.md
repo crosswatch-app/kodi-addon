@@ -22,7 +22,7 @@ CW never connects to Kodi, and Kodi's web server isn't needed. Pairing, playback
 
 Each viewer becomes its own Kodi instance in CW: a sync user of the paired instance, for example `default~kv-2`. With one viewer, that's the paired instance itself.
 
-An instance syncs either through the add-on or over JSON-RPC, never both. One sync device per library: devices that report the same `library_id` share a library, the user picks the sync device in setup, and the others keep the watcher. The add-on also has a setting to turn sync off on a device. A profile viewer only syncs when its profile has its own library id. Items without an owner aren't uploaded for anyone.
+An instance syncs either through the add-on or over JSON-RPC, never both. An instance with JSON-RPC configured keeps JSON-RPC, and its viewers aren't listed in the ping reply. One sync device per library: devices that report the same `library_id` share a library, the user picks the sync device in setup, and the others keep the watcher. The add-on also has a setting to turn sync off on a device. A profile viewer only syncs when its profile has its own library id. Items without an owner aren't uploaded for anyone.
 
 ## Connection
 
@@ -76,21 +76,35 @@ A missing block or an unsupported version means sync is off. `enabled` is true o
 
 Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "instance": "default"}`. `complete` turns true when the last part has arrived.
 
+**Order.**
+- Uploads for a viewer are sent one at a time, in order.
+- A full upload reflects every delta sent before its first part. Deltas sent between its parts are applied on top when it completes.
+- A retry reuses the same `upload_id`. CW never commits the same full upload twice.
+
 **Rows.** Rows use the shape of Kodi's GetMovies, GetEpisodes and GetTVShows results. `sources` is the Files.GetSources result, so the library picker and path filters work. The add-on strips credentials from paths. `timezone` is the device's IANA zone; CW uses it to convert `lastplayed` in both directions.
+
+**Validation.**
+- Every full part carries the `movies`, `episodes` and `tvshows` lists (empty when there are none) and a valid `timezone`.
+- A delta may leave lists out; a `timezone` it sends must be valid.
+- A row that isn't an object, or a library row without a valid Kodi id, rejects the whole request with `400 invalid_request`. The previous rows stay as they were.
 
 **Viewer state, not Kodi state.** `playcount`, `lastplayed`, `userrating` and `resume` are the viewer's state from the add-on's record: what CW applied for them, plus changes assigned to them. They are never the raw play count.
 
-**The upload is a ledger.** A watched item only leaves a viewer's state on an explicit unwatch, and only with the unwatch setting on. A show moving to another viewer, a lost owner or a removed file never clears it.
+**The upload is a ledger.** A watched item only leaves a viewer's state on an explicit unwatch, and only with the unwatch setting on. A show moving to another viewer, a lost owner or a removed file never clears it. A watched, rated or resumed row that a full upload leaves out is kept by CW as a removed row, so leaving a row out never counts as an unwatch.
 
 **Removed files.** A removed file keeps its row with `"in_library": false`:
 - The row carries no Kodi id, because Kodi ids aren't stable. CW gives it an internal id that can never be written to.
 - A removed episode also carries its show as `"show": {"uniqueid": {...}, "title": "...", "year": 2015}`, because the show row may be gone too.
+- A removed row in a delta replaces the live row with the same file, or with the same ids when the removed row has no file.
 - An item is never uploaded twice. When the file comes back, the same row gets the new Kodi id.
 - CW never writes to such a row and leaves it out of library presence and collection.
 
 **Full and delta.**
 - `full` replaces the viewer's rows once all parts have arrived.
 - `delta` only updates the rows it contains and never removes any.
+- A delta needs a complete full upload for the same viewer and library first, otherwise `409 upload_incomplete`.
+
+**New viewer or library.** When a different viewer takes over an instance, or the device reports a new `library_id`, the instance isn't ready until a new full upload arrives. CW drops the changes it queued before that, and never hands them to the new viewer.
 
 **Send:**
 - a delta right away on VideoLibrary.OnUpdate (ignored during and just after playback, and for the add-on's own writes)
@@ -134,7 +148,7 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 
 An instance is ready once it has a complete full upload. Kodi doesn't need to be on: changes queue while it's off, and the add-on applies them when it starts. Without a complete full upload, the pair's read fails and the pair is skipped for that run. An upload that is missing or partial is never treated as an empty library.
 
-When a full upload completes, CW runs the managed pairs for that instance right away, unless a run is already going.
+When a full upload completes, CW runs the managed pairs for that instance right away. If a sync is already running, CW retries until the run is accepted.
 
 ## Errors
 
@@ -144,10 +158,10 @@ When a full upload completes, CW runs the managed pairs for that instance right 
 
 | HTTP | Code | Add-on action |
 | --- | --- | --- |
-| 400 | invalid_request | Fix the request; don't resend it unchanged. |
+| 400 | invalid_request | Fix the request, for example a missing list, a malformed row or an invalid timezone; don't resend it unchanged. |
 | 401 | invalid_token | Stop sync and reset the queue position. Keep the viewers' records. |
 | 403 | sync_disabled | Sync is off in CW or on this device. Stop uploads and queue fetches until the ping says enabled. |
-| 409 | viewer_unknown / upload_incomplete | Refresh the viewers from the ping, or restart the full upload. |
+| 409 | viewer_unknown / upload_incomplete | Refresh the viewers from the ping, or send a full upload. |
 | 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. |
 
 Network failures and other 5xx responses also get bounded backoff. Existing webhook behaviour stays unchanged.
