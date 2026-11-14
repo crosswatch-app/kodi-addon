@@ -20,7 +20,7 @@ CW never connects to Kodi, and Kodi's web server isn't needed. Pairing, playback
 2. In CW, the user picks a target per viewer, for example user1 to Trakt user1 and user2 to Trakt user2, with switches for live scrobble and library sync.
 3. CW creates the watcher route and the sync pair itself, marked as managed by the add-on. Power users can still edit both.
 
-Each viewer becomes its own Kodi instance in CW. With one viewer, that's the default instance.
+Each viewer becomes its own Kodi instance in CW: a sync user of the paired instance, for example `default~kv-2`. With one viewer, that's the paired instance itself.
 
 An instance syncs either through the add-on or over JSON-RPC, never both. One sync device per library: devices that report the same `library_id` share a library, the user picks the sync device in setup, and the others keep the watcher. The add-on also has a setting to turn sync off on a device. A profile viewer only syncs when its profile has its own library id. Items without an owner aren't uploaded for anyone.
 
@@ -31,21 +31,29 @@ An instance syncs either through the add-on or over JSON-RPC, never both. One sy
 - Never send the token to another origin, including through redirects.
 - HTTP stays supported. Both setup screens warn that history and tokens then travel unencrypted.
 
-Authenticated ping replies, including those with `ignored: true`, carry:
+The add-on's normal ping carries a `library_sync` block:
 
 ```json
-{"library_sync": {"version": 1, "enabled": true, "viewers": [{"viewer_id": "kv-1", "instance": "kodi-user1"}], "queue_pending": 3}}
+{"event": "ping", "library_sync": {"version": 1, "enabled": true, "viewers": [{"viewer_id": "kv-1", "name": "user1"}],
+ "library_id": "...", "kodi_version": "21.2", "jsonrpc_version": "13.5.0"}}
 ```
 
-A missing block or an unsupported version means sync is off. The add-on reports its viewers in the ping (`viewer_id` stable, plus `name`). CW maps each viewer to an instance. `queue_pending` tells the add-on to fetch the queue.
-
-The ping also carries:
+- `enabled: false` is the add-on setting that turns sync off on this device.
+- `viewers` lists every viewer, with a stable `viewer_id` and a `name`.
 - `library_id`: a hash of the database type, host, port, name and Kodi's major version, per device on SQLite. Only the hash leaves Kodi.
 - Kodi's version and JSON-RPC version. The transport answers the health check from these.
 
+Authenticated ping replies, including those with `ignored: true`, carry:
+
+```json
+{"library_sync": {"version": 1, "enabled": true, "viewers": [{"viewer_id": "kv-1", "instance": "default"}], "queue_pending": 3}}
+```
+
+A missing block or an unsupported version means sync is off. `enabled` is true only when sync is on in CW and on the device. `viewers` lists the viewers CW mapped to an instance; an unmapped viewer is left out. `queue_pending` tells the add-on to fetch the queue.
+
 ## Upload
 
-`POST sync/v1/upload`, gzip allowed. One request per viewer, or one per part when a full upload is split.
+`POST sync/v1/upload`, gzip allowed with `Content-Encoding: gzip`. One request per viewer, or one per part when a full upload is split.
 
 ```json
 {
@@ -65,6 +73,8 @@ The ping also carries:
   "tvshows": [{"tvshowid": 3, "uniqueid": {"tmdb": "63639"}, "title": "The Expanse", "year": 2015}]
 }
 ```
+
+Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "instance": "default"}`. `complete` turns true when the last part has arrived.
 
 **Rows.** Rows use the shape of Kodi's GetMovies, GetEpisodes and GetTVShows results. `sources` is the Files.GetSources result, so the library picker and path filters work. The add-on strips credentials from paths. `timezone` is the device's IANA zone; CW uses it to convert `lastplayed` in both directions.
 
@@ -114,6 +124,8 @@ Only these methods are allowed. Besides the item id, a change may only carry `pl
 {"version": 1, "viewer_id": "kv-1", "results": [{"seq": 121, "status": "applied"}, {"seq": 122, "status": "failed", "error": "item_not_found"}]}
 ```
 
+Reply: `{"ok": true, "applied": 1, "failed": 1}`.
+
 `applied` means the viewer's record was updated, even when Kodi's own play count didn't change. A later upload's `applied_seq` must include it.
 
 **Pending changes.** Until a change is acked, CW counts it as done when it reads the viewer's rows. Every upload says up to which `seq` it already reflects (`applied_seq`), and CW overlays the changes after that. So a stale upload can't undo a pending change, and nothing is queued twice. A failed change drops out, and the next pair run plans it again.
@@ -134,7 +146,7 @@ When a full upload completes, CW runs the managed pairs for that instance right 
 | --- | --- | --- |
 | 400 | invalid_request | Fix the request; don't resend it unchanged. |
 | 401 | invalid_token | Stop sync and reset the queue position. Keep the viewers' records. |
-| 403 | sync_disabled | Stop uploads and queue fetches until the ping says enabled. |
+| 403 | sync_disabled | Sync is off in CW or on this device. Stop uploads and queue fetches until the ping says enabled. |
 | 409 | viewer_unknown / upload_incomplete | Refresh the viewers from the ping, or restart the full upload. |
 | 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. |
 
