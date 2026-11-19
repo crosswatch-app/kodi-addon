@@ -1,6 +1,6 @@
 # Kodi add-on sync contract
 
-**Working draft for v1. Not implemented or agreed yet.** Updated 2026-11-14.
+**Working draft for v1. Not implemented or agreed yet.** Updated 2026-11-19.
 Related: [kodi-addon #72](https://github.com/crosswatch-app/kodi-addon/issues/72)
 
 ## What we're building
@@ -20,14 +20,17 @@ CW never connects to Kodi, and Kodi's web server isn't needed. Pairing, playback
 2. In CW, the user picks a target per viewer, for example user1 to Trakt user1 and user2 to Trakt user2, with switches for live scrobble and library sync.
 3. CW creates the watcher route and the sync pair itself, marked as managed by the add-on. Power users can still edit both.
 
-Each viewer becomes its own Kodi instance in CW: a sync user of the paired instance, for example `default~kv-2`. With one viewer, that's the paired instance itself.
+Each viewer becomes its own Kodi instance in CW: a sync user of the paired instance, for example `default~kv-2`. With one viewer, that's the paired instance itself. When a second viewer shows up before sync users exist, the viewer already on the paired instance stays there; the new viewer waits for its own sync user.
 
 **One sync device per connection.**
 - The first device that pings with sync on becomes the sync device for that paired connection. Other devices keep the watcher, and get `403 not_sync_device` on sync requests.
 - Devices that report the same `library_id` share a library; the user picks the sync device in setup.
+- **One sync connection per library.** When two paired connections report the same `library_id`, only the one that became a sync device first syncs. The other gets `enabled: false` with `reason: library_has_sync_device` in the ping, and `403 sync_disabled` on sync requests.
 - Turning sync off on the sync device releases it, so another device can take over. Pairing again also resets it.
 
 **One viewer per instance.** The paired instance is bound to the first viewer that uploads to it. Another viewer is refused until the binding is released, by turning sync off on the device or pairing again. When a viewer's first full upload commits, CW starts that Kodi instance fresh. Earlier JSON-RPC or add-on history for it can then never cause deletes on the other side. While a sync is running, that first full upload gets `503 temporarily_unavailable`; send that part again.
+
+**Starting a viewer fresh.** When the add-on lost its record for a viewer (for example a corrupt or restored database), send its next full upload with `"fresh": true`. CW then starts that Kodi instance fresh again, the same way as on a first commit, and keeps the `viewer_id` and its mapping.
 
 An instance syncs either through the add-on or over JSON-RPC, never both. An instance with JSON-RPC configured keeps JSON-RPC, and its viewers aren't listed in the ping reply. A profile viewer only syncs when its profile has its own library id. Items without an owner aren't uploaded for anyone.
 
@@ -56,12 +59,17 @@ The add-on's normal ping carries its device and a `library_sync` block:
 Authenticated ping replies, including those with `ignored: true`, carry:
 
 ```json
-{"library_sync": {"version": 1, "enabled": true, "viewers": [{"viewer_id": "kv-1", "instance": "default", "upload_seq": 41}], "queue_pending": 3}}
+{"library_sync": {"version": 1, "enabled": true, "queue_pending": 3,
+                  "viewers": [{"viewer_id": "kv-1", "instance": "default", "upload_seq": 41,
+                               "next_change": 1763560000123, "run_pending": false}]}}
 ```
 
 - A missing block or an unsupported version means sync is off.
-- `enabled` is true only when sync is on in CW and on this device, and this device is the sync device. Otherwise `reason` says why: `not_sync_device` or `device_id_missing`. A ping from a device that isn't the sync device never changes anything in CW.
-- `viewers` lists the viewers CW mapped to an instance; an unmapped viewer is left out. `upload_seq` is the last one CW saw for that viewer.
+- `enabled` is true only when sync is on in CW and on this device, this device is the sync device, and its library has no other sync connection. Otherwise `reason` says why: `not_sync_device`, `device_id_missing` or `library_has_sync_device`. A ping from a device that isn't the sync device never changes anything in CW.
+- `viewers` lists the viewers CW mapped to an instance; an unmapped viewer is left out.
+  - `upload_seq` is the last one CW saw for that viewer.
+  - `next_change` is the `seq` CW gives the next queued change for that viewer.
+  - `run_pending` is true from a completed full upload until the pair run it started has finished. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
 - `queue_pending` tells the add-on to fetch the queue.
 
 ## Upload
@@ -77,7 +85,7 @@ Authenticated ping replies, including those with `ignored: true`, carry:
   "upload_seq": 42,
   "part": 1,
   "parts": 3,
-  "applied_seq": 120,
+  "applied_seq": 1763559000456,
   "sources": [{"file": "nfs://nas/movies/", "label": "Movies"}],
   "movies": [{"movieid": 12, "uniqueid": {"tmdb": "550"}, "title": "Fight Club", "year": 1999, "file": "nfs://nas/movies/fc.mkv",
               "playcount": 1, "lastplayed": "2026-11-10T20:04:00Z", "userrating": 8, "resume": {"position": 0, "total": 8340}}],
@@ -133,6 +141,7 @@ Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "
 - `delta` only updates the rows it contains and never removes any.
 - A delta needs a complete full upload for the same viewer and library first, otherwise `409 upload_incomplete`. CW also answers this when it lost its own stored state for a viewer; send a full upload as usual.
 - A new `library_id`, or a change in the viewer-to-instance mapping, makes the instance wait for a new full upload, even when it changes back. Queued changes stay, and after the full upload they're sent with the item's new Kodi id.
+- `"fresh": true` on any part of a full upload starts the viewer fresh (see Setup).
 
 **Send:**
 - a delta right away on VideoLibrary.OnUpdate (ignored during and just after playback, and for the add-on's own writes)
@@ -140,23 +149,34 @@ Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "
 - a full upload at startup, after a library scan and once a day
 - nothing during playback
 
-**Changes made in Kodi.** Manual watched, manual unwatched (with the setting on) and Kodi's own ratings reach CW through uploads. CW's pairs carry them on to the providers. Shared items wait in the add-on's assignment list until someone assigns them. On the first run, sending existing ratings is an explicit step in the add-on.
+**Changes made in Kodi.** Manual watched, manual unwatched (with the setting on) and Kodi's own ratings reach CW through uploads. CW's pairs carry them on to the providers. Shared items wait in the add-on's assignment list until someone assigns them. On the first run, sending existing ratings is an explicit step in the add-on; wait until `run_pending` is false first.
 
 **First run.** Before the record holds anything, an item with one owner starts from Kodi's own state, and a shared item stays out until it's assigned. So the first full upload doesn't hold every watched item; the pairs fill in the rest as queued changes.
 
 ## Queue
 
-`GET sync/v1/queue?viewer_id=kv-1&after=0&limit=500` returns the changes in order. `seq` counts per viewer. `limit` defaults to 500, at most 1000.
+`GET sync/v1/queue?viewer_id=kv-1&after=0&limit=500` returns the changes in order. `limit` defaults to 500, at most 1000.
 
 ```json
 {"ok": true, "version": 1, "has_more": false, "next_after": null,
- "changes": [{"seq": 121, "method": "VideoLibrary.SetEpisodeDetails",
+ "changes": [{"seq": 1763560000123, "method": "VideoLibrary.SetEpisodeDetails",
               "params": {"episodeid": 40, "playcount": 1, "lastplayed": "2026-11-11T19:10:00Z"},
               "item": {"type": "episode", "uniqueid": {"tvdb": "3254641"}, "title": "Home", "file": "...",
-                       "showtitle": "The Expanse", "season": 2, "episode": 5, "show_uniqueid": {"tmdb": "63639"}}}]}
+                       "showtitle": "The Expanse", "season": 2, "episode": 5, "show_uniqueid": {"tmdb": "63639"}},
+              "after": 41, "queued_at": "2026-11-19T10:15:00Z"}]}
 ```
 
 With `has_more: true`, fetch the next page with `after` set to `next_after`.
+
+**`seq`.**
+- `seq` counts per viewer and only goes up. Gaps are normal, because a newer change replaces an older one.
+- CW starts each run of the server from the clock in milliseconds, so a `seq` is never reused, also not after a restore of CW's state and a restart.
+- Treat it as a big whole number; it fits in a JavaScript-safe integer.
+
+**When it was queued.**
+- `after` is the `upload_seq` CW had already seen from this viewer when the change was queued.
+- `queued_at` is the UTC time it was queued.
+- Use them to tell which decision is newer. A change with `after` at or above an upload's `upload_seq` was made after CW saw that upload, so it is the newer one.
 
 **What a change means.**
 - The params are exactly what CW's Kodi provider sends over JSON-RPC today, but each change is an intent for that viewer. `lastplayed` is UTC; the add-on converts it to Kodi's local format before writing.
@@ -164,6 +184,7 @@ With `has_more: true`, fetch the next page with `after` set to `next_after`.
   - When the Kodi id now points at something else or at nothing (for example after Refresh information), the add-on finds the item by its file and ids and applies the change there.
   - When the item isn't in the library at all, the change still goes into the viewer's record.
   - Both ack `applied`. `item_changed` is only for a change the add-on can't place anywhere; CW treats it as a failed write, never as a delete.
+- A change for an item CW has no live row for right now comes without a Kodi id in `params`, only with its fields. Resolve it by `item` the same way.
 - The add-on always updates the viewer's record, then decides what Kodi gets:
   - all or any owners for shared items
   - a resume point is cleared only when the watch is newer than the last play here
@@ -176,7 +197,7 @@ With `has_more: true`, fetch the next page with `after` set to `next_after`.
 **Confirming.** `POST sync/v1/queue/ack`:
 
 ```json
-{"version": 1, "viewer_id": "kv-1", "results": [{"seq": 121, "status": "applied"}, {"seq": 122, "status": "failed", "error": "item_changed"}]}
+{"version": 1, "viewer_id": "kv-1", "results": [{"seq": 1763560000123, "status": "applied"}, {"seq": 1763560000124, "status": "failed", "error": "item_changed"}]}
 ```
 
 Reply: `{"ok": true, "applied": 1, "failed": 1}`.
@@ -184,17 +205,19 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 - `applied` means the viewer's record was updated, even when Kodi's own play count didn't change.
 - `failed` is only for a change the add-on can't record at all. CW logs it and stops sending it.
 - No ack ever undoes CW's change on CW's side. A failed change only gives way to a newer upload with a real, non-zero value for that item.
+- An unacked change stays in the queue until it is acked, also when an upload's `applied_seq` is already higher.
 
 **`applied_seq`.**
 - Every upload says the highest `seq` its record already reflects.
-- A change from CW only ends once an upload carries that item's row and its `applied_seq` covers the change. Until then CW keeps its own value for that item.
+- A change from CW only ends once it was acked `applied` and an upload carries that item's row with an `applied_seq` that covers it. Until then CW keeps its own value for that item.
+- A change that was never delivered or never acked is never ended by `applied_seq`, also when gaps make `applied_seq` higher than its `seq`.
 - A delta that carries other items never ends it.
 
 ## Health
 
 - An instance is ready once it has a complete full upload. Kodi doesn't need to be on: changes queue while it's off, and the add-on applies them when it starts.
 - Without a complete full upload the instance reports not ready, and its pairs are skipped for that run, not failed. An upload that is missing or partial is never treated as an empty library.
-- When a full upload completes, CW runs the managed pairs for that instance right away. If a sync is already running, CW retries until the run is accepted.
+- When a full upload completes, CW runs the managed pairs for that instance right away. If a sync is already running, CW retries until the run is accepted. `run_pending` in the ping is true until that run has finished.
 
 ## Errors
 
@@ -206,14 +229,14 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 | --- | --- | --- |
 | 400 | invalid_request | Fix the request, for example a missing list or device id, a malformed row, a missing show row or an invalid timezone; don't resend it unchanged. |
 | 401 | invalid_token | Stop sync and reset the queue position. Keep the viewers' records. |
-| 403 | sync_disabled | Sync is off in CW or on this device. Stop uploads and queue fetches until the ping says enabled. |
+| 403 | sync_disabled | Sync is off in CW or on this device, or another connection already syncs this library. Stop uploads and queue fetches until the ping says enabled. |
 | 403 | not_sync_device | Another device is the sync device. Keep the watcher only. |
 | 409 | viewer_unknown | Refresh the viewers from the ping. |
 | 409 | upload_incomplete | Send a full upload. |
 | 409 | upload_stale | Send a new upload with a higher upload_seq. |
-| 413 | payload_too_large | Split into smaller parts. |
-| 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. A 503 on a viewer's first full upload means a sync is running; send that part again. |
+| 413 | payload_too_large | Split into smaller parts, or a full upload over 250,000 rows. |
+| 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. A 503 on a viewer's first or fresh full upload means a sync is running; send that part again. |
 
 Network failures and other 5xx responses also get bounded backoff. Existing webhook behaviour stays unchanged.
 
-**Next:** agree on this draft. The CW side is built behind a hidden switch (`runtime.kodi_addon_sync`) for testing; the add-on builds upload, queue and ack.
+The CW side is built behind a hidden switch (`runtime.kodi_addon_sync`) for testing; the add-on builds upload, queue and ack.
