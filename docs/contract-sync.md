@@ -69,7 +69,7 @@ Authenticated ping replies, including those with `ignored: true`, carry:
 - `viewers` lists the viewers CW mapped to an instance; an unmapped viewer is left out.
   - `upload_seq` is the last one CW saw for that viewer.
   - `next_change` is the `seq` CW gives the next queued change for that viewer.
-  - `run_pending` is true from a completed full upload until the pair run it started has finished. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
+  - `run_pending` is true from a completed full upload until the pair run it started has finished, including a follow-up run for an upload that came in during that run. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
 - `queue_pending` tells the add-on to fetch the queue.
 
 ## Upload
@@ -159,7 +159,7 @@ Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "
 
 ```json
 {"ok": true, "version": 1, "has_more": false, "next_after": null,
- "changes": [{"seq": 1763560000123, "method": "VideoLibrary.SetEpisodeDetails",
+ "changes": [{"seq": 1763560000123, "change_id": "9f2c41d07a3b5e18", "method": "VideoLibrary.SetEpisodeDetails",
               "params": {"episodeid": 40, "playcount": 1, "lastplayed": "2026-11-11T19:10:00Z"},
               "item": {"type": "episode", "uniqueid": {"tvdb": "3254641"}, "title": "Home", "file": "...",
                        "showtitle": "The Expanse", "season": 2, "episode": 5, "show_uniqueid": {"tmdb": "63639"}},
@@ -168,10 +168,11 @@ Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "
 
 With `has_more: true`, fetch the next page with `after` set to `next_after`.
 
-**`seq`.**
+**`seq` and `change_id`.**
 - `seq` counts per viewer and only goes up. Gaps are normal, because a newer change replaces an older one.
-- CW starts each run of the server from the clock in milliseconds, so a `seq` is never reused, also not after a restore of CW's state and a restart.
-- Treat it as a big whole number; it fits in a JavaScript-safe integer.
+- CW starts each run of the server from the clock in milliseconds, and raises its counter above any `applied_seq` it receives in an upload.
+- Treat `seq` as a big whole number; it fits in a JavaScript-safe integer.
+- `change_id` is a random id for this one change. Keep it with the change and send it back in the ack. Together with `seq` it identifies the change, so an old ack can never confirm a newer change, even after a restore of CW's state.
 
 **When it was queued.**
 - `after` is the `upload_seq` CW had already seen from this viewer when the change was queued.
@@ -197,11 +198,14 @@ With `has_more: true`, fetch the next page with `after` set to `next_after`.
 **Confirming.** `POST sync/v1/queue/ack`:
 
 ```json
-{"version": 1, "viewer_id": "kv-1", "results": [{"seq": 1763560000123, "status": "applied"}, {"seq": 1763560000124, "status": "failed", "error": "item_changed"}]}
+{"version": 1, "viewer_id": "kv-1", "results": [
+  {"seq": 1763560000123, "change_id": "9f2c41d07a3b5e18", "status": "applied"},
+  {"seq": 1763560000124, "change_id": "4be07d1c95a2f630", "status": "failed", "error": "item_changed"}]}
 ```
 
 Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 
+- Every result carries the `seq` and the `change_id` from the queue. A result without the `change_id`, or with another one, is ignored and the change stays in the queue.
 - `applied` means the viewer's record was updated, even when Kodi's own play count didn't change.
 - `failed` is only for a change the add-on can't record at all. CW logs it and stops sending it.
 - No ack ever undoes CW's change on CW's side. A failed change only gives way to a newer upload with a real, non-zero value for that item.
@@ -217,7 +221,7 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 
 - An instance is ready once it has a complete full upload. Kodi doesn't need to be on: changes queue while it's off, and the add-on applies them when it starts.
 - Without a complete full upload the instance reports not ready, and its pairs are skipped for that run, not failed. An upload that is missing or partial is never treated as an empty library.
-- When a full upload completes, CW runs the managed pairs for that instance right away. If a sync is already running, CW retries until the run is accepted. `run_pending` in the ping is true until that run has finished.
+- When a full upload completes, CW runs the managed pairs for that instance right away. If a sync is already running, CW retries until the run is accepted. A full upload that completes while that run is going gets a follow-up run afterwards. `run_pending` in the ping is true until those runs have finished.
 
 ## Errors
 
