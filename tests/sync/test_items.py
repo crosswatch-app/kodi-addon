@@ -184,6 +184,7 @@ def test_read_library_skips_server_backed() -> None:
     library = _read(_library())
     assert library is not None
     assert [r.key.kodi_id for r in library.movies] == [1]
+    assert library.server_backed == frozenset({("movies", 2)})
     # Filtering a server-backed row is not a change under the read.
     assert library.complete
 
@@ -262,3 +263,14 @@ def test_fake_pages_like_kodi() -> None:
     assert reply["movies"] == [{"movieid": 2, "label": "Plex Film", "title": "Plex Film"}]
     ids = lib.handlers()["VideoLibrary.GetMovies"]({"properties": []})
     assert ids["movies"] == [{"movieid": 1, "label": "Fight Club"}, {"movieid": 2, "label": "Plex Film"}]
+
+
+def test_read_library_continues_past_an_empty_locked_page() -> None:
+    lib = _library()
+    for n in range(3, 8):
+        lib.add_movie(n, file=f"smb://nas/m/{n}.mkv")
+    # Movies 3 and 4 make up the second page of two; both sit in a locked source.
+    lib.locked = {3, 4}
+    library = _read(lib, page=2)
+    assert library is not None and library.complete
+    assert [r.key.kodi_id for r in library.movies] == [1, 5, 6, 7]

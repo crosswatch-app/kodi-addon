@@ -172,6 +172,9 @@ class Library:
     tvshows: dict[int, dict[str, Any]]
     sources: list[dict[str, str]]
     complete: bool
+    # Rows left out because a media server add-on owns them, so a play-count change Kodi
+    # announces for one is never taken for a person's mark.
+    server_backed: frozenset[tuple[ItemKind, int]] = frozenset()
 
 
 _METHODS: dict[str, tuple[str, str, str]] = {
@@ -188,7 +191,12 @@ class _Stopped(Exception):
 def _pages(
     kodi: JsonRpc, what: str, properties: list[str], page: int, may_continue: Callable[[], bool]
 ) -> tuple[list[dict[str, Any]], bool]:
-    """All rows of one list, page by page, and whether the total held still while paging."""
+    """All rows of one list, page by page, and whether the total held still while paging.
+
+    A short or empty page is not the end. Kodi applies LIMIT before it drops rows in locked
+    sources but counts the total without that filter (VideoDatabase.cpp GetMoviesByWhere),
+    so on a box with a master lock a page can come back empty with more rows after it.
+    """
     method, field, _ = _METHODS[what]
     rows: list[dict[str, Any]] = []
     first_total: int | None = None
@@ -204,7 +212,7 @@ def _pages(
             first_total = total
         rows.extend(batch)
         start += page
-        if not batch or start >= total:
+        if start >= total:
             return rows, total == first_total
 
 
@@ -244,6 +252,7 @@ def read_library(
         keep_show_ids(tvshows, previous_shows)
         complete = shows_ok
         lists: dict[str, list[LibraryRow]] = {}
+        server_backed: set[tuple[ItemKind, int]] = set()
         reads: tuple[tuple[ItemKind, list[str]], ...] = (("movies", MOVIE_PROPERTIES), ("episodes", EPISODE_PROPERTIES))
         for kind, properties in reads:
             raws, held = _pages(kodi, kind, properties, page, may_continue)
@@ -253,6 +262,11 @@ def read_library(
             seen_ids = {int(r[id_field]) for r in raws if id_field in r}
             complete = complete and held and seen_ids == _ids(kodi, kind)
             lists[kind] = [row for raw in raws if (row := _row(kind, raw, library_id, tvshows, to_utc)) is not None]
+            server_backed |= {
+                (kind, int(raw[id_field]))
+                for raw in raws
+                if id_field in raw and is_server_backed(strip_credentials(str(raw.get("file") or "")))
+            }
         sources = _sources(kodi)
     except _Stopped:
         return None
@@ -263,6 +277,7 @@ def read_library(
         tvshows=tvshows,
         sources=sources,
         complete=complete,
+        server_backed=frozenset(server_backed),
     )
 
 

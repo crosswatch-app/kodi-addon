@@ -26,6 +26,9 @@ class FakeLibrary:
         # Called before a page is answered, with the method and the page's start, so a test
         # can change the library between pages as another box would.
         self.before_page: Callable[[str, int], None] | None = None
+        # Ids in a locked source: dropped from a page after the limit is applied but still
+        # counted in the total, as Kodi does for a profile without the master lock code.
+        self.locked: set[int] = set()
 
     def add_movie(self, movieid: int, **fields: Any) -> dict[str, Any]:
         row = {"movieid": movieid, "label": fields.get("title", ""), **_defaults(), **fields}
@@ -72,6 +75,7 @@ class FakeLibrary:
         page = [
             {id_field: r[id_field], "label": r.get("label", ""), **{p: r[p] for p in properties if p in r}}
             for r in rows[start:end]
+            if r[id_field] not in self.locked
         ]
         return {field: page, "limits": {"start": start, "end": min(end, total), "total": total}}
 
