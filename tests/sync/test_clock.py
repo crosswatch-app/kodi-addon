@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import time
 from collections.abc import Iterator
 
@@ -44,3 +42,11 @@ def test_parse_utc_compares_as_time() -> None:
     assert parse_utc("2026-07-01T18:10:00") == a
     assert parse_utc("") is None
     assert parse_utc("x") is None
+
+
+def test_extreme_years_never_raise() -> None:
+    # One bad row must not abort a whole library read.
+    for local in ("0001-01-01 00:30:00", "9999-12-31 23:59:59"):
+        assert isinstance(kodi_to_utc(local), str)
+    for utc in ("0001-01-01T00:30:00Z", "9999-12-31T23:59:59Z"):
+        assert isinstance(utc_to_kodi(utc), str)

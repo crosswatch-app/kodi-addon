@@ -8,7 +8,8 @@ Everything here runs on the service thread, including the callbacks: Kodi queues
 executes them from Monitor.waitForAbort. There is therefore no concurrency to guard, and no
 locks. Callbacks can however arrive nested: the prompt window's doModal runs them too, in the
 middle of _flush_pending, which is written for that, and so do the rating windows that
-follow a stop. The reporter worker is the only other thread and it touches only its own queue.
+follow a stop. The reporter worker touches only its own queue. Library sync's worker reads
+`snapshot`, which is replaced whole on this thread and never changed in place.
 """
 
 import threading
@@ -134,7 +135,9 @@ class Controller:
         if self._index is not None:
             self._index = self._index.renamed(old, new)
             self._index_viewers = tuple(replace(v, name=new) if v.name == old else v for v in self._index_viewers)
-            self._publish_snapshot(built_at=self._monotonic())
+            # The build time is kept: a rename changes no membership, and a later stamp would
+            # make an index that was already invalidated look current to library sync.
+            self._publish_snapshot(built_at=self.snapshot.built_at)
         self._builder = None
 
     def invalidate_index(self) -> None:

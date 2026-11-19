@@ -10,8 +10,6 @@ under the same name gets its old id from the store's retired list. The contract 
 Log events: sync.ids.assigned (count).
 """
 
-from __future__ import annotations
-
 import re
 import secrets
 from collections.abc import Callable
@@ -39,14 +37,17 @@ def ensure_sync_ids(store: JsonViewerStore, make_id: Callable[[], str] = new_syn
     with store.locked():
         viewers = store.viewers()
         used = {v.sync_id for v in viewers if v.sync_id}
+        # A second viewer carrying the same id (a hand-edited file) gets a new one.
+        kept: set[str] = set()
         out: list[Viewer] = []
         assigned = 0
         for viewer in viewers:
-            if viewer.sync_id and SYNC_ID_PATTERN.match(viewer.sync_id):
+            if viewer.sync_id and SYNC_ID_PATTERN.fullmatch(viewer.sync_id) and viewer.sync_id not in kept:
+                kept.add(viewer.sync_id)
                 out.append(viewer)
                 continue
             sync_id = store.retired_id(viewer.name)
-            if not sync_id or sync_id in used or not SYNC_ID_PATTERN.match(sync_id):
+            if not sync_id or sync_id in used or not SYNC_ID_PATTERN.fullmatch(sync_id):
                 sync_id = make_id()
                 while sync_id in used:
                     sync_id = make_id()
@@ -56,4 +57,7 @@ def ensure_sync_ids(store: JsonViewerStore, make_id: Callable[[], str] = new_syn
         if assigned:
             store.save(out)
             _log.info("sync.ids.assigned", count=assigned)
+            # What is on disk, not what was meant to be: an id that failed to save must not
+            # be uploaded under and then lost.
+            return store.viewers()
         return out

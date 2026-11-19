@@ -19,10 +19,8 @@ would make two boxes on one MySQL library look separate, or one box look like tw
 advancedsettings.xml is parsed with the standard library for the reasons in
 advanced_settings.py (no PyPI dependency; ElementTree expands no external entities).
 
-Log events: none.
+Log events: sync.library_id.unparseable (master).
 """
-
-from __future__ import annotations
 
 import hashlib
 import re
@@ -30,6 +28,9 @@ from dataclasses import dataclass
 from xml.etree import ElementTree
 
 from resources.lib.kodi import KodiApi
+from resources.lib.log import get_logger
+
+_log = get_logger("sync")
 
 # Video database schema per Kodi major (VideoDatabase.cpp GetSchemaVersion). 22 was read off
 # a live Kodi 22 test box as "testvideo149". A major missing here stands in for itself, so
@@ -72,14 +73,25 @@ def _settings_text(kodi: KodiApi, master: bool) -> str | None:
     return kodi.read_text(_MASTER_SETTINGS)
 
 
+class Unparseable(Exception):
+    """advancedsettings.xml can't be read the way Kodi reads it, so the library is unknown."""
+
+
+# Kodi's TinyXML accepts a bare "&" (a password like "a&b"), which ElementTree rejects.
+_BARE_AMPERSAND = re.compile(r"&(?!(?:[A-Za-z]+|#[0-9]+|#x[0-9A-Fa-f]+);)")
+
+
 def _video_database(text: str | None) -> _VideoDatabase:
     if not text:
         return _VideoDatabase()
     try:
-        element = ElementTree.fromstring(text).find("videodatabase")
+        root = ElementTree.fromstring(text)
     except ElementTree.ParseError:
-        # Kodi refuses to load a broken file too, and runs on defaults.
-        return _VideoDatabase()
+        try:
+            root = ElementTree.fromstring(_BARE_AMPERSAND.sub("&amp;", text))
+        except ElementTree.ParseError as exc:
+            raise Unparseable from exc
+    element = root.find("videodatabase")
     if element is None:
         return _VideoDatabase()
 
@@ -91,7 +103,13 @@ def _video_database(text: str | None) -> _VideoDatabase:
 
 
 def library_id(kodi: KodiApi, *, master: bool = False) -> str:
-    db = _video_database(_settings_text(kodi, master))
+    """The hash, or "" when advancedsettings.xml can't be parsed: a guessed SQLite id would
+    split a MySQL library shared by several boxes, so the ping leaves the id out instead."""
+    try:
+        db = _video_database(_settings_text(kodi, master))
+    except Unparseable:
+        _log.warning("sync.library_id.unparseable", master=master)
+        return ""
     major = kodi_major(kodi)
     name = (db.name or "MyVideos") + str(SCHEMA_BY_MAJOR.get(major, major))
     if db.type == "mysql" and db.host and db.user and db.password:

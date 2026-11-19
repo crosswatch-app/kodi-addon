@@ -1645,12 +1645,24 @@ def test_snapshot_published_on_build_invalidate_and_rename(tmp_path):
     assert not invalidated.usable(last_scan_end=0.0, last_viewer_change=0.0, show_ids_changed_at=0.0)
 
     _warm_index(controller, kodi)
+    rebuilt = controller.snapshot
     _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
     renamed = controller.snapshot
     assert renamed.index is not None and renamed.index.viewers_for("tvshow", 42) == ("Anna Lee",)
     assert renamed.viewers[0].name == "Anna Lee" and renamed.viewers[0].sync_id == "kv-anna0001"
-    # Published at the rename, so it is never older than its own viewer change.
-    assert renamed.usable(last_scan_end=0.0, last_viewer_change=renamed.built_at, show_ids_changed_at=0.0)
+    # A rename keeps the build time and stays usable: it changes no membership.
+    assert renamed.built_at == rebuilt.built_at
+    assert renamed.usable(last_scan_end=0.0, last_viewer_change=0.0, show_ids_changed_at=0.0)
+
+
+def test_a_rename_after_invalidate_does_not_make_the_index_current(tmp_path):
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",), sync_id="kv-anna0001")]
+    controller = _controller(tmp_path, kodi, viewers, Collector())
+    _warm_index(controller, kodi)
+    controller.invalidate_index()
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    assert not controller.snapshot.usable(last_scan_end=0.0, last_viewer_change=0.0, show_ids_changed_at=0.0)
 
 
 def test_snapshot_not_usable_before_a_later_scan_or_show_change(tmp_path):

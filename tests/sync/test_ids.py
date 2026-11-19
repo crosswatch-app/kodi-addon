@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import itertools
 
 from resources.lib.models import Viewer
@@ -68,3 +66,19 @@ def test_nothing_saved_when_every_viewer_has_an_id(tmp_path) -> None:
     before = (tmp_path / "viewers.json").stat().st_mtime_ns
     ensure_sync_ids(store, _ids())
     assert (tmp_path / "viewers.json").stat().st_mtime_ns == before
+
+
+def test_an_id_with_a_trailing_newline_is_replaced(tmp_path) -> None:
+    store = _store(tmp_path, [Viewer(name="anna", sync_id="kv-test0009\n")])
+    assert ensure_sync_ids(store, _ids())[0].sync_id == "kv-test0001"
+
+
+def test_a_duplicate_id_is_replaced_on_the_second_viewer(tmp_path) -> None:
+    store = _store(tmp_path, [Viewer(name="anna", sync_id="kv-test0009"), Viewer(name="bob", sync_id="kv-test0009")])
+    assert [v.sync_id for v in ensure_sync_ids(store, _ids())] == ["kv-test0009", "kv-test0001"]
+
+
+def test_the_list_returned_is_what_was_saved(tmp_path, monkeypatch) -> None:
+    store = _store(tmp_path, [Viewer(name="anna")])
+    monkeypatch.setattr(store, "save", lambda viewers: None)
+    assert ensure_sync_ids(store, _ids())[0].sync_id == ""

@@ -5,8 +5,6 @@ Paging follows VideoLibrary.GetMovies and friends: `limits.start`/`end` slice th
 writes and announcements here.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from typing import Any
 

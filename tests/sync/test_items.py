@@ -4,8 +4,6 @@ The expected values below were produced by running CrossWatch's own normalize_un
 _tokens, _identity and _keep_show_ids (dev build sha256:59d8cfbb...) on these inputs.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 import pytest
@@ -274,3 +272,17 @@ def test_read_library_continues_past_an_empty_locked_page() -> None:
     library = _read(lib, page=2)
     assert library is not None and library.complete
     assert [r.key.kodi_id for r in library.movies] == [1, 5, 6, 7]
+
+
+def test_read_library_incomplete_when_an_episode_s_show_was_not_read() -> None:
+    lib = _library()
+
+    def add_show(method: str, start: int) -> None:
+        # A show and its episode arrive after the shows were read.
+        if method == "VideoLibrary.GetEpisodes" and start == 0 and len(lib.tvshows) == 1:
+            lib.add_show(8, uniqueid={"tvdb": "73739"}, title="Lost")
+            lib.add_episode(11, 8, 1, 1, file="nfs://nas/tv/lost/s01e01.mkv")
+
+    lib.before_page = add_show
+    library = _read(lib)
+    assert library is not None and not library.complete

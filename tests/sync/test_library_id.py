@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import hashlib
 
 from resources.lib.sync.library_id import kodi_major, kodi_version, library_id, profile_has_own_database
@@ -71,10 +69,6 @@ def test_profile_advancedsettings_file_wins_even_without_video_block() -> None:
     assert library_id(kodi, master=True) == _hash("mysql", "nas", "3307", "MyVideos131")
 
 
-def test_broken_settings_file_means_defaults() -> None:
-    assert library_id(_kodi({MASTER: "<advanced"})) == _hash("sqlite3", "/kodi/database", "MyVideos131")
-
-
 def test_id_is_hash_only() -> None:
     value = library_id(_kodi({MASTER: MYSQL}))
     assert len(value) == 64 and "nas" not in value and "secret" not in value
@@ -88,3 +82,12 @@ def test_profile_private_on_own_sqlite() -> None:
 
 def test_profile_shared_on_mysql_without_own_advancedsettings() -> None:
     assert not profile_has_own_database(_kodi({MASTER: MYSQL}))
+
+
+def test_bare_ampersand_read_as_kodi_does() -> None:
+    xml = MYSQL.replace("<pass>secret</pass>", "<pass>a&b</pass>")
+    assert library_id(_kodi({MASTER: xml})) == _hash("mysql", "nas", "3307", "MyVideos131")
+
+
+def test_unparseable_settings_give_no_id() -> None:
+    assert library_id(_kodi({MASTER: "<advancedsettings><videodatabase>"})) == ""

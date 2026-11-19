@@ -13,8 +13,6 @@ identity: Refresh information gives a row a new id, and SQLite reuses the highes
 Log events: none; callers log what a read produced.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -262,6 +260,10 @@ def read_library(
             seen_ids = {int(r[id_field]) for r in raws if id_field in r}
             complete = complete and held and seen_ids == _ids(kodi, kind)
             lists[kind] = [row for raw in raws if (row := _row(kind, raw, library_id, tvshows, to_utc)) is not None]
+            if kind == "episodes":
+                # A show added under the read: its episodes would get title tokens instead of
+                # the show's ids, and CrossWatch refuses an episode whose show row is missing.
+                complete = complete and all(r.show_kodi_id in tvshows for r in lists[kind])
             server_backed |= {
                 (kind, int(raw[id_field]))
                 for raw in raws

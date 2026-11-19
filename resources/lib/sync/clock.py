@@ -8,12 +8,11 @@ OS's zone rules, which are the rules Kodi wrote them with.
 
 In the hour a clock falls back, one local string names two instants. The earlier one is
 taken, and converting back gives the same string, so a value read from Kodi and written
-back unchanged stays unchanged.
+back unchanged stays unchanged. A time inside the hour a clock springs forward doesn't exist
+and comes back an hour later; Kodi only stores such a time if the system clock was wrong.
 
 Log events: none.
 """
-
-from __future__ import annotations
 
 from datetime import UTC, datetime
 
@@ -27,16 +26,19 @@ def kodi_to_utc(local: str) -> str:
         return ""
     try:
         naive = datetime.strptime(text[:19], KODI_FORMAT)
-    except ValueError:
+        return naive.astimezone().astimezone(UTC).strftime(UTC_FORMAT)
+    except (ValueError, OverflowError, OSError):
         return ""
-    return naive.astimezone().astimezone(UTC).strftime(UTC_FORMAT)
 
 
 def utc_to_kodi(utc: str) -> str:
     moment = parse_utc(utc)
     if moment is None:
         return ""
-    return moment.astimezone().strftime(KODI_FORMAT)
+    try:
+        return moment.astimezone().strftime(KODI_FORMAT)
+    except (ValueError, OverflowError, OSError):
+        return ""
 
 
 def parse_utc(text: str) -> datetime | None:

@@ -510,6 +510,11 @@ def test_a_broken_retired_file_reads_as_none(tmp_path):
     (tmp_path / "sync_ids.json").write_text("[1]")
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     assert store.retired_id("anna") is None
+
+
+def test_an_unreadable_retired_file_is_not_overwritten(tmp_path):
+    (tmp_path / "sync_ids.json").write_text("{broken")
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save([Viewer(name="anna", sync_id="kv-0000aaaa")])
     store.save([])
-    assert store.retired_id("anna") == "kv-0000aaaa"
+    assert (tmp_path / "sync_ids.json").read_text() == "{broken"

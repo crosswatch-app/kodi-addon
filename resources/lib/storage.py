@@ -238,9 +238,13 @@ class JsonViewerStore:
         dropped = {v.name: v.sync_id for v in self.viewers() if v.sync_id and v.sync_id not in kept}
         if not dropped:
             return
-        retired = _read_json(self._retired_path, {})
-        if not isinstance(retired, dict):
+        retired = _read_json(self._retired_path, None)
+        if retired is None and not os.path.exists(self._retired_path):
             retired = {}
+        if not isinstance(retired, dict):
+            # Unreadable, not empty: writing over it would lose every id retired before.
+            _log.warning("storage.retired_ids_unreadable", dropped=len(dropped))
+            return
         retired.update(dropped)
         _write_json(self._retired_path, retired)
 
