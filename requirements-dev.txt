@@ -1,16 +1,20 @@
 # Direct dev dependencies, pinned. Edit this file, then regenerate the lock:
 #
 #   uv pip compile requirements-dev.txt --python-version 3.11 --generate-hashes \
-#       --no-header -o requirements-dev.lock
+#       --no-header --exclude-newer <cutoff> -o requirements-dev.lock
+#
+# uv leaves out every version published after <cutoff>. Choose it so nothing in the lock
+# is less than 48 hours old, freshly published versions being where compromised releases
+# surface; 2026-11-16T00:00:00Z for the current pins.
 #
 # CI installs from requirements-dev.lock with --require-hashes, so the transitive closure
 # is fixed too. Neither file is packaged into the addon zip.
-pytest==9.1.1
+pytest==9.2.0
 pytest-cov==7.1.0
-ruff==0.17.0
+ruff==0.17.4
 pyright==1.1.414
 vulture==2.16
-pre-commit==4.6.2
+pre-commit==4.7.0
 # Type stubs for Kodi's own modules, matching the 21 Omega target. Without them pyright
 # sees every xbmc call as Unknown and silently stops checking the largest external surface
 # the addon touches.

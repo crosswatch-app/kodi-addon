@@ -5,9 +5,9 @@
 #
 # uv leaves out every version published after <cutoff>. Choose it so nothing in the lock
 # is less than 48 hours old, freshly published versions being where compromised releases
-# surface; 2026-10-08T16:00:00Z for zensical 0.0.69.
+# surface; 2026-11-16T00:00:00Z for zensical 0.1.0.
 #
 # Kept apart from the dev lock so the gates' venv never mixes with the docs build's
 # Markdown and Pygments stack. CI installs from requirements-docs.lock with
 # --require-hashes. Neither file is packaged into the addon zip.
-zensical==0.0.69
+zensical==0.1.0
