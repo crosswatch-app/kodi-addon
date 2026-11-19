@@ -23,6 +23,9 @@ class Viewer:
     # link through playlist and profile edits and through renames. A linked viewer's name is
     # the person's exact spelling.
     person_id: str | None = None
+    # The id library sync knows this viewer by. Assigned once by the service and never
+    # changed, renames included: CrossWatch keys the viewer's sync state on it.
+    sync_id: str = ""
 
 
 @dataclass(frozen=True)

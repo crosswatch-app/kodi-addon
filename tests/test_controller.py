@@ -1,4 +1,5 @@
 import itertools
+import threading
 from dataclasses import replace
 from typing import Any
 
@@ -92,7 +93,7 @@ def _kodi(members, profile: str = "Master user", overrides: dict[str, Any] | Non
     return kodi
 
 
-def _controller(tmp_path, kodi, viewers, collector, settings=None, ttl=3600, monotonic=None):
+def _controller(tmp_path, kodi, viewers, collector, settings=None, ttl=3600, monotonic=None, rebuild_requested=None):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save(viewers)
     counter = itertools.count(1)
@@ -111,6 +112,7 @@ def _controller(tmp_path, kodi, viewers, collector, settings=None, ttl=3600, mon
         # per tick is an implementation detail and changes when a caller is added.
         monotonic=monotonic or (lambda: float(next(clock))),
         ids=lambda: f"id-{next(counter)}",
+        rebuild_requested=rebuild_requested,
     )
 
 
@@ -1621,3 +1623,55 @@ def test_two_renames_in_one_reply_both_reach_the_stop(tmp_path):
     kodi.playing = False
     controller.on_tick()
     assert _last_stop(collector).viewers == ("Annie", "Bobby")
+
+
+# --- index snapshot for library sync -----------------------------------------
+
+
+def test_snapshot_published_on_build_invalidate_and_rename(tmp_path):
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    viewers = [Viewer(name="anna", playlists=("Anna TV",), sync_id="kv-anna0001"), Viewer(name="bob")]
+    controller = _controller(tmp_path, kodi, viewers, Collector())
+    assert controller.snapshot.index is None
+    _warm_index(controller, kodi)
+    built = controller.snapshot
+    assert built.index is not None and built.index.viewers_for("tvshow", 42) == ("anna",)
+    assert [v.name for v in built.viewers] == ["anna", "bob"]
+    assert built.usable(last_scan_end=0.0, last_viewer_change=0.0, show_ids_changed_at=0.0)
+
+    controller.invalidate_index()
+    invalidated = controller.snapshot
+    assert invalidated.invalidated_at > built.built_at
+    assert not invalidated.usable(last_scan_end=0.0, last_viewer_change=0.0, show_ids_changed_at=0.0)
+
+    _warm_index(controller, kodi)
+    _rename_viewers(controller, tmp_path, ("anna", "Anna Lee"))
+    renamed = controller.snapshot
+    assert renamed.index is not None and renamed.index.viewers_for("tvshow", 42) == ("Anna Lee",)
+    assert renamed.viewers[0].name == "Anna Lee" and renamed.viewers[0].sync_id == "kv-anna0001"
+    # Published at the rename, so it is never older than its own viewer change.
+    assert renamed.usable(last_scan_end=0.0, last_viewer_change=renamed.built_at, show_ids_changed_at=0.0)
+
+
+def test_snapshot_not_usable_before_a_later_scan_or_show_change(tmp_path):
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], Collector())
+    _warm_index(controller, kodi)
+    snap = controller.snapshot
+    later = snap.built_at + 1
+    assert not snap.usable(last_scan_end=later, last_viewer_change=0.0, show_ids_changed_at=0.0)
+    assert not snap.usable(last_scan_end=0.0, last_viewer_change=later, show_ids_changed_at=0.0)
+    assert not snap.usable(last_scan_end=0.0, last_viewer_change=0.0, show_ids_changed_at=later)
+
+
+def test_rebuild_event_invalidates_index(tmp_path):
+    event = threading.Event()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], Collector(),
+                             rebuild_requested=event)  # fmt: skip
+    _warm_index(controller, kodi)
+    expanded = len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+    event.set()
+    _warm_index(controller, kodi)
+    assert not event.is_set()
+    assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > expanded

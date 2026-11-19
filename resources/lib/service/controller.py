@@ -11,6 +11,7 @@ middle of _flush_pending, which is written for that, and so do the rating window
 follow a stop. The reporter worker is the only other thread and it touches only its own queue.
 """
 
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -37,6 +38,7 @@ from resources.lib.playlist_index import IndexBuilder, PlaylistIndex
 from resources.lib.reporter import EventQueue
 from resources.lib.service.session import PlaybackSession
 from resources.lib.storage import PromptMemory, ViewerStore
+from resources.lib.sync.ownership import EMPTY_SNAPSHOT, IndexSnapshot
 from resources.lib.ui.rating import RATE_FAILED, RateRequest, counter_text, question_text
 
 _log = get_logger("service")
@@ -55,6 +57,7 @@ class Controller:
         clock: Callable[[], str],
         monotonic: Callable[[], float],
         ids: Callable[[], str],
+        rebuild_requested: threading.Event | None = None,
     ) -> None:
         self._kodi = kodi
         self._store = viewer_store
@@ -86,6 +89,11 @@ class Controller:
         self._pinged_names: tuple[str, ...] | None = None
         self._shutting_down = False
         self._ratings = rating_mod.RatingQueue()
+        # Set by library sync when the library's shows changed under the index.
+        self._rebuild_requested = rebuild_requested
+        # Library sync decides ownership on its own thread, so it gets an immutable snapshot,
+        # replaced as a whole on this thread and never mutated.
+        self.snapshot: IndexSnapshot = EMPTY_SNAPSHOT
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -126,6 +134,7 @@ class Controller:
         if self._index is not None:
             self._index = self._index.renamed(old, new)
             self._index_viewers = tuple(replace(v, name=new) if v.name == old else v for v in self._index_viewers)
+            self._publish_snapshot(built_at=self._monotonic())
         self._builder = None
 
     def invalidate_index(self) -> None:
@@ -134,7 +143,18 @@ class Controller:
         self._failures = 0
         self._failed_at = None
         self._media.forget_shows()
+        self.snapshot = replace(self.snapshot, invalidated_at=self._monotonic())
         _log.info("service.index_invalidated")
+
+    def _publish_snapshot(self, built_at: float) -> None:
+        index = self._index
+        self.snapshot = IndexSnapshot(
+            index=index,
+            built_at=built_at,
+            invalidated_at=self.snapshot.invalidated_at,
+            viewers=self._index_viewers,
+            unreadable=tuple(sorted(index.unreadable)) if index is not None else (),
+        )
 
     # -- playback callbacks ------------------------------------------------
 
@@ -253,6 +273,9 @@ class Controller:
         A .xsp expansion costs a whole-library query, so it must never land on the start of
         playback, and it must not run long enough in one tick to delay a callback.
         """
+        if self._rebuild_requested is not None and self._rebuild_requested.is_set():
+            self._rebuild_requested.clear()
+            self.invalidate_index()
         if self._builder is None:
             if not self._needs_index():
                 return
@@ -266,6 +289,8 @@ class Controller:
         if built is not None:
             self._index = built
             self._index_viewers = self._building_for
+            # Published degraded too: the snapshot says so, and sync waits for a clean one.
+            self._publish_snapshot(built_at=self._monotonic())
             if built.degraded:
                 # Published, but not current. A degraded viewer has no membership at all
                 # until a build succeeds, so the index stays dirty and the failure backoff
