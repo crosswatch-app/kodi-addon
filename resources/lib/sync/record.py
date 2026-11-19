@@ -54,6 +54,9 @@ class History:
     # A person's unwatch made in Kodi with "Send removals" on, still to go up as
     # unwatched: true. Never set by a CrossWatch change.
     unwatched: bool = False
+    # A person unwatched it in Kodi with "Send removals" off: the record keeps the watch for
+    # the household's services, but Kodi is not raised again until a newer watch arrives.
+    local_unwatch: bool = False
     event: int = 0
     src: int = 0
 
@@ -64,6 +67,9 @@ class Rating:
     # Set when a queued CrossWatch rating was applied, so "Send existing ratings" never fills
     # a rating CrossWatch removed.
     from_cw: bool = False
+    # A deliberate removal, by CrossWatch or by a person in Kodi; only this clears Kodi's
+    # rating, never an owner who simply hasn't rated it.
+    removed: bool = False
     src: int = 0
 
 
