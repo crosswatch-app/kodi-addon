@@ -328,3 +328,15 @@ def test_status_survives_a_failing_assignment_read(tmp_path, monkeypatch):
     rig.engine.step()
     status = read_status(rig.paths.status)
     assert status is not None and status.assignments == []
+
+
+def test_crosswatch_rating_for_a_held_row_waits_for_the_answer(tmp_path):
+    rig = _held(tmp_path)
+    held = rig.engine.held_ratings[0]
+    entry = next(e for e in rig.store().entries("kv-a") if e.meta.get("file") == held.row.key.file)
+    rig.store().commit(Batch(
+        entries={"kv-a": [replace(entry, state=ItemState(rating=Rating(value=9, from_cw=True)))]},
+        pending_add=[PendingWrite(id="cw1", row=held.row.key, tokens=entry.tokens, group="ratings", created=NOW)],
+    ))  # fmt: skip
+    rig.engine._write_kodi()
+    assert [w.id for w in rig.store().pending_writes()] == ["cw1"]

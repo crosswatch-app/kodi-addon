@@ -380,9 +380,12 @@ class MarkGate:
     write even where two writes share a coarse timestamp (FAT, some network shares).
     """
 
-    def __init__(self, path: str, stat: Callable[[str], tuple[int, int, int] | None]) -> None:
+    def __init__(
+        self, path: str, stat: Callable[[str], tuple[int, int, int] | None], device_id: Callable[[], str] = lambda: ""
+    ) -> None:
         self._path = path
         self._stat = stat
+        self._device_id = device_id
         self._mtime: tuple[int, int, int] | None = None
         self._started: StartedFile | None = None
         self._connection = ""
@@ -403,9 +406,10 @@ class MarkGate:
 
     def open(self) -> bool:
         started = self._started
-        return (
-            started is not None and started.connection == self._connection and self._sync_enabled and not started.paused
-        )
+        if started is None or started.connection != self._connection or not self._sync_enabled or started.paused:
+            return False
+        # Another device id than the one CrossWatch bound: paused until Start, as the worker is.
+        return not started.bound_device or started.bound_device == self._device_id()
 
 
 def file_signature(path: str) -> tuple[int, int, int] | None:

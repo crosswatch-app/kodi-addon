@@ -143,10 +143,13 @@ def _warm_index(controller, kodi):
 
 # --- index lifecycle -------------------------------------------------------
 
+
 def test_the_index_is_built_from_the_idle_tick_not_from_playback_start(tmp_path):
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
-    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")], collector)
+    controller = _controller(
+        tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")], collector
+    )
     controller.on_av_started()
     assert [c for c in kodi.calls if c[0] == "Files.GetDirectory"] == []
     assert collector.playback()[0].viewers == ()
@@ -224,7 +227,9 @@ def test_a_degraded_viewer_falls_through_rather_than_resolving_from_a_stale_inde
     """
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
-    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")], collector)
+    controller = _controller(
+        tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",)), Viewer(name="bob")], collector
+    )
     _warm_index(controller, kodi)
     kodi.rpc_handlers["Files.GetDirectory"] = _boom
     controller.invalidate_index()
@@ -244,8 +249,12 @@ def test_a_degraded_build_retries_on_the_failure_backoff_not_at_the_ttl(tmp_path
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
     now = [0.0]
     controller = _controller(
-        tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector,
-        ttl=3600, monotonic=lambda: now[0],
+        tmp_path,
+        kodi,
+        [Viewer(name="anna", playlists=("Anna TV",))],
+        collector,
+        ttl=3600,
+        monotonic=lambda: now[0],
     )
     kodi.rpc_handlers["Files.GetDirectory"] = _boom
     _warm_index(controller, kodi)
@@ -264,6 +273,7 @@ def test_a_degraded_build_retries_on_the_failure_backoff_not_at_the_ttl(tmp_path
 
 
 # --- session lifecycle -----------------------------------------------------
+
 
 def test_session_id_is_stable_and_event_ids_are_not(tmp_path):
     collector = Collector()
@@ -549,6 +559,7 @@ def test_abort_with_nothing_playing_emits_nothing(tmp_path):
 
 # --- prompt ----------------------------------------------------------------
 
+
 def test_an_unresolved_stop_prompts_on_the_next_tick_and_attributes_that_watch(tmp_path):
     collector = Collector()
     kodi = _kodi([], profile="Guest")
@@ -650,6 +661,7 @@ def test_the_prompt_carries_an_autoclose(tmp_path):
 
 
 # --- cadence and resilience ------------------------------------------------
+
 
 def test_progress_is_emitted_once_per_interval(tmp_path):
     """One second per tick, 200 ticks, a 60 second interval: emissions at 61, 121 and 181.
@@ -1141,7 +1153,9 @@ def test_nothing_is_rated_when_rating_is_off(tmp_path):
 def test_an_episode_is_not_rated_when_only_films_are(tmp_path):
     collector = Collector()
     kodi = _rated_kodi()
-    controller = _controller(tmp_path, kodi, LIVING, collector, settings=_rating_settings(rating_kinds=frozenset({"movie"})))
+    controller = _controller(
+        tmp_path, kodi, LIVING, collector, settings=_rating_settings(rating_kinds=frozenset({"movie"}))
+    )
     _watch(controller, kodi)
     assert kodi.rate_requests == []
 
@@ -1714,7 +1728,9 @@ def test_the_ping_carries_the_sync_block_and_ticket(tmp_path):
         return {"version": 1, "enabled": True}, ticket
 
     settings = Settings(progress_interval_seconds=60, sync_enabled=True)
-    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector, settings=settings, library_sync_block=blocks)
+    controller = _controller(
+        tmp_path, _kodi([]), [Viewer(name="anna")], collector, settings=settings, library_sync_block=blocks
+    )
     controller.on_tick()
     [ping] = _pings(collector)
     assert ping.library_sync == {"version": 1, "enabled": True} and ping.ticket is ticket
@@ -1781,7 +1797,9 @@ def test_sync_only_setting_change_keeps_index(tmp_path, change):
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
     settings = Settings(progress_interval_seconds=60, movie_prompts=True, index_ttl_seconds=3600)
-    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector, settings=settings)
+    controller = _controller(
+        tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector, settings=settings
+    )
     _warm_index(controller, kodi)
     before = _directory_calls(kodi)
     controller.on_settings_changed(replace(settings, **change), Thresholds())
@@ -1793,7 +1811,9 @@ def test_a_sync_change_with_another_change_invalidates(tmp_path):
     collector = Collector()
     kodi = _kodi([{"id": 42, "type": "tvshow"}])
     settings = Settings(progress_interval_seconds=60, movie_prompts=True, index_ttl_seconds=3600)
-    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector, settings=settings)
+    controller = _controller(
+        tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector, settings=settings
+    )
     _warm_index(controller, kodi)
     before = _directory_calls(kodi)
     controller.on_settings_changed(replace(settings, sync_enabled=True, movie_prompts=False), Thresholds())
@@ -1891,7 +1911,9 @@ def test_stop_one_tick_short_of_the_threshold_counts(tmp_path):
 
 def test_raised_uses_kodis_threshold_and_last_sample(tmp_path):
     kodi = _kodi([])
-    kodi.files = {"special://profile/advancedsettings.xml": "<advancedsettings><video><playcountminimumpercent>95</playcountminimumpercent></video></advancedsettings>"}
+    kodi.files = {
+        "special://profile/advancedsettings.xml": "<advancedsettings><video><playcountminimumpercent>95</playcountminimumpercent></video></advancedsettings>"
+    }
     kodi.read_text = FakeKodi.read_text.__get__(kodi)  # type: ignore[method-assign]
     controller, plays = _sync_controller(tmp_path, kodi)
     controller.on_av_started()
@@ -2044,7 +2066,10 @@ def test_failing_inbox_hook_is_logged_and_retried(tmp_path, capture_log):
 
 # -- library sync: the rating window's own writes ------------------------------------------
 
-SYNCED = [Viewer(name="anna", profiles=("Living",), sync_id="kv-a"), Viewer(name="bob", profiles=("Living",), sync_id="kv-b")]
+SYNCED = [
+    Viewer(name="anna", profiles=("Living",), sync_id="kv-a"),
+    Viewer(name="bob", profiles=("Living",), sync_id="kv-b"),
+]
 
 
 def _copying_kodi(counts: list[tuple[int, str]]):
@@ -2057,7 +2082,9 @@ def _copying_kodi(counts: list[tuple[int, str]]):
         playcount, lastplayed = next(answers, last)
         return {"episodedetails": {"episodeid": 5, "playcount": playcount, "lastplayed": lastplayed}}
 
-    kodi = _rated_kodi(overrides={"VideoLibrary.GetEpisodeDetails": details, "VideoLibrary.SetEpisodeDetails": lambda p: "OK"})
+    kodi = _rated_kodi(
+        overrides={"VideoLibrary.GetEpisodeDetails": details, "VideoLibrary.SetEpisodeDetails": lambda p: "OK"}
+    )
     kodi.rate_answers = [8, 8]
     return kodi
 
@@ -2124,6 +2151,7 @@ def test_failing_restore_is_logged_and_the_write_still_told(tmp_path, capture_lo
 def test_failing_count_read_skips_the_write(tmp_path, capture_log):
     """With library sync on, an episode's rating waits when its counts can't be read: a play
     count Kodi copies over couldn't be put back."""
+
     def fails(params):
         raise RuntimeError("busy")
 
@@ -2146,6 +2174,8 @@ def test_sync_told_even_when_kodis_answer_was_lost(tmp_path):
     _watch(controller, kodi)
     assert told == [("episode", 5, 8, ("kv-a", "kv-b"))]
     assert [m for m, _ in kodi.calls if m == "VideoLibrary.SetEpisodeDetails"] == []
+
+
 def test_rating_run_flag_spans_all_windows(tmp_path):
     kodi = _rated_kodi()
     seen: list[bool] = []
@@ -2162,3 +2192,32 @@ def test_rating_run_flag_spans_all_windows(tmp_path):
     assert controller.rating_run_open is False
     _watch(controller, kodi)
     assert seen == [True, True] and controller.rating_run_open is False
+
+
+def test_windows_reported_to_library_sync(tmp_path):
+    kodi = _rated_kodi()
+    seen: list[bool] = []
+    kodi.rate_answers = [8, 6]
+    controller = _controller(tmp_path, kodi, LIVING, Collector(), settings=_rating_settings(), on_window=seen.append)
+    _watch(controller, kodi)
+    assert seen == [True, False]
+
+
+def test_prompt_reported_as_a_window(tmp_path):
+    kodi = _rated_kodi(profile="Guest")
+    kodi.who_watched_answer = ("anna",)
+    seen: list[bool] = []
+    controller = _controller(tmp_path, kodi, LIVING, Collector(), on_window=seen.append)
+    _watch(controller, kodi)
+    assert seen[:2] == [True, False]
+
+
+def test_failing_window_hook_is_contained(tmp_path, capture_log):
+    def boom(open_):
+        raise RuntimeError("gone")
+
+    kodi = _rated_kodi()
+    kodi.rate_answers = [8, 6]
+    controller = _controller(tmp_path, kodi, LIVING, Collector(), settings=_rating_settings(), on_window=boom)
+    _watch(controller, kodi)
+    assert any("service.window_not_told" in line for line in capture_log)

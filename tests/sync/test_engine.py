@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import threading
 from dataclasses import replace
@@ -11,7 +12,7 @@ from resources.lib.storage import JsonViewerStore, PromptMemory
 from resources.lib.sync import items
 from resources.lib.sync.constants import BACKOFF_SECONDS
 from resources.lib.sync.engine import IDLE_SECONDS, SyncEngine, SyncPaths
-from resources.lib.sync.files import Inbox, InboxRecord, StartedFile, read_status, write_started
+from resources.lib.sync.files import Inbox, InboxRecord, StartedFile, read_started, read_status, write_started
 from resources.lib.sync.items import Library, LibraryRow, RowKey
 from resources.lib.sync.local import FileIndex
 from resources.lib.sync.ownership import IndexSnapshot
@@ -190,15 +191,34 @@ def test_status_written_after_each_action(tmp_path):
     assert status is not None and status.reason == "library_has_sync_device"
 
 
-@pytest.mark.parametrize(
-    ("record", "started", "state", "reason"), [(False, True, "stopped", "record_missing"), (True, False, "off", "")]
-)
-def test_status_when_stopped_or_off(tmp_path, record, started, state, reason):
-    rig = Rig(tmp_path, record=record, started=started)
+def test_status_when_the_record_is_missing(tmp_path):
+    rig = Rig(tmp_path, record=False)
     rig.ready()
     rig.engine.step()
     status = read_status(rig.paths.status)
-    assert status is not None and (status.state, status.reason) == (state, reason)
+    assert status is not None and (status.state, status.reason) == ("stopped", "record_missing")
+
+
+def test_never_set_up_writes_nothing(tmp_path):
+    rig = Rig(tmp_path, record=False, started=False)
+    rig.ready()
+    rig.engine.step()
+    assert read_status(rig.paths.status) is None and not os.path.exists(rig.paths.inbox)
+    assert not os.path.exists(rig.paths.db)
+
+
+def test_start_after_the_service_started_brings_sync_up(tmp_path):
+    rig = Rig(tmp_path, record=False, started=False)
+    rig.ready()
+    rig.engine.step()
+    assert rig.engine.state.record_missing
+    store = RecordStore(rig.paths.db)
+    store.open(create=True)
+    store.close()
+    write_started(rig.paths.started, StartedFile(connection=connection_id(URL), start_id="s"))
+    rig.engine.on_settings(Settings(webhook_base_url=URL, webhook_token="t", sync_enabled=True, sync_request=1))
+    rig.engine.step()
+    assert not rig.engine.state.record_missing and rig.engine.state.started
 
 
 def test_ping_and_rebuild_are_asked_through_events(tmp_path):
@@ -463,6 +483,7 @@ def test_rating_window_write_applied_on_the_next_step(tmp_path):
     [entry] = store.entries("kv-a")
     assert entry.state.rating.value == 8 and entry.touched and rig.engine.state.viewers["kv-a"].unsent
 
+
 def test_status_for_a_paused_device_and_only_when_changed(tmp_path, monkeypatch):
     rig = Rig(tmp_path)
     write_started(rig.paths.started, StartedFile(connection=connection_id(URL), start_id="s", paused=True))
@@ -483,3 +504,67 @@ def test_window_and_requests_inputs(tmp_path):
     rig.engine.on_request()
     rig.engine._take_inputs()
     assert rig.engine.state.window_open and not rig.engine.state.requests_waiting
+
+
+def test_changed_device_id_pauses_the_worker(tmp_path):
+    rig = Rig(tmp_path)
+    write_started(rig.paths.started, StartedFile(connection=connection_id(URL), start_id="s", bound_device="old-id"))
+    rig.engine._device_id = lambda: "new-id"
+    rig.ready()
+    rig.engine.step()
+    assert rig.engine.state.paused
+
+
+def _reply(enabled: bool = True, reason: str | None = None) -> SyncReply:
+    return SyncReply(enabled=enabled, reason=reason, viewers={"kv-a": ReplyViewer("default", 0)}, queue_pending=0)
+
+
+def test_sync_device_id_recorded_when_crosswatch_says_enabled(tmp_path):
+    rig = Rig(tmp_path)
+    rig.engine._device_id = lambda: "box-1"
+    rig.ready()
+    rig.engine.on_ping_reply(_reply(), PingTicket(sent_at=rig.clock.now, epochs={"kv-a": 0}, enabled=True))
+    rig.engine.step()
+    started = read_started(rig.paths.started)
+    assert started is not None and started.bound_device == "box-1"
+
+
+def test_not_sync_device_pauses(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine.on_ping_reply(_reply(False, "not_sync_device"), PingTicket(sent_at=rig.clock.now, enabled=True))
+    rig.engine.step()
+    started = read_started(rig.paths.started)
+    assert started is not None and started.paused and started.paused_reason == "not_sync_device"
+    assert rig.engine.state.paused
+
+
+def test_turning_sync_off_pauses_once_crosswatch_took_it(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine.step()
+    rig.engine.on_settings(Settings(webhook_base_url=URL, webhook_token="t", sync_enabled=False))
+    rig.engine.on_ping_reply(_reply(False), PingTicket(sent_at=rig.clock.now, enabled=False))
+    rig.engine.step()
+    started = read_started(rig.paths.started)
+    assert started is not None and started.paused_reason == "turned_off"
+
+
+def test_enabled_false_right_after_start_does_not_pause(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine.on_ping_reply(_reply(False), PingTicket(sent_at=rig.clock.now, enabled=False))
+    rig.engine.step()
+    started = read_started(rig.paths.started)
+    assert started is not None and not started.paused
+
+
+def test_changed_device_id_shows_in_the_status(tmp_path):
+    rig = Rig(tmp_path)
+    write_started(rig.paths.started, StartedFile(connection=connection_id(URL), start_id="s", bound_device="old-id"))
+    rig.engine._device_id = lambda: "new-id"
+    rig.ready()
+    rig.engine.on_ping_reply(_reply(False, "not_sync_device"), PingTicket(sent_at=rig.clock.now, enabled=False))
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.reason == "device_id_changed"

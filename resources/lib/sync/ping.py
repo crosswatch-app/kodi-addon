@@ -153,4 +153,7 @@ class PingBlocks:
             kodi_version=kodi_version(self._kodi),
             jsonrpc_version=jsonrpc_version(self._kodi),
         )
-        return block, PingTicket(sent_at=self._clock(), epochs=dict(self._epochs()), connection=connection)
+        ticket = PingTicket(
+            sent_at=self._clock(), epochs=dict(self._epochs()), connection=connection, enabled=state == "enabled"
+        )
+        return block, ticket

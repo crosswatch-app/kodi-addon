@@ -67,6 +67,7 @@ from resources.lib.sync.manual import (
     watched_change,
 )
 from resources.lib.sync.ownership import IndexSnapshot, owners_of
+from resources.lib.sync.ping import device_id_changed, pause_reason
 from resources.lib.sync.rating_scan import FoundRating, rating_scan
 from resources.lib.sync.record import Batch, Carried, Entry, PendingWrite, RecordMissing, RecordStore, merge
 from resources.lib.sync.reply import PingTicket, SyncReply, connection_id
@@ -195,12 +196,18 @@ class SyncEngine:
         self._settings: Settings | None = None
         self._snapshot: IndexSnapshot | None = None
         self._scan_ended_at = 0.0
+        self._viewers_changed_at = 0.0
+        # The household turned sync off since the last reply: an answer to a block with
+        # enabled false then pauses this device (sync/ping.py pause_reason).
+        self._turned_off = False
         self._show_ids_changed_at = 0.0
         self._last_status: StatusFile | None = None
         # Rating window writes, applied by the rating step before the next scan.
         self.rating_writes: list[tuple[str, int, int, tuple[str, ...]]] = []
         self.library: Library | None = None
         self.dropped_marks = 0
+        # CrossWatch still holds this install's old device id as the sync device.
+        self.device_id_changed = False
         # Seed viewers whose first full started after their window: the status names them.
         self.late_seeds: set[str] = set()
 
@@ -294,12 +301,25 @@ class SyncEngine:
     def state(self) -> plan.EngineState:
         return self._state
 
+    def _snapshot_usable(self, snapshot: IndexSnapshot) -> bool:
+        return snapshot.usable(
+            last_scan_end=self._scan_ended_at,
+            last_viewer_change=self._viewers_changed_at,
+            show_ids_changed_at=self._show_ids_changed_at,
+        )
+
+    def _retry_record(self) -> None:
+        if self._state.record_missing and self._store is None:
+            self._state = replace(self._state, record_missing=False)
+            self._open_store()
+
     def _open_store(self) -> None:
         store = self._store_factory(self._paths.db)
         try:
             store.open()
         except RecordMissing:
-            _log.warning("sync.record.missing")
+            if self._state.started:
+                _log.warning("sync.record.missing")
             self._state = replace(self._state, record_missing=True)
             return
         except sqlite3.OperationalError as exc:
@@ -362,11 +382,13 @@ class SyncEngine:
     def on_inbox(self) -> None:
         self._put("inbox")
 
-    def on_remove(self, data: Mapping[str, Any]) -> None:
-        self._put("remove", dict(data))
+    def on_scan(self, active: bool, at: float | None = None) -> None:
+        """at is when Kodi announced it, so a busy worker doesn't date a scan's end late."""
+        self._put("scan", (active, self._clock() if at is None else at))
 
-    def on_scan(self, active: bool) -> None:
-        self._put("scan", active)
+    def on_viewers(self, at: float) -> None:
+        """The household's viewers changed: an index built before this can't decide owners."""
+        self._put("viewers", at)
 
     def on_quiet(self, quiet: bool) -> None:
         self._put("quiet", quiet)
@@ -398,7 +420,7 @@ class SyncEngine:
                 _log.warning("sync.engine.input_failed", input=name, error=str(exc))
 
     def _apply_input(self, name: str, value: Any) -> None:
-        state, now = self._state, self._clock()
+        state = self._state
         if name == "settings":
             self._apply_settings(value)
             return
@@ -407,14 +429,15 @@ class SyncEngine:
             return
         if name == "inbox":
             state = replace(state, inbox_waiting=True)
-        elif name == "remove":
-            # The shared FileIndex drops the row on the service thread; the Seen it had goes
-            # with the next library read.
-            pass
         elif name == "scan":
-            if state.scanning and not value:
-                self._scan_ended_at = now
-            state = replace(state, scanning=bool(value))
+            active, at = value
+            if state.scanning and not active:
+                self._scan_ended_at = at
+            state = replace(state, scanning=bool(active))
+        elif name == "viewers":
+            self._viewers_changed_at = value
+            if self._snapshot is not None and not self._snapshot_usable(self._snapshot):
+                state = replace(state, snapshot_usable=False)
         elif name == "quiet":
             state = replace(state, quiet=bool(value))
         elif name == "window":
@@ -423,15 +446,15 @@ class SyncEngine:
             state = plan.request_full(state)
         elif name == "request":
             state = replace(state, requests_waiting=bool(read_requests(self._paths.requests)))
+            self._state = state
+            # Start may just have created the record.
+            self._retry_record()
+            return
         elif name == "rating_written":
             self.rating_writes.append(value)
         elif name == "snapshot":
             previous, self._snapshot = self._snapshot, value
-            usable = value.usable(
-                last_scan_end=self._scan_ended_at,
-                last_viewer_change=0.0,
-                show_ids_changed_at=self._show_ids_changed_at,
-            )
+            usable = self._snapshot_usable(value)
             after_scan = self._scan_ended_at > (previous.built_at if previous is not None else 0.0)
             state = plan.on_snapshot(state, usable=usable, after_scan=usable and after_scan)
         self._state = state
@@ -448,6 +471,8 @@ class SyncEngine:
                 # The seed window runs from the first reply that mapped the viewer.
                 if not store.first_mapped_at(viewer):
                     store.set_first_mapped_at(viewer, self._utc_now())
+        if reply is not None and ticket is not None:
+            state = self._judge_device(state, reply, ticket)
         if reply is not None and store is not None:
             state = self._judge_settled(state, reply, store)
             mapping = plan.mapping_of(library_id(self._kodi), reply)
@@ -457,22 +482,57 @@ class SyncEngine:
         self._state = state
         self._publish_epochs()
 
+    def _judge_device(self, state: plan.EngineState, reply: SyncReply, ticket: PingTicket) -> plan.EngineState:
+        """What CrossWatch's answer says about this device: the sync device's id is recorded
+        when an enabled block is answered enabled, and the device pauses until Start when
+        another device holds the library or the household turned sync off and CrossWatch
+        took that (sync/ping.py)."""
+        started = read_started(self._paths.started)
+        if started is None:
+            return state
+        device_id = self._device_id()
+        if (
+            reply.enabled
+            and reply.reason is None
+            and ticket.enabled
+            and device_id
+            and started.bound_device != device_id
+        ):
+            update_started(self._paths.started, started.start_id, bound_device=device_id)
+        block = {"enabled": ticket.enabled}
+        reason = pause_reason(block, reply, turned_off=self._turned_off)
+        self._turned_off = False
+        if reason is not None and not started.paused:
+            update_started(self._paths.started, started.start_id, paused=True, paused_reason=reason)
+            _log.info("sync.paused", reason=reason)
+            state = replace(state, paused=True)
+        if device_id_changed(reply, device_id, started):
+            self.device_id_changed = True
+        return state
+
     def _apply_settings(self, settings: Settings) -> None:
         previous, self._settings = self._settings, settings
         started = read_started(self._paths.started)
         on_this = started is not None and started.connection == connection_id(settings.webhook_base_url)
+        # Paused too while this install's device id isn't the one CrossWatch bound: the ping
+        # asks for nothing until Start runs again (sync/ping.py block_state), so nothing else
+        # goes either.
+        moved_id = started is not None and bool(started.bound_device) and started.bound_device != self._device_id()
         state = replace(
             self._state,
             started=on_this,
             sync_enabled=settings.sync_enabled,
-            paused=bool(on_this and started is not None and started.paused),
+            paused=bool(on_this and started is not None and (started.paused or moved_id)),
         )
         moved = previous is not None and (
             previous.webhook_base_url != settings.webhook_base_url or previous.webhook_token != settings.webhook_token
         )
         if moved:
             state = plan.on_token_changed(state, self._clock())
+        if previous is not None and previous.sync_enabled and not settings.sync_enabled:
+            self._turned_off = True
         self._state = state
+        self._retry_record()
 
     # -- actions ------------------------------------------------------------------------
 
@@ -680,7 +740,7 @@ class SyncEngine:
             status = "stopped"
             reason = "record_missing" if state.record_missing else "unauthorized" if state.unauthorized else "no_sync"
         elif state.paused:
-            status, reason = "stopped", "paused"
+            status, reason = "stopped", "device_id_changed" if self.device_id_changed else "paused"
         elif state.reply is not None and state.reply.reason:
             status, reason = "waiting", state.reply.reason
         elif not plan.active(state) or plan.waiting_on(state) is not None:
@@ -694,10 +754,12 @@ class SyncEngine:
         }
         for viewer in self.late_seeds:
             per_viewer.setdefault(viewer, "late_seed")
-        try:
-            dropped = self._inbox.dropped() + self.dropped_marks
-        except Exception:
-            dropped = self.dropped_marks
+        dropped = self.dropped_marks
+        if os.path.exists(self._paths.inbox):
+            try:
+                dropped += self._inbox.dropped()
+            except Exception:
+                pass
         store = self._store
         try:
             listed = store.assignments() if store is not None else []
@@ -713,6 +775,10 @@ class SyncEngine:
             assignments=assignments,
         )
         if current == self._last_status:
+            return
+        if status == "off" and self._last_status is None and not os.path.exists(self._paths.status):
+            # A household that never set library sync up gets no file for it.
+            self._last_status = current
             return
         if write_status(self._paths.status, replace(current, updated=self._utc_now())):
             self._last_status = current
@@ -1164,6 +1230,7 @@ class SyncEngine:
             owners=self._owners(library),
             between_batches=between,
             now_utc=self._utc_now,
+            held_rows=lambda: frozenset(k for f in self.held_ratings for k in f.rated),
         ).run()
         _log.info("sync.writer.run", written=report.written, deferred=report.deferred, dropped=report.dropped)
         # Writes cut short by playback or a window wait for the next quiet moment; writes the

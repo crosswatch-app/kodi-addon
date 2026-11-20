@@ -73,6 +73,7 @@ class Controller:
         on_inbox: Callable[[], None] | None = None,
         own: OwnWrites | None = None,
         on_rating_written: Callable[[str, int, int, tuple[str, ...]], None] | None = None,
+        on_window: Callable[[bool], None] | None = None,
     ) -> None:
         self._kodi = kodi
         self._store = viewer_store
@@ -131,8 +132,10 @@ class Controller:
         self._on_rating_written = on_rating_written
         self._own_writes = 0
         # True from a rating run's first window until the run returns: library sync neither
-        # writes to Kodi nor scans ratings meanwhile.
+        # writes to Kodi nor scans ratings meanwhile. on_window hears each change on the
+        # service thread as the window opens and closes; library sync runs on its own thread.
         self.rating_run_open = False
+        self._on_window = on_window
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -341,9 +344,7 @@ class Controller:
             self._park(session, reason="liveness")
             return
         session.sample(*self._kodi.player_times())
-        if session.should_emit_progress(
-            self._monotonic(), self._settings.progress_interval_seconds, self._paused
-        ):
+        if session.should_emit_progress(self._monotonic(), self._settings.progress_interval_seconds, self._paused):
             self._emit("progress", session)
 
     def _tick_idle(self) -> None:
@@ -560,7 +561,11 @@ class Controller:
             )
             if not decision.ask:
                 return ""
-            names = prompt_mod.ask(self._kodi, viewers, session.media, PROMPT_AUTOCLOSE_SECONDS)
+            self._window(True)
+            try:
+                names = prompt_mod.ask(self._kodi, viewers, session.media, PROMPT_AUTOCLOSE_SECONDS)
+            finally:
+                self._window(False)
             if not names:
                 return "declined"
             session.identity = identity_mod.Identity(names, "prompt")
@@ -595,11 +600,20 @@ class Controller:
         # After each watch, a stop flushed because the next item started is not rated: the
         # household is watching that next item.
 
+    def _window(self, open_: bool) -> None:
+        if self._on_window is not None:
+            try:
+                self._on_window(open_)
+            except Exception as exc:
+                _log.warning("service.window_not_told", error=str(exc))
+
     def _run_ratings(self, watches: list[rating_mod.Watch], after_window: bool) -> None:
         try:
             self._rate_all(watches, after_window)
         finally:
-            self.rating_run_open = False
+            if self.rating_run_open:
+                self.rating_run_open = False
+                self._window(False)
 
     def _rate_all(self, watches: list[rating_mod.Watch], after_window: bool) -> None:
         viewers = self._viewers()
@@ -633,7 +647,9 @@ class Controller:
                     autoclose_seconds=RATING_AUTOCLOSE_SECONDS,
                     close_on_playback=True,
                 )
-                self.rating_run_open = True
+                if not self.rating_run_open:
+                    self.rating_run_open = True
+                    self._window(True)
                 score = self._kodi.rate(request)
                 after_window = True
                 if score == RATE_FAILED:

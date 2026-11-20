@@ -271,12 +271,14 @@ class Writer:
         owners: OwnersOf,
         between_batches: Callable[[], None],
         now_utc: Callable[[], str],
+        held_rows: Callable[[], frozenset[RowKey]] = frozenset,
     ) -> None:
         self._kodi, self._store, self._own = kodi, store, own
         self._may_write, self._clock, self._sleep = may_write, clock, sleep
         self._settings, self._library, self._owners = settings, library, owners
         self._between = between_batches
         self._now = now_utc
+        self._held_rows = held_rows
         rows = [*library.movies, *library.episodes]
         self._by_token: dict[str, list[LibraryRow]] = {}
         for row in rows:
@@ -356,6 +358,11 @@ class Writer:
         fresh = [r for r in (self._read(c.key) for c in self._copies(write)) if r is not None]
         if not fresh:
             # Not in the library now (or moved and not read yet): stays pending.
+            out.deferred += 1
+            return
+        if write.group == "ratings" and self._held_rows() & {r.key for r in fresh}:
+            # A row held for the household's answer on many rating changes: CrossWatch's
+            # rating waits for that answer instead of being dropped as a person's change.
             out.deferred += 1
             return
         if write.group == "ratings" and any(

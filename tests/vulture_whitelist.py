@@ -24,3 +24,10 @@ class _PlayerCallbacks:
 
     def onPlayBackSeekChapter(self, chapter: int) -> int:
         return chapter
+
+
+class _MonitorCallbacks:
+    """Mirrors xbmc.Monitor.onNotification, whose sender is always "xbmc" for library events."""
+
+    def onNotification(self, sender: str, method: str, data: str) -> str:
+        return sender

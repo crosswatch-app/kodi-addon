@@ -68,6 +68,9 @@ class PingTicket:
     # whatever server is paired when an event is taken, so a ping built for one pairing can
     # reach the next one; the reporter drops the block there.
     connection: str = ""
+    # Whether the block asked for sync (its "enabled"), so the reply can be judged against
+    # what this device said.
+    enabled: bool = False
 
 
 def _int(value: Any) -> int | None:

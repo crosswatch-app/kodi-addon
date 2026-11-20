@@ -89,8 +89,8 @@ def test_a_pasted_url_is_written_back_split_and_used_at_once(tmp_path):
 class _Monitor:
     """Stands in for ServiceMonitor with Kodi already shutting down, so main() returns."""
 
-    def __init__(self, controller, on_settings_changed) -> None:
-        del controller, on_settings_changed
+    def __init__(self, controller, on_settings_changed, on_notification=None) -> None:
+        del controller, on_settings_changed, on_notification
 
     def abortRequested(self) -> bool:
         return True
@@ -104,6 +104,9 @@ def test_the_service_starts_with_a_stored_address_it_cannot_use(tmp_path, monkey
     logged = [message for message, _ in kodi.logged]
     assert any("service.webhook_url_rejected" in message for message in logged)
     assert any("service.stopping" in message for message in logged)
+    # The sync worker started and stopped with the service.
+    assert any("sync.engine.started" in message for message in logged)
+    assert any("sync.engine.stopped" in message for message in logged)
 
 
 def test_device_id_reread_on_settings_change(tmp_path):
