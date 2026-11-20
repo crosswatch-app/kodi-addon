@@ -31,6 +31,18 @@ Device name.
 | Write the rating to Kodi's library | Off | Only shown when rating is on. Also sets Kodi's own user rating. See [Kodi's own rating](rating.md#kodis-own-rating). |
 | Skip PlexKodiConnect playback | On | Playback through PlexKodiConnect is not reported, so that a household also running CrossWatch's Plex watcher does not count it twice. Off: it is reported, marked as PlexKodiConnect playback. Not yet tested against a real PlexKodiConnect. |
 
+## Library sync
+
+See [Library sync](library-sync.md).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Set up library sync | | Opens the [setup screen](library-sync.md#set-it-up): who owns what, and Start. |
+| Library sync status | | Opens the [status screen](library-sync.md#the-status-screen). |
+| Sync this library with CrossWatch | Off | Start turns it on. Turning it off stops sync on this device and frees it, so another device can become the sync device. Turning it back on does not restart sync: run Set up library sync. |
+| Send removals made in Kodi | Off | On: an unwatch or a cleared rating made in Kodi is sent, and one from your services is written into Kodi. Off: neither, and sync never removes a watch or a rating. |
+| A shared item counts as watched when | Every owner watched it | Or "Any owner watched it". When Kodi shows an item with several owners as watched. |
+
 ## Advanced
 
 | Setting | Default | What it does |

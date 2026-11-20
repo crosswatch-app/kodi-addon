@@ -29,7 +29,8 @@ With only one viewer, everything is credited to that viewer and nothing is asked
   Kodi 22 (Piers) release candidate.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support (marked
   experimental there). Rating needs v0.13.4 or later, and picking viewers from CrossWatch's
-  user profiles needs v0.13.5 or later.
+  user profiles needs v0.13.5 or later. [Library sync](library-sync.md) needs a CrossWatch
+  release with library sync.
 - Kodi able to reach CrossWatch over the network, for example both on the same home
   network. CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority, such as
@@ -98,6 +99,14 @@ Kodi's web server and JSON-RPC interface are not needed; only the optional
     Ask how it was after a watch, and send the score.
 
     [:octicons-arrow-right-24: Rating](rating.md)
+
+-   :lucide-refresh-cw:{ .lg .middle } __Library sync__
+
+    ---
+
+    Keep Kodi's library and each viewer's services in step.
+
+    [:octicons-arrow-right-24: Library sync](library-sync.md)
 
 -   :lucide-settings:{ .lg .middle } __Settings__
 
