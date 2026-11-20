@@ -61,7 +61,9 @@ def test_first_full_goes_up_and_commits(tmp_path):
     assert store.seqs("kv-a").confirmed == body["upload_seq"]
     assert store.seen(RowKey(library.library_id, "movies", 3, "/m/3.mkv")) is not None
     vs = rig.engine.state.viewers["kv-a"]
-    assert vs.first_full_committed and not vs.full_due and vs.queue_due
+    assert vs.first_full_committed and not vs.full_due
+    # A committed full is followed by a queue fetch.
+    assert rig.cw.sent_to("queue")
 
 
 def test_full_goes_up_one_part_per_step(tmp_path):

@@ -93,6 +93,12 @@ class ViewerState:
     uploads_stopped: str = ""
     # The last error's status key, for the status screen; cleared by a success.
     error: str = ""
+    # A complete full went up under the current mapping since CrossWatch last lost its
+    # state for the viewer: before that its queue may answer empty for want of an inventory,
+    # and an empty answer would settle person changes CrossWatch never saw.
+    full_current: bool = False
+    # Acks per request; halved after a 413.
+    ack_batch: int = 500
 
 
 @dataclass(frozen=True)
@@ -268,7 +274,7 @@ def _viewer_action(viewer: str, vs: ViewerState, library_complete: bool, run_pen
     uploads = not vs.uploads_stopped
     if vs.acks_pending:
         return SendAcks(viewer)
-    can_fetch = vs.first_full_committed and library_complete
+    can_fetch = vs.first_full_committed and vs.full_current and library_complete
     if can_fetch and (vs.queue_due or (vs.unsent and not vs.queue_settled)):
         return FetchQueue(viewer)
     if uploads and (vs.full_due or vs.full_in_progress):
@@ -386,7 +392,7 @@ def on_reply(
             # fresh still pending stays fresh.
             fresh = vs.fresh or cw > record.sent
             resets.append(Reset(viewer, cw, fresh))
-            vs = replace(vs, full_due=True, fresh=fresh, full_in_progress=False)
+            vs = replace(vs, full_due=True, fresh=fresh, full_in_progress=False, full_current=False)
         viewers[viewer] = replace(vs, judged=True, run_unknown=False)
     state = replace(state, reply=reply, viewers=viewers)
     if state.start_full_pending and reply.viewers:
@@ -449,7 +455,9 @@ def on_mapping(
     """A changed mapping sends a full for every listed viewer; so does a listed viewer whose
     last complete full went up under another library."""
     if current != previous:
-        return request_full(state, current[1])
+        state = request_full(state, current[1])
+        viewers = {v: replace(vs, full_current=False) if v in current[1] else vs for v, vs in state.viewers.items()}
+        return replace(state, viewers=viewers)
     stale = [v for v in current[1] if full_library_ids.get(v, "") != current[0]]
     return request_full(state, stale) if stale else state
 
@@ -487,6 +495,7 @@ def on_full_part(state: EngineState, viewer: str, *, complete: bool, fresh: bool
             full_again=False,
             full_in_progress=False,
             first_full_committed=True,
+            full_current=True,
             fresh=vs.fresh and not fresh,
             queue_due=True,
             # CrossWatch starts a pair run for a committed full (run_pending in the next ping).
@@ -631,6 +640,8 @@ def on_error(
             state = replace(state, no_sync=True)
             vs = replace(vs, error="no_sync")
             stops = True
+        elif request == "ack" and (err.code == "request_too_large" or err.status == 413):
+            vs = replace(vs, ack_batch=max(vs.ack_batch // 2, 1), error="too_large")
         elif err.code == "request_too_large" or (err.code == "not_crosswatch" and err.status == 413):
             vs = _smaller_parts(vs, request)
         else:
@@ -643,6 +654,8 @@ def on_error(
         state = replace(state, unauthorized=True)
         vs = replace(vs, error="unauthorized")
         stops = True
+    elif err.status == 413 and request == "ack":
+        vs = replace(vs, ack_batch=max(vs.ack_batch // 2, 1), error="too_large")
     elif err.status == 413:
         vs = _smaller_parts(vs, request)
     elif err.status == 409 and err.code == "viewer_unknown":
@@ -651,6 +664,7 @@ def on_error(
         state = replace(state, ping_wanted=True)
     elif err.status == 409 and err.code == "upload_incomplete":
         # CrossWatch has no complete full under this viewer: one goes up, unless one is.
+        vs = replace(vs, full_current=False)
         if not vs.full_in_progress:
             vs = replace(vs, full_due=True)
     elif err.status == 409 and err.code == "upload_stale":

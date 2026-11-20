@@ -79,7 +79,7 @@ def _state(**viewers: ViewerState) -> EngineState:
     )
 
 
-READY = ViewerState(first_full_committed=True, judged=True)
+READY = ViewerState(first_full_committed=True, full_current=True, judged=True)
 
 
 # -- whether sync acts at all ----------------------------------------------------------
@@ -751,3 +751,28 @@ def test_stopped_uploads_still_fetch_and_ack():
 def test_refused_delta_drops_unsent():
     _, vs, outcome = _fail(replace(READY, unsent=True), "delta", _err(400, "invalid_request"))
     assert outcome.drop_unsent and not vs.unsent
+
+
+def test_queue_waits_for_a_full_under_the_current_mapping():
+    state = _state(**{"kv-a": replace(READY, full_current=False, queue_due=True)})
+    assert next_action(state, NOW) == Idle()
+    before = mapping_of("L1", _two_viewer_reply(**{"kv-a": "default"}))
+    after = mapping_of("L1", _two_viewer_reply(**{"kv-a": "other"}))
+    moved = on_mapping(_state(**{"kv-a": READY}), after, before, {"kv-a": "L1"}).viewers["kv-a"]
+    assert not moved.full_current and moved.full_due
+    done = on_full_part(_state(**{"kv-a": moved}), "kv-a", complete=True, fresh=False).viewers["kv-a"]
+    assert done.full_current
+
+
+def test_crosswatch_losing_state_needs_a_new_full_before_the_queue():
+    state, _, _ = _fail(READY, "delta", _err(409, "upload_incomplete"))
+    assert not state.viewers["kv-a"].full_current
+    judged, _ = _judge(READY, 3, SeqState(sent=7, confirmed=5))
+    assert not judged.viewers["kv-a"].full_current
+
+
+def test_413_on_acks_halves_the_batch_and_keeps_uploads():
+    _, vs, _ = _fail(READY, "ack", _err(413, "payload_too_large"))
+    assert vs.ack_batch == 250 and not vs.uploads_stopped and vs.part_rows == MAX_ROWS_PER_LIST
+    _, vs, _ = _fail(replace(READY, ack_batch=1), "ack", _err(0, "request_too_large", cw=False))
+    assert vs.ack_batch == 1 and not vs.uploads_stopped

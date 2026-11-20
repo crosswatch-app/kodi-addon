@@ -37,6 +37,7 @@ from resources.lib.log import get_logger
 from resources.lib.media import strip_credentials
 from resources.lib.storage import PromptMemory, ViewerStore
 from resources.lib.sync import plan
+from resources.lib.sync.apply import apply_changes, settle_unsent
 from resources.lib.sync.client import SyncClient, SyncError
 from resources.lib.sync.clock import kodi_to_utc
 from resources.lib.sync.files import (
@@ -58,7 +59,7 @@ from resources.lib.sync.reply import PingTicket, SyncReply, connection_id
 from resources.lib.sync.rows import ViewerRows, viewer_rows
 from resources.lib.sync.settings import SyncSettings
 from resources.lib.sync.upload import UploadBody, UploadTooLarge, deltas, full_parts
-from resources.lib.sync.writer import read_row, seen_of
+from resources.lib.sync.writer import OwnWrites, Writer, read_row, seen_of
 
 _log = get_logger("sync")
 
@@ -138,6 +139,7 @@ class SyncEngine:
         rebuild_requested: threading.Event,
         sync_paths: SyncPaths,
         utc_now: Callable[[], str],
+        own: OwnWrites | None = None,
         device_id: Callable[[], str] = lambda: "",
         clock: Callable[[], float] = time.monotonic,
         store_factory: Callable[[str], RecordStore] = RecordStore,
@@ -155,9 +157,11 @@ class SyncEngine:
         self._utc_now = utc_now
         self._store_factory = store_factory
         self._device_id = device_id
+        self._own = own if own is not None else OwnWrites()
         self._client_factory = client_factory
         self._client_cache: tuple[tuple[str, str, str], SyncClient] | None = None
         self._fulls: dict[str, _Full] = {}
+        self._mapping: plan.ViewerMapping | None = None
 
         self._lock = threading.Lock()
         self._wake = threading.Event()
@@ -285,8 +289,11 @@ class SyncEngine:
                 first_full_committed=store.first_full_committed(viewer),
                 settled=store.settled(viewer),
                 unsent=any(e.touched for e in store.entries(viewer)),
+                acks_pending=bool(store.acks_pending(viewer)),
             )
-        self._state = replace(self._state, viewers=viewers)
+        self._state = replace(self._state, viewers=viewers, writes_pending=bool(store.pending_writes()))
+        # Writes sent before a crash and never read back are the add-on's own.
+        self._own.seed(store.pending_writes())
         generation = self._files.generation()
         seen = store.seen_for_library(library_id(self._kodi))
         self._files.replace({(_KODI_TYPES[k.kind], k.kodi_id): k.file for k in seen}, generation)
@@ -402,6 +409,11 @@ class SyncEngine:
                 # The seed window runs from the first reply that mapped the viewer.
                 if not store.first_mapped_at(viewer):
                     store.set_first_mapped_at(viewer, self._utc_now())
+        if reply is not None and store is not None:
+            mapping = plan.mapping_of(library_id(self._kodi), reply)
+            full_ids = {v: store.full_library_id(v) for v in reply.viewers}
+            state = plan.on_mapping(state, mapping, self._mapping, full_ids)
+            self._mapping = mapping
         self._state = state
         self._publish_epochs()
 
@@ -431,6 +443,10 @@ class SyncEngine:
             return IDLE_SECONDS
         if isinstance(action, plan.Wait):
             return action.until - now
+        viewer = getattr(action, "viewer", None)
+        if isinstance(viewer, str):
+            # The next turn starts after this viewer, so one busy viewer can't starve the others.
+            self._state = replace(self._state, last_viewer=viewer)
         try:
             if isinstance(action, plan.Ping):
                 self._ping_requested.set()
@@ -444,6 +460,12 @@ class SyncEngine:
                 self._full_upload(action)
             elif isinstance(action, plan.Delta):
                 self._delta(action.viewer)
+            elif isinstance(action, plan.FetchQueue):
+                self._fetch_queue(action.viewer)
+            elif isinstance(action, plan.SendAcks):
+                self._send_acks(action.viewer)
+            elif isinstance(action, plan.WriteKodi):
+                self._write_kodi()
             else:
                 return self._waiting_on_action(action)
         except Exception as exc:
@@ -700,8 +722,13 @@ class SyncEngine:
         state = plan.on_library_read(self._state, shows, before)
         if state.rebuild_wanted:
             self._show_ids_changed_at = self._clock()
-        # Marks waiting for a show this read may have.
-        self._state = replace(state, library_complete=library.complete, inbox_waiting=True)
+        # Marks waiting for a show this read may have, and writes deferred for a row it may.
+        self._state = replace(
+            state,
+            library_complete=library.complete,
+            inbox_waiting=True,
+            writes_pending=bool(store.pending_writes()),
+        )
         return library
 
     def _sync_client(self) -> SyncClient | None:
@@ -787,6 +814,7 @@ class SyncEngine:
         assert store is not None
         viewer = action.viewer
         if client is None:
+            self._no_client(viewer)
             return
         vs = self._state.viewers.get(viewer, plan.ViewerState())
         job = self._fulls.get(viewer) if vs.full_in_progress else None
@@ -870,6 +898,7 @@ class SyncEngine:
         store, client = self._store, self._sync_client()
         assert store is not None
         if client is None:
+            self._no_client(viewer)
             return
         library = self.library or self._read_library()
         if library is None or self._state.rebuild_wanted:
@@ -959,6 +988,154 @@ class SyncEngine:
                 store.commit(Batch(entries={viewer: dropped}))
                 _log.warning("sync.upload.unsent_dropped", viewer=viewer, entries=len(dropped))
         self._publish_epochs()
+
+    # -- the queue and Kodi --------------------------------------------------------------
+
+    def _no_client(self, viewer: str) -> None:
+        """No paired server to talk to: the viewer waits rather than being asked again."""
+        self._set_viewer(viewer, backoff_until=self._clock() + IDLE_SECONDS)
+
+    def _refresh_viewer(self, viewer: str) -> None:
+        """What the record now owes CrossWatch and Kodi, after a fetch however far it got."""
+        store = self._store
+        assert store is not None
+        self._set_viewer(
+            viewer,
+            acks_pending=bool(store.acks_pending(viewer)),
+            unsent=any(e.touched for e in store.entries(viewer)),
+        )
+        self._state = replace(self._state, writes_pending=bool(store.pending_writes()))
+
+    def _fetch_queue(self, viewer: str) -> None:
+        """Every queued change for the viewer, page by page, into the record; then the person
+        changes those pages answered are settled, only once every page arrived. Each page is
+        committed on its own with the acks it owes, so an exit mid-fetch loses nothing
+        CrossWatch would not send again."""
+        store, client = self._store, self._sync_client()
+        assert store is not None
+        library = self.library
+        if client is None or library is None:
+            self._no_client(viewer)
+            return
+        fetched: set[tuple[str, str]] = set()
+        after, pages, changed = 0, 0, 0
+        try:
+            while True:
+                answer = client.queue(viewer, after)
+                changes = answer.get("changes")
+                changes = changes if isinstance(changes, list) else []
+                applied = apply_changes(
+                    viewer, changes, store=store, library=library, fetched_at=self._utc_now(), new_id=_new_id
+                )
+                store.commit(applied.batch)
+                fetched |= applied.fetched
+                pages, changed = pages + 1, changed + len(changes)
+                if answer.get("has_more") is not True:
+                    break
+                following = answer.get("next_after")
+                if not isinstance(following, int) or isinstance(following, bool) or following <= after:
+                    # More pages and no way to ask for them: not every change arrived, so
+                    # nothing is settled; the next fetch starts over.
+                    _log.warning("sync.queue.bad_page", viewer=viewer, after=after)
+                    self._refresh_viewer(viewer)
+                    return
+                if self._stopping.is_set():
+                    self._refresh_viewer(viewer)
+                    return
+                after = following
+        except SyncError as err:
+            self._state, _ = plan.on_error(self._state, viewer, "queue", err, self._clock())
+            self._refresh_viewer(viewer)
+            self._publish_epochs()
+            return
+        store.commit(settle_unsent(viewer, fetched, store))
+        _log.info("sync.queue.fetched", viewer=viewer, pages=pages, changes=changed)
+        self._state = plan.on_success(self._state, viewer)
+        self._set_viewer(viewer, queue_due=False, queue_settled=True)
+        self._refresh_viewer(viewer)
+
+    def _send_acks(self, viewer: str) -> None:
+        """The acks the record owes CrossWatch, ack_batch per request; they leave the record
+        only once CrossWatch answered, or when it refused them (CrossWatch keeps the changes
+        queued, and they come back with a later fetch)."""
+        store, client = self._store, self._sync_client()
+        assert store is not None
+        if client is None:
+            self._no_client(viewer)
+            return
+        vs = self._state.viewers.get(viewer, plan.ViewerState())
+        acks = store.acks_pending(viewer)[: vs.ack_batch]
+        if not acks:
+            self._set_viewer(viewer, acks_pending=False)
+            return
+        done = [(int(a["seq"]), str(a["change_id"])) for a in acks]
+        try:
+            client.ack(viewer, acks)
+        except SyncError as err:
+            self._state, outcome = plan.on_error(self._state, viewer, "ack", err, self._clock())
+            if outcome.drop_acks:
+                store.commit(Batch(acks_done={viewer: done}))
+                _log.warning("sync.acks.dropped", viewer=viewer, count=len(done))
+            self._set_viewer(viewer, acks_pending=bool(store.acks_pending(viewer)))
+            self._publish_epochs()
+            return
+        store.commit(Batch(acks_done={viewer: done}))
+        _log.info("sync.acks.sent", viewer=viewer, count=len(done))
+        self._state = plan.on_success(self._state, viewer)
+        self._set_viewer(viewer, acks_pending=bool(store.acks_pending(viewer)))
+
+    def _write_kodi(self) -> None:
+        """The pending writes, in batches. Between batches the inputs are taken and the inbox
+        drained (under the same checks as its own step), so a person's mark is never held
+        only in memory during a long run. A playback start queued meanwhile stops the run
+        inside a batch; a scan, a window or anything else is seen between batches. Settings,
+        ownership and remembered answers are those of the run's start."""
+        store, library = self._store, self.library
+        assert store is not None
+        if library is None:
+            self._state = replace(self._state, writes_pending=False)
+            return
+        settings = self._settings.sync_settings if self._settings is not None else SyncSettings()
+
+        def free(state: plan.EngineState) -> bool:
+            return plan.local_active(state) and plan.waiting_on(state) is None and not state.rebuild_wanted
+
+        def between() -> None:
+            self._take_inputs()
+            if self._state.inbox_waiting and free(self._state):
+                self._drain_inbox()
+
+        def pause(seconds: float) -> None:
+            # Ends early on stop: the pause between batches never holds the worker past it.
+            self._stopping.wait(seconds)
+
+        def may_write() -> bool:
+            return (
+                not self._stopping.is_set()
+                and not self._interrupted()
+                and free(self._state)
+                and not self._state.window_open
+            )
+
+        report = Writer(
+            self._kodi,
+            store,
+            self._own,
+            may_write,
+            self._clock,
+            pause,
+            settings=settings,
+            library=library,
+            owners=self._owners(library),
+            between_batches=between,
+            now_utc=self._utc_now,
+        ).run()
+        _log.info("sync.writer.run", written=report.written, deferred=report.deferred, dropped=report.dropped)
+        # Writes cut short by playback or a window wait for the next quiet moment; writes the
+        # writer deferred (nothing written) wait for the next fetch or library read instead of
+        # being retried in a loop.
+        remaining = bool(store.pending_writes())
+        self._state = replace(self._state, writes_pending=remaining and (report.written > 0 or not may_write()))
 
 
 def _carried(job_built: Mapping[str, Entry], bodies: list[UploadBody], seq: int, settled: bool) -> dict[str, Carried]:
