@@ -440,6 +440,14 @@ def daily_full_due(last_full_at: float | None, now: float) -> bool:
     return last_full_at is None or now - last_full_at >= DAILY_FULL_SECONDS
 
 
+def queue_fallback(state: EngineState) -> EngineState:
+    """A queue fetch for every viewer with a committed full, whatever the last reply said: a
+    queue_pending lost with its reply would otherwise leave changes waiting until the next
+    one that happens to carry it."""
+    viewers = {v: replace(vs, queue_due=True) if vs.first_full_committed else vs for v, vs in state.viewers.items()}
+    return replace(state, viewers=viewers)
+
+
 ViewerMapping = tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]]
 
 

@@ -652,7 +652,7 @@ msgid "Library sync is off. Turn it on with Set up library sync."
 msgstr ""
 
 msgctxt "#30199"
-msgid "Stopped: the sync record is missing or out of date. Run Set up library sync again."
+msgid "Stopped: the sync record is missing or unreadable. Run Set up library sync again."
 msgstr ""
 
 msgctxt "#30200"
@@ -660,7 +660,7 @@ msgid "Stopped: CrossWatch refused this device's token. Pair again."
 msgstr ""
 
 msgctxt "#30201"
-msgid "Stopped: library sync is off in CrossWatch."
+msgid "Stopped: the paired CrossWatch has no library sync, or the paired address has the wrong path. Update CrossWatch or pair again, then restart Kodi."
 msgstr ""
 
 msgctxt "#30202"
@@ -668,7 +668,7 @@ msgid "Paused: library sync was turned off. Run Set up library sync to start aga
 msgstr ""
 
 msgctxt "#30203"
-msgid "Paused: this device's id changed, and CrossWatch still has the old one as the sync device. Run Set up library sync again."
+msgid "Paused: this device's id changed, and CrossWatch still has the old one as the sync device. Set the old id back, then run Set up library sync."
 msgstr ""
 
 msgctxt "#30204"
@@ -732,7 +732,7 @@ msgid "Couldn't read the playlists: {names}. Their viewers' items have no owner 
 msgstr ""
 
 msgctxt "#30219"
-msgid "{name} isn't known to CrossWatch. Check the name in its route whitelist."
+msgid "{name} has no sync user in CrossWatch. Check that viewer's library sync setup in CrossWatch."
 msgstr ""
 
 msgctxt "#30220"
@@ -748,7 +748,7 @@ msgid "CrossWatch was busy with {name}'s changes; they go up later."
 msgstr ""
 
 msgctxt "#30223"
-msgid "{name} was added after setup, so Kodi's history isn't sent for {name}."
+msgid "{name}'s first sync came more than a day after setup, so Kodi's history wasn't sent for {name}."
 msgstr ""
 
 msgctxt "#30224"
@@ -817,4 +817,8 @@ msgstr ""
 
 msgctxt "#30240"
 msgid "Whose rating was this?"
+msgstr ""
+
+msgctxt "#30241"
+msgid "Paused: another device syncs this library. Turn library sync off there, then run Set up library sync here."
 msgstr ""

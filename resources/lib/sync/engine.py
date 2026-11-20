@@ -39,8 +39,13 @@ from resources.lib.storage import PromptMemory, ViewerStore
 from resources.lib.sync import plan
 from resources.lib.sync.apply import apply_changes, settle_unsent
 from resources.lib.sync.client import SyncClient, SyncError
-from resources.lib.sync.clock import kodi_to_utc
-from resources.lib.sync.constants import RATING_SCAN_SECONDS, STATUS_FIGURES_SECONDS
+from resources.lib.sync.clock import kodi_to_utc, parse_utc
+from resources.lib.sync.constants import (
+    INBOX_MAX_AGE_SECONDS,
+    QUEUE_FALLBACK_SECONDS,
+    RATING_SCAN_SECONDS,
+    STATUS_FIGURES_SECONDS,
+)
 from resources.lib.sync.counts import count_owners, to_status, unowned_titles
 from resources.lib.sync.files import (
     Inbox,
@@ -204,6 +209,10 @@ class SyncEngine:
         self._turned_off = False
         self._show_ids_changed_at = 0.0
         self._last_status: StatusFile | None = None
+        # Why the started file says paused, for the status screen.
+        self._pause_cause = ""
+        self._last_full_asked: float | None = None
+        self._last_fallback_fetch = 0.0
         # Rating window writes, applied by the rating step before the next scan.
         self.rating_writes: list[tuple[str, int, int, tuple[str, ...]]] = []
         self.library: Library | None = None
@@ -263,6 +272,8 @@ class SyncEngine:
     def begin(self) -> None:
         """Start a session: open the record, and look at what a Kodi exit left behind (marks in
         the inbox, requests waiting)."""
+        # The session's own full and first fetch count as the day's and the interval's.
+        self._last_full_asked = self._last_fallback_fetch = self._clock()
         self._state = replace(
             plan.session_start(self._state, self._clock()),
             inbox_waiting=True,
@@ -293,6 +304,15 @@ class SyncEngine:
         ):
             self._rating_writes(self._store, self.library)
         now = self._clock()
+        if plan.active(self._state):
+            # A box left on for weeks still gets a full now and then, and a queue fetch even when
+            # no reply asked for one; next_action holds both while Kodi is busy.
+            if plan.daily_full_due(self._last_full_asked, now):
+                self._state = plan.request_full(self._state)
+                self._last_full_asked = now
+            if now - self._last_fallback_fetch >= QUEUE_FALLBACK_SECONDS:
+                self._state = plan.queue_fallback(self._state)
+                self._last_fallback_fetch = now
         due = self._last_rating_scan is None or now - self._last_rating_scan >= RATING_SCAN_SECONDS
         if due != self._state.rating_scan_due:
             self._state = replace(self._state, rating_scan_due=due)
@@ -517,10 +537,11 @@ class SyncEngine:
         self._turned_off = False
         if reason is not None and not started.paused:
             update_started(self._paths.started, started.start_id, paused=True, paused_reason=reason)
+            self._pause_cause = reason
             _log.info("sync.paused", reason=reason)
             state = replace(state, paused=True)
-        if device_id_changed(reply, device_id, started):
-            self.device_id_changed = True
+        # Each judged answer decides afresh, so the status clears once the old id is set back.
+        self.device_id_changed = device_id_changed(reply, device_id, started)
         return state
 
     def _apply_settings(self, settings: Settings) -> None:
@@ -531,6 +552,7 @@ class SyncEngine:
         # asks for nothing until Start runs again (sync/ping.py block_state), so nothing else
         # goes either.
         moved_id = started is not None and bool(started.bound_device) and started.bound_device != self._device_id()
+        self._pause_cause = started.paused_reason if started is not None and started.paused else ""
         state = replace(
             self._state,
             started=on_this,
@@ -657,6 +679,12 @@ class SyncEngine:
         if kind is None:
             _log.info("sync.drain.dropped", kind=record.kind, kodi_id=record.kodi_id, reason="kind")
             return "dropped"
+        made, now = parse_utc(record.at), parse_utc(self._utc_now())
+        if made is not None and now is not None and (now - made).total_seconds() > INBOX_MAX_AGE_SECONDS:
+            # Kodi's state may have moved on since; a month-old mark is no longer the person's
+            # latest word on the item.
+            _log.info("sync.drain.dropped", kind=record.kind, kodi_id=record.kodi_id, reason="too_old")
+            return "dropped"
         try:
             fresh = self._fresh_row(library, kind, record.kodi_id, record.file)
         except _Gone:
@@ -753,7 +781,14 @@ class SyncEngine:
             status = "stopped"
             reason = "record_missing" if state.record_missing else "unauthorized" if state.unauthorized else "no_sync"
         elif state.paused:
-            status, reason = "stopped", "device_id_changed" if self.device_id_changed else "paused"
+            # The status screen says why: each cause has its own way out.
+            if self.device_id_changed:
+                reason = "device_id_changed"
+            elif self._pause_cause == "not_sync_device":
+                reason = "not_sync_device"
+            else:
+                reason = "paused"
+            status = "stopped"
         elif state.reply is not None and state.reply.reason:
             status, reason = "waiting", state.reply.reason
         elif not plan.active(state) or plan.waiting_on(state) is not None:

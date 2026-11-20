@@ -12,7 +12,12 @@ from resources.lib.playlist_index import PlaylistIndex
 from resources.lib.prompt import key_for_show
 from resources.lib.storage import JsonViewerStore, PromptMemory
 from resources.lib.sync import items, plan
-from resources.lib.sync.constants import BACKOFF_SECONDS, STATUS_FIGURES_SECONDS
+from resources.lib.sync.constants import (
+    BACKOFF_SECONDS,
+    DAILY_FULL_SECONDS,
+    QUEUE_FALLBACK_SECONDS,
+    STATUS_FIGURES_SECONDS,
+)
 from resources.lib.sync.engine import IDLE_SECONDS, SyncEngine, SyncPaths
 from resources.lib.sync.files import (
     Inbox,
@@ -508,6 +513,16 @@ def test_status_for_a_paused_device_and_only_when_changed(tmp_path, monkeypatch)
     assert writes == []
 
 
+def test_a_device_paused_for_another_sync_device_says_so(tmp_path):
+    rig = Rig(tmp_path)
+    write_started(rig.paths.started, StartedFile(connection=connection_id(URL), start_id="s", paused=True,
+                                                 paused_reason="not_sync_device"))  # fmt: skip
+    rig.ready()
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and (status.state, status.reason) == ("stopped", "not_sync_device")
+
+
 def test_window_and_requests_inputs(tmp_path):
     rig = Rig(tmp_path)
     rig.ready()
@@ -579,6 +594,12 @@ def test_changed_device_id_shows_in_the_status(tmp_path):
     rig.engine.step()
     status = read_status(rig.paths.status)
     assert status is not None and status.reason == "device_id_changed"
+    # The old id set back: the next answer clears it.
+    rig.engine._device_id = lambda: "old-id"
+    rig.clock.now += 1
+    rig.engine.on_ping_reply(_reply(True), PingTicket(sent_at=rig.clock.now, enabled=True))
+    rig.engine.step()
+    assert not rig.engine.device_id_changed
 
 
 def test_status_carries_the_figures_for_the_status_screen(tmp_path):
@@ -692,3 +713,52 @@ def test_upload_figures_recounted_at_most_every_so_often(tmp_path):
     rig.engine.step()
     status = read_status(rig.paths.status)
     assert status is not None and status.waiting_changes == 1
+
+
+def _mapped(rig: "Rig", **viewer: object) -> None:
+    reply = SyncReply(enabled=True, reason=None, viewers={"kv-a": ReplyViewer("default", 0)}, queue_pending=0)
+    vs = replace(plan.ViewerState(), first_full_committed=True, **viewer)  # type: ignore[arg-type]
+    rig.engine._state = replace(rig.engine.state, reply=reply, viewers={"kv-a": vs}, start_full_pending=False)
+
+
+def test_a_full_once_a_day_while_kodi_keeps_running(tmp_path, monkeypatch):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine._take_inputs()
+    _mapped(rig)
+    monkeypatch.setattr(rig.engine, "_act", lambda action: None)
+    rig.clock.now += DAILY_FULL_SECONDS - 1
+    rig.engine.step()
+    assert not rig.engine.state.viewers["kv-a"].full_due
+    rig.clock.now += 1
+    rig.engine.step()
+    assert rig.engine.state.viewers["kv-a"].full_due
+
+
+def test_the_queue_is_fetched_now_and_then_without_being_asked(tmp_path, monkeypatch):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine._take_inputs()
+    _mapped(rig)
+    monkeypatch.setattr(rig.engine, "_act", lambda action: None)
+    rig.clock.now += QUEUE_FALLBACK_SECONDS - 1
+    rig.engine.step()
+    assert not rig.engine.state.viewers["kv-a"].queue_due
+    rig.clock.now += 1
+    rig.engine.step()
+    assert rig.engine.state.viewers["kv-a"].queue_due
+
+
+def test_a_mark_older_than_the_limit_is_dropped_and_counted(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.lib.row("movies", 3)["playcount"] = 1
+    old = "2026-10-01T10:00:00Z"
+    assert rig.inbox.add_many([InboxRecord(at=old, kind="movie", kodi_id=3, file="/m/3.mkv", playcount=1)])
+    rig.engine.on_inbox()
+    rig.engine.step()
+    store = RecordStore(rig.paths.db)
+    store.open()
+    assert store.entries("kv-a") == []
+    store.close()
+    assert rig.engine.dropped_marks == 1 and rig.inbox.pending() == []

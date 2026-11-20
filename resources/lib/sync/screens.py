@@ -15,7 +15,9 @@ leaves a started file without a record or seed list behind it:
 4. the started file, for the current pairing, with a new start_id, not paused, and the
    existing-ratings choice;
 5. sync_request bumped.
-Start never changes a viewer's sync id and sends nothing to CrossWatch itself.
+A sync.db that can't be opened (damaged, or another add-on version's) is set aside as
+sync.db.bad before step 1. Start never changes a viewer's sync id and sends nothing to
+CrossWatch itself.
 
 When a playlist can't be read there is no Start: ownership decided without it would be wrong.
 
@@ -25,7 +27,7 @@ rating change) go to the engine as requests in sync_requests.json; it reopens af
 showing the engine's state as of then.
 
 Log events: sync.setup.started, sync.setup.unreadable (info); sync.setup.library_unreadable,
-sync.setup.not_saved (warning).
+sync.setup.not_saved, sync.setup.record_set_aside (warning).
 """
 
 import os
@@ -61,7 +63,7 @@ from resources.lib.sync.ids import ensure_sync_ids
 from resources.lib.sync.items import Library, read_library
 from resources.lib.sync.library_id import library_id, profile_has_own_database
 from resources.lib.sync.ownership import IndexSnapshot, owners_of
-from resources.lib.sync.record import RecordStore
+from resources.lib.sync.record import RecordMissing, RecordStore
 from resources.lib.sync.reply import connection_id
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
 from resources.lib.ui.sync_setup import SetupRequest
@@ -156,7 +158,13 @@ def start(
     """Start, in the order the module docstring gives. False when the record or the started
     file couldn't be written: then sync_request is not bumped, so the service starts nothing."""
     store = RecordStore(db_path, busy_timeout=10.0)
-    store.open(create=True)
+    try:
+        store.open(create=True)
+    except RecordMissing:
+        # Damaged, or written by another version of the add-on: kept as sync.db.bad, never
+        # deleted, and replaced by a new record. Each viewer then starts over at CrossWatch.
+        _set_aside(db_path)
+        store.open(create=True)
     try:
         # Kept by the record once set, so only the first Start ever writes it.
         store.set_seed_viewers([v.sync_id for v in viewers if v.sync_id], now_utc)
@@ -176,6 +184,13 @@ def start(
     kodi.set_setting(KEY_SYNC_REQUEST, str(settings.sync_request + 1))
     _log.info("sync.setup.started", viewers=len(viewers), existing_ratings=existing_ratings)
     return True
+
+
+def _set_aside(db_path: str) -> None:
+    for suffix in ("", "-wal", "-shm"):
+        if os.path.exists(db_path + suffix):
+            os.replace(db_path + suffix, f"{db_path}.bad{suffix}")
+    _log.warning("sync.setup.record_set_aside")
 
 
 def started_before(db_path: str, started_path: str, settings: Settings) -> bool:
@@ -329,6 +344,7 @@ REMOVED_VIEWER = 30235
 MASS_ROW_ASK = 30236
 VIEWER_PROBLEM = 30237
 ASSIGN_WATCHED_HERE, ASSIGN_RATED_HERE, ASSIGN_RATING_QUESTION = 30238, 30239, 30240
+STOP_OTHER_DEVICE = 30241
 
 _STOPPED = {
     "record_missing": STOP_RECORD,
@@ -336,6 +352,7 @@ _STOPPED = {
     "no_sync": STOP_NO_SYNC,
     "paused": STOP_PAUSED,
     "device_id_changed": STOP_DEVICE_ID,
+    "not_sync_device": STOP_OTHER_DEVICE,
 }
 _WAITING = {"playback": WAIT_PLAYBACK, "scan": WAIT_SCAN, "index": WAIT_INDEX, "crosswatch": WAIT_CROSSWATCH}
 _VIEWER_PROBLEMS = {

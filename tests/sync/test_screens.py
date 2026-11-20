@@ -261,6 +261,7 @@ def test_status_lines_per_state():
         ("stopped", "no_sync"): (f"#{screens.STOP_NO_SYNC}", "stopped"),
         ("stopped", "paused"): (f"#{screens.STOP_PAUSED}", "stopped"),
         ("stopped", "device_id_changed"): (f"#{screens.STOP_DEVICE_ID}", "stopped"),
+        ("stopped", "not_sync_device"): (f"#{screens.STOP_OTHER_DEVICE}", "stopped"),
         ("off", ""): (f"#{screens.STATE_OFF}", "busy"),
     }
     for (state, reason), expected in cases.items():
@@ -402,3 +403,16 @@ def test_assign_names_the_item_and_asks_whose_rating(tmp_path):
 def test_status_when_off_shows_only_the_state():
     request = _request(StatusFile(state="off"))
     assert (request.needs_you, request.empty, request.note, request.send_ratings) == ("", "", "", "")
+
+
+def test_start_sets_a_damaged_record_aside_and_makes_a_new_one(tmp_path):
+    kodi = _kodi(tmp_path)
+    db, started = tmp_path / "sync.db", str(tmp_path / "started.json")
+    db.write_bytes(b"not a database at all, not even close" * 100)
+    assert screens.start(kodi, read_settings(kodi), [Viewer(name="Anna", sync_id="kv-a")], db_path=str(db),
+                         started_path=started, existing_ratings=False, now_utc=NOW)  # fmt: skip
+    assert (tmp_path / "sync.db.bad").read_bytes().startswith(b"not a database")
+    store = RecordStore(str(db))
+    store.open()
+    assert store.seed_viewers() == frozenset({"kv-a"})
+    store.close()
