@@ -238,6 +238,11 @@ class Batch:
     unsent_cleared: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     full_library_id: dict[str, str] = field(default_factory=dict)
     first_full_done: set[str] = field(default_factory=set)
+    # Viewers whose fresh full was accepted.
+    fresh_done: set[str] = field(default_factory=set)
+    # The highest inbox record id this batch applied: the inbox file is another database,
+    # so a crash between this commit and the inbox's removal must not apply a mark twice.
+    inbox_applied: int = 0
 
 
 # -- store --------------------------------------------------------------------------------
@@ -275,6 +280,8 @@ class _ViewerRow:
     full_library_id: str = ""
     first_mapped_at: str = ""
     last_delta: list[list[Any]] = field(default_factory=list)
+    # The record was older than CrossWatch: the next full goes "fresh" until one is accepted.
+    fresh_pending: bool = False
 
 
 def _dump(value: Any) -> str:
@@ -589,9 +596,11 @@ class RecordStore:
     def upload_ended(self, viewer: str) -> None:
         self._change_viewer(viewer, lambda v: replace(v, epoch=v.epoch + 1))
 
-    def reset_for_cw(self, viewer: str, cw_seq: int) -> None:
-        """CrossWatch lost state: start this viewer over with it, keeping what the household
-        did. The acked changes stay: a change id identifies a change even after a restore."""
+    def reset_for_cw(self, viewer: str, cw_seq: int, fresh: bool = False) -> None:
+        """CrossWatch lost state, or the record is older than CrossWatch (fresh): start this
+        viewer over with it, keeping what the household did. The acked changes stay: a change
+        id identifies a change even after a restore. fresh is stored in the same transaction,
+        because the reset erases the evidence it came from."""
         db = self._db
         db.execute("BEGIN IMMEDIATE")
         try:
@@ -606,6 +615,7 @@ class RecordStore:
                     full_library_id="",
                     last_delta=[],
                     epoch=v.epoch + 1,
+                    fresh_pending=v.fresh_pending or fresh,
                 ),
             )
             db.execute("DELETE FROM acks_pending WHERE viewer = ?", (viewer,))
@@ -617,6 +627,12 @@ class RecordStore:
         except BaseException:
             self._rollback()
             raise
+
+    def fresh_pending(self, viewer: str) -> bool:
+        return self._viewer(viewer).fresh_pending
+
+    def inbox_applied(self) -> int:
+        return int(self._meta("inbox_applied") or 0)
 
     def set_settled(self, viewer: str) -> None:
         self._change_viewer(viewer, lambda v: replace(v, settled=True))
@@ -786,7 +802,7 @@ class RecordStore:
                 "DELETE FROM acks_pending WHERE viewer = ? AND seq = ? AND change_id = ?",
                 [(viewer, seq, change_id) for seq, change_id in done],
             )
-        viewers = {*batch.applied_seq, *batch.full_library_id, *batch.first_full_done}
+        viewers = {*batch.applied_seq, *batch.full_library_id, *batch.first_full_done, *batch.fresh_done}
         for viewer in viewers:
             v = self._viewer(viewer)
             self._put_viewer(
@@ -796,8 +812,11 @@ class RecordStore:
                     applied_seq=max(v.applied_seq, batch.applied_seq.get(viewer, 0)),
                     full_library_id=batch.full_library_id.get(viewer, v.full_library_id),
                     first_full=v.first_full or viewer in batch.first_full_done,
+                    fresh_pending=v.fresh_pending and viewer not in batch.fresh_done,
                 ),
             )
+        if batch.inbox_applied > self.inbox_applied():
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('inbox_applied', ?)", (str(batch.inbox_applied),))
 
     def _apply_pending(self, batch: Batch) -> None:
         db = self._db
