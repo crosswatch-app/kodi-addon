@@ -54,6 +54,9 @@ class FakeKodi:
         self.confirm_answer = confirm_answer
         self.dialog_id = dialog_id
         self.playing = playing
+        self.sync_setup_requests: list[Any] = []
+        self.sync_setup_answer: Any = None
+        self.busy_calls: list[bool] = []
         # None: a video whenever something plays.
         self.playing_video = playing_video
         self.position_ms = position_ms
@@ -104,6 +107,13 @@ class FakeKodi:
 
     def is_playing(self) -> bool:
         return self.playing
+
+    def sync_setup_window(self, request: Any) -> Any:
+        self.sync_setup_requests.append(request)
+        return self.sync_setup_answer
+
+    def busy(self, on: bool) -> None:
+        self.busy_calls.append(on)
 
     def is_playing_video(self) -> bool:
         return self.playing if self.playing_video is None else self.playing_video

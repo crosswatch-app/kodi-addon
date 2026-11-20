@@ -84,6 +84,7 @@ def install_kodi_stubs() -> None:
 
     xbmcgui.ListItem = _ListItem
     xbmcgui.WindowXMLDialog = _WindowXMLDialog
+    xbmcgui.ControlRadioButton = type("ControlRadioButton", (), {})
 
     xbmcvfs: Any = types.ModuleType("xbmcvfs")
     xbmcvfs.translatePath = lambda path: path

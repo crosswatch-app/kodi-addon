@@ -7,11 +7,9 @@ logged with its reason, so a question that closed itself can be told apart from 
 household skipped.
 """
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import xbmcgui
 
@@ -27,6 +25,7 @@ from resources.lib.constants import (
 from resources.lib.log import get_logger
 from resources.lib.ui import list_window as lw
 from resources.lib.ui import rating as rt
+from resources.lib.ui import sync_setup as ss
 from resources.lib.ui import viewers_window as vw
 from resources.lib.ui import who_watched as ww
 
@@ -74,6 +73,10 @@ class CrossWatchDialog(xbmcgui.WindowXMLDialog):
         self._finished = threading.Event()
         self._filled = False
         self._thread: threading.Thread | None = None
+        # Set now as well as in onInit: Kodi works out which controls are visible, and so
+        # which one can take the first focus, before onInit runs.
+        for key, value in properties.items():
+            self.setProperty(key, value)
 
     def fill(self) -> None:
         """Populate the window's controls. Called once, from the first onInit."""
@@ -282,6 +285,48 @@ class ConfirmDialog(CrossWatchDialog):
             self.finish("yes", True)
         elif controlId == BUTTON_NO:
             self.finish("no", False)
+
+
+SYNC_SETUP_XML = "crosswatch-sync-setup.xml"
+BUTTON_START = 10
+BUTTON_SETUP_CANCEL = 11
+TOGGLE_RATINGS = 12
+BUTTON_SETUP_CLOSE = 13
+
+
+class SyncSetupDialog(CrossWatchDialog):
+    name = "sync_setup"
+
+    def prepare(self, request: ss.SetupRequest, localised: Localised) -> None:
+        self.configure(
+            localised,
+            {
+                "CW.Heading": request.heading,
+                "CW.Intro": request.intro,
+                "CW.Counts": "[CR]".join(request.counts),
+                "CW.Note": request.note,
+                "CW.Warnings": "[CR]".join(request.warnings),
+                "CW.RatingsLabel": request.ratings_label,
+                "CW.CanStart": "1" if request.can_start else "",
+                "CW.CancelLabel": localised(WINDOW_CANCEL if request.can_start else WINDOW_CLOSE),
+            },
+            autoclose_seconds=0,
+            close_on_playback=False,
+            is_playing=lambda: False,
+            wait_for_abort=lambda _: False,
+        )
+        self.result = ss.SetupResult(start=False)
+
+    def fill(self) -> None:
+        # Cancel first: Start writes the record and starts syncing.
+        self.setFocusId(BUTTON_SETUP_CANCEL if self._window_properties.get("CW.CanStart") else BUTTON_SETUP_CLOSE)
+
+    def onClick(self, controlId: int) -> None:
+        if controlId == BUTTON_START and self._window_properties.get("CW.CanStart"):
+            ratings = cast(xbmcgui.ControlRadioButton, self.getControl(TOGGLE_RATINGS)).isSelected()
+            self.finish("start", ss.SetupResult(start=True, existing_ratings=bool(ratings)))
+        elif controlId in (BUTTON_SETUP_CANCEL, BUTTON_SETUP_CLOSE):
+            self.finish("cancel", ss.SetupResult(start=False))
 
 
 VIEWERS_XML = "crosswatch-viewers.xml"

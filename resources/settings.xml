@@ -130,6 +130,13 @@
         </category>
         <category id="sync" label="30161">
             <group id="1">
+                <setting id="sync_setup" type="action" label="30168">
+                    <level>0</level>
+                    <data>RunScript(service.crosswatch,sync_setup)</data>
+                    <control type="button" format="action">
+                        <close>true</close>
+                    </control>
+                </setting>
                 <setting id="sync_enabled" type="boolean" label="30162">
                     <level>0</level>
                     <default>false</default>

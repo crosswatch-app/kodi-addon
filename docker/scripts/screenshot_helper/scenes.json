@@ -334,5 +334,20 @@
       2,
       3
     ]
+  },
+  "sync-setup": {
+    "window": "crosswatch-sync-setup.xml",
+    "trakt": true,
+    "insecure": true,
+    "keys": [],
+    "group": "sync"
+  },
+  "sync-setup-unreadable": {
+    "window": "crosswatch-sync-setup.xml",
+    "unreadable": [
+      "Anna's shows"
+    ],
+    "keys": [],
+    "group": "sync"
   }
 }

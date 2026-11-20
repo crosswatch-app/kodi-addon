@@ -25,7 +25,7 @@ def test_every_scene_names_a_shipped_window():
 
 
 # One folder per screen, so the images of a window sit together.
-GROUPS = {"who-watched", "remembered", "playlists", "viewers", "rating"}
+GROUPS = {"who-watched", "remembered", "playlists", "viewers", "rating", "sync"}
 
 
 def test_every_scene_belongs_to_a_screen_folder():

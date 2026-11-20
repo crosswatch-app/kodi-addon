@@ -526,3 +526,95 @@ msgstr ""
 msgctxt "#30167"
 msgid "Library sync request"
 msgstr ""
+
+msgctxt "#30168"
+msgid "Set up library sync"
+msgstr ""
+
+msgctxt "#30169"
+msgid "Start library sync"
+msgstr ""
+
+msgctxt "#30170"
+msgid "Start library sync again"
+msgstr ""
+
+msgctxt "#30171"
+msgid "This device will sync this library with CrossWatch. Other devices keep reporting playback."
+msgstr ""
+
+msgctxt "#30172"
+msgid "This device will sync this library again. Nothing is sent from Kodi's history this time: each viewer's record carries on."
+msgstr ""
+
+msgctxt "#30173"
+msgid "What Kodi shows as watched goes up as its owner's history. Shared items start empty; your services fill them in."
+msgstr ""
+
+msgctxt "#30174"
+msgid "Shared"
+msgstr ""
+
+msgctxt "#30175"
+msgid "No owner"
+msgstr ""
+
+msgctxt "#30176"
+msgid "(left alone)"
+msgstr ""
+
+msgctxt "#30177"
+msgid "{count} shows"
+msgstr ""
+
+msgctxt "#30178"
+msgid "{count} films"
+msgstr ""
+
+msgctxt "#30179"
+msgid "Also send Kodi's existing ratings where CrossWatch has none"
+msgstr ""
+
+msgctxt "#30180"
+msgid "Don't copy this device's id to another device."
+msgstr ""
+
+msgctxt "#30181"
+msgid "Trakt for Kodi is installed: play counts it writes into Kodi are sent as this household's own marks."
+msgstr ""
+
+msgctxt "#30182"
+msgid "The paired address is http: history and the token travel unencrypted."
+msgstr ""
+
+msgctxt "#30183"
+msgid "Couldn't read the playlists: {names}"
+msgstr ""
+
+msgctxt "#30184"
+msgid "Library sync needs every playlist to decide who owns what. Fix the playlist, then open this again."
+msgstr ""
+
+msgctxt "#30185"
+msgid "Start"
+msgstr ""
+
+msgctxt "#30186"
+msgid "Pair with CrossWatch first, then set up library sync."
+msgstr ""
+
+msgctxt "#30187"
+msgid "Couldn't read the video library. Try again when Kodi isn't scanning."
+msgstr ""
+
+msgctxt "#30188"
+msgid "Library sync started."
+msgstr ""
+
+msgctxt "#30189"
+msgid "Add the household's viewers first, then set up library sync."
+msgstr ""
+
+msgctxt "#30190"
+msgid "Couldn't start library sync: the add-on's data couldn't be saved. Try again; if it keeps failing, check the free space on this device."
+msgstr ""

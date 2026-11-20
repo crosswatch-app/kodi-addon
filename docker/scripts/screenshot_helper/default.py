@@ -273,7 +273,38 @@ def _remembered(scene: dict, path: str) -> None:
         dialog.stop()
 
 
+def _sync_setup(scene: dict, path: str) -> None:
+    from resources.lib.models import Viewer
+    from resources.lib.sync import screens
+
+    text = TARGET.getLocalizedString
+    viewers = [Viewer(name="Anna", sync_id="kv-a"), Viewer(name="Tom", sync_id="kv-t")]
+    counts = screens.Counts(
+        shows={"kv-a": set(range(48)), "kv-t": set(range(31))},
+        films={"kv-a": 12},
+        shared_shows=set(range(22)),
+        shared_films=340,
+        unowned_shows=set(range(9)),
+    )
+    request = screens.setup_request(
+        text,
+        viewers,
+        counts,
+        again=scene.get("again", False),
+        trakt=scene.get("trakt", False),
+        insecure=scene.get("insecure", False),
+        unreadable=tuple(scene.get("unreadable", ())),
+    )
+    dialog = window.SyncSetupDialog(window.SYNC_SETUP_XML, path, "Default", "1080i")
+    dialog.prepare(request, text)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
 WINDOWS = {
+    window.SYNC_SETUP_XML: _sync_setup,
     window.WHO_WATCHED_XML: _who_watched,
     window.LIST_XML: _list,
     window.CONFIRM_XML: _confirm,

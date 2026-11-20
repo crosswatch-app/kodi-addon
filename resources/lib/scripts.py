@@ -12,6 +12,7 @@ the viewer dialog should not pay for the pairing code's imports.
 REMEMBERED = "remembered"
 PAIR = "pair"
 UNPAIR = "unpair"
+SYNC_SETUP = "sync_setup"
 
 
 def dispatch(argv: list[str]) -> None:
@@ -34,6 +35,11 @@ def dispatch(argv: list[str]) -> None:
         from resources.lib.connect import unpair_main
 
         unpair_main()
+        return
+    if SYNC_SETUP in arguments:
+        from resources.lib.sync.screens import main as sync_setup_main
+
+        sync_setup_main()
         return
     if REMEMBERED in arguments:
         from resources.lib.remembered import main as remembered_main
