@@ -37,6 +37,8 @@ from resources.lib.log import get_logger
 from resources.lib.media import strip_credentials
 from resources.lib.storage import PromptMemory, ViewerStore
 from resources.lib.sync import plan
+from resources.lib.sync.client import SyncClient, SyncError
+from resources.lib.sync.clock import kodi_to_utc
 from resources.lib.sync.files import (
     Inbox,
     InboxRecord,
@@ -46,14 +48,16 @@ from resources.lib.sync.files import (
     read_started,
     write_status,
 )
-from resources.lib.sync.items import ItemKind, Library, LibraryRow, RowKey
+from resources.lib.sync.items import ItemKind, Library, LibraryRow, RowKey, read_library
 from resources.lib.sync.library_id import library_id, profile_has_own_database
 from resources.lib.sync.local import FileIndex
 from resources.lib.sync.manual import Recorded, ToAssign, watched_change
 from resources.lib.sync.ownership import IndexSnapshot, owners_of
-from resources.lib.sync.record import Batch, Entry, RecordMissing, RecordStore, merge
+from resources.lib.sync.record import Batch, Carried, Entry, RecordMissing, RecordStore, merge
 from resources.lib.sync.reply import PingTicket, SyncReply, connection_id
+from resources.lib.sync.rows import ViewerRows, viewer_rows
 from resources.lib.sync.settings import SyncSettings
+from resources.lib.sync.upload import UploadBody, UploadTooLarge, deltas, full_parts
 from resources.lib.sync.writer import read_row, seen_of
 
 _log = get_logger("sync")
@@ -71,6 +75,31 @@ _DETAILS: dict[ItemKind, tuple[str, str, str]] = {
 }
 
 Drained = Literal["applied", "dropped", "wait", "retry"]
+
+ClientFactory = Callable[[str, str, str, threading.Event], SyncClient]
+
+
+def _client(base_url: str, token: str, device_id: str, abort: threading.Event) -> SyncClient:
+    return SyncClient(base_url, token=token, device_id=device_id, abort=abort)
+
+
+@dataclass
+class _Full:
+    """A full upload going up, one part per step, so inputs are taken between parts."""
+
+    seq: int
+    parts: list[UploadBody]
+    rows: ViewerRows
+    # Each of the viewer's entries as the record held it when the upload was built; the
+    # commit stores the build's changes to one only while the record still holds that.
+    stored: dict[str, Entry]
+    # The rows this viewer owns in that read.
+    owned: frozenset[RowKey]
+    library: Library
+    queue_settled: bool
+    fresh: bool
+    first: bool
+    next: int = 0
 
 
 @dataclass(frozen=True)
@@ -109,8 +138,10 @@ class SyncEngine:
         rebuild_requested: threading.Event,
         sync_paths: SyncPaths,
         utc_now: Callable[[], str],
+        device_id: Callable[[], str] = lambda: "",
         clock: Callable[[], float] = time.monotonic,
         store_factory: Callable[[str], RecordStore] = RecordStore,
+        client_factory: ClientFactory = _client,
     ) -> None:
         self._kodi = kodi
         self._viewers = viewer_store
@@ -123,6 +154,10 @@ class SyncEngine:
         self._clock = clock
         self._utc_now = utc_now
         self._store_factory = store_factory
+        self._device_id = device_id
+        self._client_factory = client_factory
+        self._client_cache: tuple[tuple[str, str, str], SyncClient] | None = None
+        self._fulls: dict[str, _Full] = {}
 
         self._lock = threading.Lock()
         self._wake = threading.Event()
@@ -142,6 +177,8 @@ class SyncEngine:
         self.rating_writes: list[tuple[str, int, int, tuple[str, ...]]] = []
         self.library: Library | None = None
         self.dropped_marks = 0
+        # Seed viewers whose first full started after their window: the status names them.
+        self.late_seeds: set[str] = set()
 
         # Published for the service thread; replaced whole.
         self.server_backed_rows: frozenset[tuple[str, int]] = frozenset()
@@ -161,6 +198,10 @@ class SyncEngine:
         worker stops at its next step or drained mark, never in the middle of a commit."""
         self._stopping.set()
         self._wake.set()
+        client = self._client_cache
+        if client is not None:
+            # A request in flight is closed, so a 10 s timeout never outlasts Kodi's 5 s window.
+            client[1].cancel()
         thread = self._thread
         if thread is None:
             return True
@@ -243,6 +284,7 @@ class SyncEngine:
                 full_due=vs.full_due or fresh,
                 first_full_committed=store.first_full_committed(viewer),
                 settled=store.settled(viewer),
+                unsent=any(e.touched for e in store.entries(viewer)),
             )
         self._state = replace(self._state, viewers=viewers)
         generation = self._files.generation()
@@ -355,6 +397,11 @@ class SyncEngine:
         if store is not None:
             for reset in resets:
                 store.reset_for_cw(reset.viewer, reset.cw_seq, fresh=reset.fresh)
+                self._fulls.pop(reset.viewer, None)
+            for viewer in reply.viewers if reply is not None else ():
+                # The seed window runs from the first reply that mapped the viewer.
+                if not store.first_mapped_at(viewer):
+                    store.set_first_mapped_at(viewer, self._utc_now())
         self._state = state
         self._publish_epochs()
 
@@ -393,6 +440,10 @@ class SyncEngine:
                 self._state = plan.on_rebuild_asked(self._state)
             elif isinstance(action, plan.DrainInbox):
                 self._drain_inbox()
+            elif isinstance(action, plan.FullUpload):
+                self._full_upload(action)
+            elif isinstance(action, plan.Delta):
+                self._delta(action.viewer)
             else:
                 return self._waiting_on_action(action)
         except Exception as exc:
@@ -452,6 +503,10 @@ class SyncEngine:
             batch.inbox_applied = last
             store.commit(batch)
             self.dropped_marks += dropped
+            for viewer, changed in batch.entries.items():
+                if any(e.touched for e in changed):
+                    # A person change waits: the queue is fetched before it goes up.
+                    self._set_viewer(viewer, unsent=True, queue_settled=False)
             if waiting:
                 # Back of the queue, so the marks behind them aren't held up.
                 self._inbox.add_many([replace(r, id=0) for r in waiting])
@@ -593,6 +648,8 @@ class SyncEngine:
         per_viewer = {
             v: vs.uploads_stopped or vs.error for v, vs in state.viewers.items() if vs.uploads_stopped or vs.error
         }
+        for viewer in self.late_seeds:
+            per_viewer.setdefault(viewer, "late_seed")
         try:
             dropped = self._inbox.dropped() + self.dropped_marks
         except Exception:
@@ -602,6 +659,323 @@ class SyncEngine:
             return
         if write_status(self._paths.status, replace(current, updated=self._utc_now())):
             self._last_status = current
+
+    # -- the library and uploads ----------------------------------------------------------
+
+    def _interrupted(self) -> bool:
+        """Stop reading the library when the worker stops or Kodi starts playing: an input
+        saying not quiet is waiting."""
+        if self._stopping.is_set():
+            return True
+        with self._lock:
+            return any(name == "quiet" and not value for name, value in self._inputs)
+
+    def _read_library(self) -> Library | None:
+        """A full read of the library; publishes what the service thread needs from it, drops the
+        Seen of rows gone from a complete read, and asks for a new index when the shows changed."""
+        store = self._store
+        assert store is not None
+        previous = self.library
+        generation = self._files.generation()
+        library = read_library(
+            self._kodi,
+            library_id(self._kodi),
+            may_continue=lambda: not self._interrupted(),
+            previous_shows=previous.tvshows if previous is not None else {},
+            to_utc=kodi_to_utc,
+        )
+        if library is None:
+            return None
+        self.library = library
+        rows = [*library.movies, *library.episodes]
+        self._files.replace({(_KODI_TYPES[r.key.kind], r.key.kodi_id): r.key.file for r in rows}, generation)
+        self.server_backed_rows = frozenset((_KODI_TYPES[kind], kodi_id) for kind, kodi_id in library.server_backed)
+        if library.complete:
+            live = {r.key for r in rows}
+            gone = {key: None for key in store.seen_for_library(library.library_id) if key not in live}
+            if gone:
+                store.commit(Batch(seen=dict(gone)))
+        shows = frozenset(library.tvshows)
+        before = frozenset(previous.tvshows) if previous is not None else None
+        state = plan.on_library_read(self._state, shows, before)
+        if state.rebuild_wanted:
+            self._show_ids_changed_at = self._clock()
+        # Marks waiting for a show this read may have.
+        self._state = replace(state, library_complete=library.complete, inbox_waiting=True)
+        return library
+
+    def _sync_client(self) -> SyncClient | None:
+        settings = self._settings
+        if settings is None or not settings.webhook_base_url:
+            return None
+        key = (settings.webhook_base_url, settings.webhook_token, self._device_id())
+        cached = self._client_cache
+        if cached is None or cached[0] != key:
+            self._client_cache = (key, self._client_factory(*key, self._stopping))
+        assert self._client_cache is not None
+        return self._client_cache[1]
+
+    def _cw_seq(self, viewer: str) -> int:
+        reply = self._state.reply
+        seen = reply.viewers.get(viewer) if reply is not None else None
+        return seen.upload_seq if seen is not None else 0
+
+    def _set_viewer(self, viewer: str, **fields: Any) -> None:
+        vs = self._state.viewers.get(viewer, plan.ViewerState())
+        self._state = replace(self._state, viewers={**self._state.viewers, viewer: replace(vs, **fields)})
+
+    def _build_full(self, action: plan.FullUpload) -> _Full | None:
+        store = self._store
+        assert store is not None
+        viewer = action.viewer
+        library = self._read_library()
+        if library is None or self._state.rebuild_wanted:
+            return None
+        vs = self._state.viewers.get(viewer, plan.ViewerState())
+        now_utc = self._utc_now()
+        first = not store.first_full_committed(viewer)
+        seed_args = {
+            "first_full_committed": not first,
+            "seed_viewers": store.seed_viewers(),
+            "seed_started_at": store.seed_started_at(),
+            "first_mapped_at": store.first_mapped_at(viewer),
+            "now_utc": now_utc,
+        }
+        if plan.late_seed(viewer, **seed_args):
+            self.late_seeds.add(viewer)
+        entries = store.entries(viewer)
+        owners = self._owners(library)
+        owned = frozenset(r.key for r in [*library.movies, *library.episodes] if viewer in owners(r))
+        rows = viewer_rows(
+            library,
+            viewer=viewer,
+            owners=owners,
+            match=lambda tokens: store.match(viewer, tokens),
+            seen_for=lambda tokens, file: store.seen_for_tokens(tokens, file),
+            new_id=_new_id,
+            seed=plan.seeded(viewer, **seed_args),
+            entries=entries,
+            seen=store.seen_for_library(library.library_id),
+            mode="full",
+            touched=set(),
+            now_utc=now_utc,
+        )
+        [seq] = store.reserve_upload_seqs(viewer, self._cw_seq(viewer), 1)
+        self._publish_epochs()
+        try:
+            parts = full_parts(
+                rows.rows,
+                rows.tvshows,
+                viewer_id=viewer,
+                upload_id=_new_id(),
+                upload_seq=seq,
+                applied_seq=store.applied_seq(viewer),
+                sources=library.sources,
+                max_rows=vs.part_rows,
+                fresh=vs.fresh,
+            )
+        except UploadTooLarge:
+            store.upload_ended(viewer)
+            self._publish_epochs()
+            self._state = plan.on_too_large(self._state, viewer)
+            return None
+        stored = {e.key: e for e in entries}
+        return _Full(seq, parts, rows, stored, owned, library, action.queue_settled, vs.fresh, first)
+
+    def _full_upload(self, action: plan.FullUpload) -> None:
+        store, client = self._store, self._sync_client()
+        assert store is not None
+        viewer = action.viewer
+        if client is None:
+            return
+        vs = self._state.viewers.get(viewer, plan.ViewerState())
+        job = self._fulls.get(viewer) if vs.full_in_progress else None
+        if job is None:
+            job = self._build_full(action)
+            if job is None:
+                return
+            self._fulls[viewer] = job
+            # Built and going up: a failure that doesn't drop it sends the same part again
+            # (contract, Errors: a 503 on a first or fresh full), a single part included.
+            self._set_viewer(viewer, full_in_progress=True)
+        part = job.parts[job.next]
+        try:
+            answer = client.upload(part.body)
+        except SyncError as err:
+            self._upload_failed(viewer, "full", err, [part])
+            return
+        self._state = plan.on_success(self._state, viewer)
+        if job.next + 1 < len(job.parts):
+            job.next += 1
+            self._state = plan.on_full_part(self._state, viewer, complete=False, fresh=job.fresh)
+            return
+        if answer.get("complete") is not True:
+            # Every part went and CrossWatch didn't commit it, so it dropped this full: a new
+            # one goes up with a higher seq, after a backoff, as for upload_stale.
+            self._upload_failed(viewer, "full", SyncError(409, "upload_stale", False, from_crosswatch=True), [part])
+            return
+        self._commit_full(viewer, job)
+
+    def _commit_full(self, viewer: str, job: _Full) -> None:
+        """CrossWatch committed the full: store the build's entries and merges where the
+        record still holds what they were built from (a mark drained between parts wins, and
+        its item goes up again with the next delta), the catch-up writes, a Seen for each of
+        the viewer's rows that has none yet (an existing Seen is the rating scan's and the
+        catch-up's baseline, whoever set it), what the upload carried, and the first full."""
+        store = self._store
+        assert store is not None
+        batch = Batch(
+            uploaded_at=self._utc_now(), first_full_done={viewer}, full_library_id={viewer: job.library.library_id}
+        )
+        current = {e.key: e for e in store.entries(viewer)}
+
+        def unchanged(key: str) -> bool:
+            before, now = job.stored.get(key), current.get(key)
+            return (before is None and now is None) or (
+                before is not None and now is not None and before.change_count == now.change_count
+            )
+
+        written = dict(current)
+        for entry in job.rows.entries:
+            keys = job.rows.merged.get(entry.key, [entry.key])
+            if all(unchanged(k) for k in keys):
+                batch.entries.setdefault(viewer, []).append(entry)
+                written[entry.key] = entry
+                if len(keys) > 1:
+                    batch.merged.setdefault(viewer, {})[entry.key] = list(keys)
+                    for k in keys:
+                        if k != entry.key:
+                            written.pop(k, None)
+        batch.pending_add.extend(job.rows.catch_up)
+        stored = store.seen_for_library(job.library.library_id)
+        for row in [*job.library.movies, *job.library.episodes]:
+            if row.key in job.owned and row.key not in stored:
+                batch.seen[row.key] = seen_of(row.raw)
+                batch.seen_tokens[row.key] = row.tokens
+        batch.unsent_carried[viewer] = _carried(written, job.parts, job.seq, job.queue_settled)
+        if job.fresh:
+            batch.fresh_done.add(viewer)
+        store.commit(batch)
+        store.confirm_upload_seq(viewer, job.seq)
+        store.upload_ended(viewer)
+        self._fulls.pop(viewer, None)
+        self._publish_epochs()
+        self._state = plan.on_full_part(self._state, viewer, complete=True, fresh=job.fresh)
+        self._set_viewer(viewer, unsent=any(e.touched for e in store.entries(viewer)))
+
+    def _delta(self, viewer: str) -> None:
+        """The entries changed since their last upload. A resend keeps its seqs only for the
+        identical bodies, and leaves out the ones CrossWatch already confirmed: it refuses
+        anything not newer except an exact retry of its last delta."""
+        store, client = self._store, self._sync_client()
+        assert store is not None
+        if client is None:
+            return
+        library = self.library or self._read_library()
+        if library is None or self._state.rebuild_wanted:
+            return
+        entries = store.entries(viewer)
+        touched = {e.key for e in entries if e.touched}
+        vs = self._state.viewers.get(viewer, plan.ViewerState())
+        rows = viewer_rows(
+            library,
+            viewer=viewer,
+            owners=self._owners(library),
+            match=lambda tokens: store.match(viewer, tokens),
+            seen_for=lambda tokens, file: store.seen_for_tokens(tokens, file),
+            new_id=_new_id,
+            seed=False,
+            entries=entries,
+            seen=store.seen_for_library(library.library_id),
+            mode="delta",
+            touched=touched,
+            now_utc=self._utc_now(),
+        )
+        applied = store.applied_seq(viewer)
+
+        def build(first_seq: int) -> list[UploadBody]:
+            return deltas(rows.rows, rows.tvshows, viewer_id=viewer, first_seq=first_seq, applied_seq=applied,
+                          max_rows=vs.part_rows)  # fmt: skip
+
+        if rows.entries or rows.merged:
+            # The build's tidy-ups (merges, new tokens and meta) are the record's own, made in
+            # this step with no input between: stored now, so what goes up is what's kept.
+            store.commit(Batch(entries={viewer: list(rows.entries)}, merged={viewer: dict(rows.merged)}))
+            entries = store.entries(viewer)
+        probe = build(1)
+        if not probe:
+            self._set_viewer(viewer, unsent=False)
+            return
+        last = store.last_delta(viewer)
+        bodies = build(last[0][0]) if last and len(last) == len(probe) else []
+        if not bodies or [b.body for b in bodies] != [body for _, body in last]:
+            seqs = store.reserve_upload_seqs(viewer, self._cw_seq(viewer), len(probe))
+            bodies = build(seqs[0])
+            store.set_last_delta(viewer, [(b.seq, b.body) for b in bodies])
+        self._publish_epochs()
+        built = {e.key: e for e in entries}
+        confirmed = store.seqs(viewer).confirmed
+        sent: list[UploadBody] = []
+        try:
+            for body in bodies:
+                if self._stopping.is_set():
+                    break
+                if body.seq > confirmed:
+                    client.upload(body.body)
+                # A body CrossWatch already confirmed (its answer came, the commit after it
+                # didn't) settles now, so its entries don't stay touched.
+                store.confirm_upload_seq(viewer, body.seq)
+                store.commit(
+                    Batch(uploaded_at=self._utc_now(), unsent_carried={viewer: _carried(built, [body], body.seq, True)})
+                )
+                sent.append(body)
+        except SyncError as err:
+            self._upload_failed(viewer, "delta", err, [b for b in bodies if b not in sent])
+            return
+        store.upload_ended(viewer)
+        self._publish_epochs()
+        self._state = plan.on_success(self._state, viewer)
+        self._set_viewer(viewer, unsent=any(e.touched for e in store.entries(viewer)))
+
+    def _upload_failed(self, viewer: str, kind: plan.Request, err: SyncError, bodies: list[UploadBody]) -> None:
+        store = self._store
+        assert store is not None
+        self._state, outcome = plan.on_error(self._state, viewer, kind, err, self._clock())
+        vs = self._state.viewers.get(viewer, plan.ViewerState())
+        if kind == "delta" or not vs.full_in_progress:
+            self._fulls.pop(viewer, None)
+            store.upload_ended(viewer)
+        if kind == "delta" and err.from_crosswatch and err.code == "upload_stale":
+            # CrossWatch has a newer upload than these bodies: they go again under new seqs.
+            store.set_last_delta(viewer, [])
+        if outcome.drop_unsent:
+            # CrossWatch refused the delta and would refuse it again: its person changes leave
+            # unsent, so they can't win over CrossWatch forever.
+            keys = {key for body in bodies for key in body.carried}
+            dropped = [
+                replace(e, unsent={}, unsent_upload={}, touched=False) for e in store.entries(viewer) if e.key in keys
+            ]
+            if dropped:
+                store.commit(Batch(entries={viewer: dropped}))
+                _log.warning("sync.upload.unsent_dropped", viewer=viewer, entries=len(dropped))
+        self._publish_epochs()
+
+
+def _carried(job_built: Mapping[str, Entry], bodies: list[UploadBody], seq: int, settled: bool) -> dict[str, Carried]:
+    """What accepted bodies carried per entry: the person changes they held settle only when
+    the queue was fetched and applied first (a CrossWatch change could be newer)."""
+    out: dict[str, Carried] = {}
+    for body in bodies:
+        for key, groups in body.carried.items():
+            entry = job_built.get(key)
+            if entry is None:
+                continue
+            out[key] = Carried(
+                change_count=entry.change_count,
+                groups={g: seq for g in groups if g in entry.unsent} if settled else {},
+                applied={g: entry.applied_change[g] for g in groups if g in entry.applied_change},
+            )
+    return out
 
 
 def _new_id() -> str:

@@ -179,6 +179,7 @@ def full_parts(
     sources: list[dict[str, str]],
     max_rows: int = MAX_ROWS_PER_LIST,
     max_bytes: int = MAX_REQUEST_BYTES,
+    fresh: bool = False,
 ) -> list[UploadBody]:
     units = _units(rows)
     batches = _pack(units, max_rows)
@@ -206,6 +207,10 @@ def full_parts(
         }
         if number == 1:
             body["sources"] = sources
+            if fresh:
+                # On any part it starts the viewer over at CrossWatch (contract, Upload); the
+                # first is enough.
+                body["fresh"] = True
         body.update(lists)
         out.append(
             UploadBody(

@@ -675,7 +675,7 @@ def on_error(
         vs = replace(vs, error="refused")
     elif err.status in (429, 503) or err.status >= 500:
         # A 503 on a first or fresh full means a sync is running: the same part goes again
-        # (a single-part full goes again as a new full) after the backoff.
+        # after the backoff (the engine keeps a full it built until it is dropped).
         vs = replace(vs, error="busy")
     else:
         vs = replace(vs, error=err.code or "error")
@@ -706,13 +706,3 @@ def on_token_changed(state: EngineState, now: float) -> EngineState:
     """A new token (re-pair or Link) or pairing: a 401 or a missing sync endpoint no longer
     holds, and the gate arms for the new connection."""
     return arm_gate(replace(state, unauthorized=False, no_sync=False), now)
-
-
-def delta_resend_seq(last: tuple[int, bytes] | None, body: bytes) -> int | None:
-    """A delta keeps its seq only when it is exactly the last delta sent: CrossWatch accepts
-    an exact retry of its last delta without applying it twice and refuses anything else
-    that isn't newer (contract, Upload; _addon_sync.py matches its last_delta_seq). Any other
-    body, an older one of a batch included, goes with a new seq."""
-    if last is not None and last[1] == body:
-        return last[0]
-    return None

@@ -241,10 +241,8 @@ def test_stop_within_budget(tmp_path):
     assert rig.engine.stop(budget=0.1)
 
 
-def test_stop_before_start():
-    engine = SyncEngine.__new__(SyncEngine)
-    engine._stopping, engine._wake, engine._thread = threading.Event(), threading.Event(), None
-    assert engine.stop()
+def test_stop_before_start(tmp_path):
+    assert Rig(tmp_path).engine.stop()
 
 
 def test_published_epochs_swap_atomically(tmp_path):

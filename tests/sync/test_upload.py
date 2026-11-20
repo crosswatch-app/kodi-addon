@@ -170,3 +170,14 @@ def test_removed_rows_go_in_earlier_requests_than_live_ones() -> None:
     ]
     flags = [m.get("in_library") is False for batch in bodies for m in batch]
     assert flags == sorted(flags, reverse=True)
+
+
+def test_fresh_full_says_so_on_its_first_part():
+    rows = [UploadRow(f"k{n}", "movies", {"movieid": n, "uniqueid": {"tmdb": str(n)}, "title": "t", "file": f"/m/{n}"})
+            for n in range(1, 4)]  # fmt: skip
+    parts = full_parts(rows, {}, viewer_id="v", upload_id="u", upload_seq=1, applied_seq=0, sources=[], max_rows=1,
+                       fresh=True)  # fmt: skip
+    bodies = [json.loads(p.body) for p in parts]
+    assert bodies[0]["fresh"] is True and all("fresh" not in b for b in bodies[1:])
+    plain = full_parts(rows, {}, viewer_id="v", upload_id="u", upload_seq=1, applied_seq=0, sources=[])
+    assert "fresh" not in json.loads(plain[0].body)

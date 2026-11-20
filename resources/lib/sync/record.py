@@ -234,6 +234,9 @@ class Batch:
     acks_done: dict[str, list[tuple[int, str]]] = field(default_factory=dict)
     # viewer -> entry -> what an accepted upload carried for it, every entry it carried.
     unsent_carried: dict[str, dict[str, Carried]] = field(default_factory=dict)
+    # When that upload was accepted (UTC); a carried entry unchanged since is no longer
+    # touched, so the next delta leaves it out.
+    uploaded_at: str = ""
     # viewer -> entry -> groups whose person change is settled.
     unsent_cleared: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     full_library_id: dict[str, str] = field(default_factory=dict)
@@ -719,7 +722,12 @@ class RecordStore:
                 # states again; one applied since the upload was built stays.
                 applied = {g: s for g, s in current.applied_change.items() if carried.applied.get(g) != s}
                 after = {g: a for g, a in current.applied_after.items() if g in applied}
-                if stamped or applied != current.applied_change:
+                unchanged = current.change_count == carried.change_count
+                # Still touched while a person change it held went up unstamped (the queue
+                # wasn't fetched first): the next delta carries it again, stamped then.
+                unstamped = set(current.unsent) - set(current.unsent_upload) - set(stamped)
+                sent = unchanged and bool(batch.uploaded_at) and not unstamped
+                if stamped or applied != current.applied_change or (sent and current.touched):
                     self._put_entry(
                         viewer,
                         replace(
@@ -727,6 +735,8 @@ class RecordStore:
                             unsent_upload={**current.unsent_upload, **stamped},
                             applied_change=applied,
                             applied_after=after,
+                            touched=current.touched and not sent,
+                            uploaded_at=batch.uploaded_at if sent else current.uploaded_at,
                         ),
                     )
         for viewer, by_entry in batch.unsent_cleared.items():

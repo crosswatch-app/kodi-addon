@@ -467,3 +467,24 @@ def test_assignment_keeps_its_meta(tmp_path) -> None:
                    title="A", at="2026-11-20T10:00:00Z", meta={"file": "smb://nas/a.mkv"})  # fmt: skip
     store.commit(Batch(assignments_add=[a]))
     assert store.assignments()[0].meta == {"file": "smb://nas/a.mkv"}
+
+
+def test_accepted_upload_clears_touched_on_unchanged_entries(tmp_path) -> None:
+    store = _store(tmp_path)
+    store.commit(
+        Batch(
+            entries={
+                "v": [
+                    _entry("a", change_count=2, touched=True),
+                    _entry("b", tokens=("b",), change_count=5, touched=True),
+                ]
+            }
+        )
+    )
+    carried = {"a": Carried(change_count=2, groups={}), "b": Carried(change_count=4, groups={})}
+    store.commit(Batch(unsent_carried={"v": carried}, uploaded_at="2026-11-20T10:00:00Z"))
+    a, b = store.entry("v", "a"), store.entry("v", "b")
+    assert a is not None and b is not None
+    assert not a.touched and a.uploaded_at == "2026-11-20T10:00:00Z"
+    # Changed after the upload was built: still to go up.
+    assert b.touched and b.uploaded_at == ""

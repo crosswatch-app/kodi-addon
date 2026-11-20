@@ -31,7 +31,6 @@ from resources.lib.sync.plan import (
     active,
     arm_gate,
     daily_full_due,
-    delta_resend_seq,
     first_round_settled,
     late_seed,
     local_active,
@@ -752,9 +751,3 @@ def test_stopped_uploads_still_fetch_and_ack():
 def test_refused_delta_drops_unsent():
     _, vs, outcome = _fail(replace(READY, unsent=True), "delta", _err(400, "invalid_request"))
     assert outcome.drop_unsent and not vs.unsent
-
-
-def test_delta_resend_identical_or_new_seq():
-    assert delta_resend_seq((42, b"b"), b"b") == 42
-    assert delta_resend_seq((42, b"b"), b"c") is None
-    assert delta_resend_seq(None, b"a") is None
