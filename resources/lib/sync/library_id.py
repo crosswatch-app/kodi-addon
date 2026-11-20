@@ -65,7 +65,8 @@ def kodi_version(kodi: KodiApi) -> str:
     return f"{match.group(1)}.{match.group(2)}" if match else ""
 
 
-def _settings_text(kodi: KodiApi, master: bool) -> str | None:
+def advanced_settings_text(kodi: KodiApi, master: bool = False) -> str | None:
+    """The advancedsettings.xml Kodi loads: the profile's when it exists, else the master's."""
     if not master:
         text = kodi.read_text(_PROFILE_SETTINGS)
         if text is not None:
@@ -78,7 +79,7 @@ class Unparseable(Exception):
 
 
 # Kodi's TinyXML accepts a bare "&" (a password like "a&b"), which ElementTree rejects.
-_BARE_AMPERSAND = re.compile(r"&(?!(?:[A-Za-z]+|#[0-9]+|#x[0-9A-Fa-f]+);)")
+BARE_AMPERSAND = re.compile(r"&(?!(?:[A-Za-z]+|#[0-9]+|#x[0-9A-Fa-f]+);)")
 
 
 def _video_database(text: str | None) -> _VideoDatabase:
@@ -88,7 +89,7 @@ def _video_database(text: str | None) -> _VideoDatabase:
         root = ElementTree.fromstring(text)
     except ElementTree.ParseError:
         try:
-            root = ElementTree.fromstring(_BARE_AMPERSAND.sub("&amp;", text))
+            root = ElementTree.fromstring(BARE_AMPERSAND.sub("&amp;", text))
         except ElementTree.ParseError as exc:
             raise Unparseable from exc
     element = root.find("videodatabase")
@@ -106,7 +107,7 @@ def library_id(kodi: KodiApi, *, master: bool = False) -> str:
     """The hash, or "" when advancedsettings.xml can't be parsed: a guessed SQLite id would
     split a MySQL library shared by several boxes, so the ping leaves the id out instead."""
     try:
-        db = _video_database(_settings_text(kodi, master))
+        db = _video_database(advanced_settings_text(kodi, master))
     except Unparseable:
         _log.warning("sync.library_id.unparseable", master=master)
         return ""

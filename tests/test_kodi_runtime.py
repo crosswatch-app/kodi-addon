@@ -15,6 +15,9 @@ class RecordingPlayer:
     def isPlaying(self) -> bool:
         return True
 
+    def isPlayingVideo(self) -> bool:
+        return True
+
     def getTime(self) -> float:
         if self.time_value is None:
             raise RuntimeError("not playing")

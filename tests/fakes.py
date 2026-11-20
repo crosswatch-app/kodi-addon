@@ -22,6 +22,7 @@ class FakeKodi:
         confirm_answer: bool = False,
         dialog_id: int = WINDOW_INVALID,
         playing: bool = True,
+        playing_video: bool | None = None,
         position_ms: int | None = None,
         duration_ms: int | None = None,
         position_raises: bool = False,
@@ -53,6 +54,8 @@ class FakeKodi:
         self.confirm_answer = confirm_answer
         self.dialog_id = dialog_id
         self.playing = playing
+        # None: a video whenever something plays.
+        self.playing_video = playing_video
         self.position_ms = position_ms
         self.duration_ms = duration_ms
         self.position_raises = position_raises
@@ -101,6 +104,9 @@ class FakeKodi:
 
     def is_playing(self) -> bool:
         return self.playing
+
+    def is_playing_video(self) -> bool:
+        return self.playing if self.playing_video is None else self.playing_video
 
     def player_times(self) -> tuple[int | None, int | None]:
         position = None if self.position_raises else self.position_ms

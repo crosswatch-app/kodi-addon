@@ -14,7 +14,7 @@ from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.advanced_settings import read_thresholds
 from resources.lib.config import Settings, read_settings, write_back_pasted_url
-from resources.lib.constants import ADDON_ID, SHUTDOWN_DRAIN_SECONDS
+from resources.lib.constants import ADDON_ID, SHUTDOWN_DRAIN_SECONDS, TICK_SECONDS
 from resources.lib.device import device_identity
 from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.media import MediaResolver
@@ -26,8 +26,6 @@ from resources.lib.service.playback_monitor import PlaybackMonitor
 from resources.lib.service.service_monitor import ServiceMonitor
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
 from resources.lib.sync.ping import PingBlocks
-
-TICK_SECONDS = 1.0
 
 
 def _timestamp() -> str:

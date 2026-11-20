@@ -59,6 +59,8 @@ class MediaItem:
     # The show's own year, from the library. Not year: during playback Kodi reports the
     # episode's year there, which changes from season to season.
     show_year: int | None = None
+    # The play count when playback started, so library sync can tell playback's own raise.
+    playcount: int | None = None
 
 
 @dataclass(frozen=True)

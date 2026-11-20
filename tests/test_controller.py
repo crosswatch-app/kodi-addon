@@ -13,6 +13,8 @@ from resources.lib.media import MediaResolver
 from resources.lib.models import Device, PingEvent, PlaybackEvent, Viewer
 from resources.lib.service.controller import Controller
 from resources.lib.storage import JsonViewerStore, PromptMemory
+from resources.lib.sync.files import InboxRecord
+from resources.lib.sync.local import PersonBuffer, RecentPlays
 from resources.lib.sync.reply import PingTicket
 from resources.lib.sync.settings import SyncSettings
 from resources.lib.ui.rating import RATE_FAILED
@@ -1796,3 +1798,244 @@ def test_a_sync_change_with_another_change_invalidates(tmp_path):
     controller.on_settings_changed(replace(settings, sync_enabled=True, movie_prompts=False), Thresholds())
     _warm_index(controller, kodi)
     assert _directory_calls(kodi) > before
+
+
+# -- library sync: what played, and the person's marks ------------------------------------
+
+
+class PlaysSpy(RecentPlays):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[tuple[Any, ...]] = []
+
+    def started(self, kind, kodi_id, playcount, now):
+        self.calls.append(("started", kind, kodi_id, playcount))
+        super().started(kind, kodi_id, playcount, now)
+
+    def stopped(self, kind, kodi_id, raised, now):
+        self.calls.append(("stopped", kind, kodi_id, raised))
+        super().stopped(kind, kodi_id, raised, now)
+
+    def quiet(self, now):
+        self.calls.append(("quiet",))
+        super().quiet(now)
+
+    def active(self):
+        self.calls.append(("active",))
+        super().active()
+
+
+def _sync_controller(tmp_path, kodi, **extra):
+    plays = PlaysSpy()
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna")], Collector(), recent_plays=plays, **extra)
+    return controller, plays
+
+
+def _item(**fields):
+    return lambda params: {"item": {**EPISODE["item"], **fields}}
+
+
+def test_start_feeds_the_item_and_its_count(tmp_path):
+    kodi = _kodi([], overrides={"Player.GetItem": _item(playcount=2)})
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    assert plays.calls == [("started", "episode", 5, 2)]
+
+
+@pytest.mark.parametrize("reason", ["callback", "ended", "liveness", "superseded", "abort"])
+def test_stopped_fed_for_every_park_reason(tmp_path, reason):
+    """Only a stop callback says Kodi closed the file at the sampled position; every other
+    park keeps the play's one raise covered. 50% would count for none of them."""
+    kodi = _kodi([])
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    kodi.position_ms = 660_000
+    controller.on_tick()
+    if reason == "callback":
+        controller.on_stopped(completed=False)
+    elif reason == "ended":
+        controller.on_stopped(completed=True)
+    elif reason == "liveness":
+        kodi.playing = False
+        controller.on_tick()
+    elif reason == "superseded":
+        controller.on_av_started()
+    else:
+        controller.on_abort()
+    assert ("stopped", "episode", 5, reason != "callback") in plays.calls
+
+
+def test_seek_just_before_stop_is_sampled(tmp_path):
+    kodi = _kodi([])
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    kodi.position_ms = 660_000
+    controller.on_tick()
+    kodi.position_ms = 1_260_000  # 95.5%, jumped to within the tick
+    controller.on_seek()
+    controller.on_stopped(completed=False)
+    assert plays.calls[-1] == ("stopped", "episode", 5, True)
+
+
+def test_stop_one_tick_short_of_the_threshold_counts(tmp_path):
+    """The last sample trails Kodi's close by up to one tick (1 s of 1_320 s is 0.08%)."""
+    kodi = _kodi([])
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    kodi.position_ms = 1_187_400  # 89.95%
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    assert plays.calls[-1] == ("stopped", "episode", 5, True)
+
+
+def test_raised_uses_kodis_threshold_and_last_sample(tmp_path):
+    kodi = _kodi([])
+    kodi.files = {"special://profile/advancedsettings.xml": "<advancedsettings><video><playcountminimumpercent>95</playcountminimumpercent></video></advancedsettings>"}
+    kodi.read_text = FakeKodi.read_text.__get__(kodi)  # type: ignore[method-assign]
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    kodi.position_ms = 1_240_000  # 93.9%: counts as watched for the reporter (90), not for Kodi here
+    controller.on_tick()
+    controller.on_stopped(completed=False)
+    assert plays.calls[-1] == ("stopped", "episode", 5, False)
+
+
+def test_played_to_the_end_counts_whatever_the_last_sample(tmp_path):
+    kodi = _kodi([])
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    kodi.position_ms = 600_000
+    controller.on_tick()
+    controller.on_stopped(completed=True)
+    assert plays.calls[-1] == ("stopped", "episode", 5, True)
+
+
+def test_resolved_item_without_library_id_feeds_nothing(tmp_path):
+    kodi = _kodi([], overrides={"Player.GetItem": _item(id=-1)})
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    controller.on_stopped(completed=True)
+    assert plays.calls == [("quiet",)]
+
+
+@pytest.mark.parametrize("reason", ["not_listed", "error"])
+def test_unresolved_video_starts_an_unresolved_play(tmp_path, reason):
+    def boom(params):
+        raise RuntimeError("rpc down")
+
+    overrides = (
+        {"Player.GetActivePlayers": lambda params: {"result": []}}
+        if reason == "not_listed"
+        else {"Player.GetItem": boom}
+    )
+    controller, plays = _sync_controller(tmp_path, _kodi([], overrides=overrides))
+    controller.on_av_started()
+    assert plays.calls == [("started", None, None, None)]
+
+
+def test_unresolved_music_or_audio_starts_nothing(tmp_path):
+    kodi = _kodi([], overrides={"Player.GetActivePlayers": lambda params: {"result": []}})
+    kodi.playing_video = False
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    assert plays.calls == [("quiet",)]
+
+
+def test_live_tv_feeds_nothing_and_ends_an_unresolved_play(tmp_path):
+    kodi = _kodi([], overrides={"Player.GetActivePlayers": lambda params: {"result": []}})
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    kodi.rpc_handlers["Player.GetActivePlayers"] = lambda params: {"result": [{"playerid": 1, "type": "video"}]}
+    kodi.rpc_handlers["Player.GetItem"] = lambda params: {"item": {"id": 3, "type": "channel", "label": "News"}}
+    controller.on_av_started()
+    assert plays.calls == [("started", None, None, None), ("quiet",)]
+    assert plays.covers("episode", 9, {"item": {"id": 9, "type": "episode"}, "playcount": 1}, 1.0) is True
+
+
+def test_pkc_play_with_skip_is_covered(tmp_path):
+    item = {**PKC_ITEM["item"], "id": 12, "playcount": 0}
+    kodi = _kodi([], overrides={"Player.GetItem": lambda params: {"item": item}})
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_av_started()
+    assert controller.pkc_skipped == 1
+    controller.on_stopped(completed=False)
+    assert plays.calls == [("started", "episode", 12, 0), ("stopped", "episode", 12, True)]
+
+
+def test_pkc_skip_without_library_id_feeds_no_stop(tmp_path):
+    controller, plays = _sync_controller(tmp_path, _kodi([], overrides={"Player.GetItem": lambda params: PKC_ITEM}))
+    controller.on_av_started()
+    controller.on_stopped(completed=False)
+    assert plays.calls == [("quiet",)]
+
+
+def test_quiet_fed_while_nothing_plays_and_active_while_something_does(tmp_path):
+    kodi = _kodi([])
+    kodi.playing = False
+    controller, plays = _sync_controller(tmp_path, kodi)
+    controller.on_tick()
+    kodi.playing = True
+    controller.on_tick()
+    assert plays.calls == [("quiet",), ("active",)]
+
+
+class InboxSpy:
+    def __init__(self) -> None:
+        self.busy = False
+        self.added: list[InboxRecord] = []
+
+    def add_many(self, records):
+        if self.busy:
+            return False
+        self.added.extend(records)
+        return True
+
+
+def _mark_record(kodi_id: int = 7) -> InboxRecord:
+    return InboxRecord(at="2026-11-20T10:00:00Z", kind="episode", kodi_id=kodi_id, file="/tv/e.mkv", playcount=1)
+
+
+def test_flush_before_early_return_and_on_abort(tmp_path):
+    kodi = _kodi([])
+    buffer, inbox, told = PersonBuffer(), InboxSpy(), []
+    controller, _ = _sync_controller(tmp_path, kodi, person_buffer=buffer, inbox=inbox, on_inbox=lambda: told.append(1))
+    controller.on_av_started()
+    buffer.add(_mark_record(7))
+    controller.on_tick()  # playing: the tick returns early after sampling
+    assert [r.kodi_id for r in inbox.added] == [7] and told == [1]
+    controller.on_tick()
+    assert told == [1]
+    buffer.add(_mark_record(8))
+    controller.on_abort()
+    assert [r.kodi_id for r in inbox.added] == [7, 8] and told == [1, 1]
+
+
+def test_busy_inbox_keeps_marks_for_the_next_tick(tmp_path):
+    kodi = _kodi([])
+    buffer, inbox, told = PersonBuffer(), InboxSpy(), []
+    controller, _ = _sync_controller(tmp_path, kodi, person_buffer=buffer, inbox=inbox, on_inbox=lambda: told.append(1))
+    inbox.busy = True
+    buffer.add(_mark_record())
+    controller.on_tick()
+    assert told == [] and len(buffer) == 1
+    inbox.busy = False
+    controller.on_tick()
+    assert told == [1] and len(buffer) == 0
+
+
+def test_failing_inbox_hook_is_logged_and_retried(tmp_path, capture_log):
+    calls = []
+
+    def hook():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("engine gone")
+
+    buffer = PersonBuffer()
+    controller, _ = _sync_controller(tmp_path, _kodi([]), person_buffer=buffer, inbox=InboxSpy(), on_inbox=hook)
+    buffer.add(_mark_record())
+    controller.on_tick()
+    assert any("service.inbox_flush_failed" in line for line in capture_log)
+    controller.on_tick()
+    controller.on_tick()
+    assert calls == [1, 1]

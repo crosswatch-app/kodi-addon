@@ -31,15 +31,18 @@ from resources.lib.constants import (
     PING_INTERVAL_SECONDS,
     PROMPT_AUTOCLOSE_SECONDS,
     RATING_AUTOCLOSE_SECONDS,
+    TICK_SECONDS,
 )
 from resources.lib.kodi import WINDOW_INVALID, KodiApi
 from resources.lib.log import get_logger
-from resources.lib.media import MediaResolver
+from resources.lib.media import MediaResolver, Resolution
 from resources.lib.models import EventKind, MediaItem, PingEvent, PlaybackEvent, Viewer
 from resources.lib.playlist_index import IndexBuilder, PlaylistIndex
 from resources.lib.reporter import EventQueue
 from resources.lib.service.session import PlaybackSession
 from resources.lib.storage import PromptMemory, ViewerStore
+from resources.lib.sync.files import Inbox
+from resources.lib.sync.local import PersonBuffer, RecentPlays, kodi_counts_play, kodi_playcount_percent
 from resources.lib.sync.ownership import EMPTY_SNAPSHOT, IndexSnapshot
 from resources.lib.sync.reply import PingTicket
 from resources.lib.ui.rating import RATE_FAILED, RateRequest, counter_text, question_text
@@ -63,6 +66,10 @@ class Controller:
         rebuild_requested: threading.Event | None = None,
         library_sync_block: Callable[[Settings], tuple[dict[str, Any], PingTicket] | None] | None = None,
         ping_requested: threading.Event | None = None,
+        recent_plays: RecentPlays | None = None,
+        person_buffer: PersonBuffer | None = None,
+        inbox: Inbox | None = None,
+        on_inbox: Callable[[], None] | None = None,
     ) -> None:
         self._kodi = kodi
         self._store = viewer_store
@@ -103,6 +110,19 @@ class Controller:
         self._library_sync_block = library_sync_block
         # Set by library sync when it needs CrossWatch's answer before the next interval.
         self._ping_requested = ping_requested
+        # Library sync tells playback's own play count from a person's mark by these. Kodi
+        # reads advancedsettings.xml only at its own start, so the threshold is read once.
+        self._plays = recent_plays
+        self._playcount_percent = kodi_playcount_percent(kodi) if recent_plays is not None else 0.0
+        # The item a play skipped as PlexKodiConnect: it has no session, but its stop still
+        # ends the play for library sync.
+        self._skipped_play: tuple[str, int] | None = None
+        # A person's marks, written to the inbox on the tick (sync/local.py).
+        self._person_buffer = person_buffer
+        self._inbox = inbox
+        self._on_inbox = on_inbox
+        # Marks are in the inbox file and the worker hasn't been told yet.
+        self._inbox_untold = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -198,18 +218,19 @@ class Controller:
         # a stopped session installed: the tick would then sample the new item into it and
         # emit a second stop under the same session_id.
         self._session = None
+        self._skipped_play = None
 
-        try:
-            media = self._media.resolve()
-        except Exception as exc:
-            _log.warning("service.resolve_failed", error=str(exc))
-            return
+        resolution = self._media.resolve()
+        self._note_play_started(resolution)
+        media = resolution.media
         if media is None:
             return
         if media.is_pkc and self._settings.skip_pkc:
             # Skipped before a session exists. A session that never emits would still hold
             # the index build off the idle tick for the whole playback.
             self.pkc_skipped += 1
+            if media.library_id is not None:
+                self._skipped_play = (media.media_type, media.library_id)
             _log.info("service.playback_skipped", reason="plexkodiconnect", count=self.pkc_skipped)
             return
 
@@ -238,18 +259,27 @@ class Controller:
             _log.info("service.event_dropped", kind="seek", reason="no_session")
             return
         session.note_seek()
+        # Sampled here too: a jump to the end followed by Stop within a tick would otherwise
+        # leave library sync judging Kodi's play count from the position before the jump.
+        session.sample(*self._kodi.player_times())
 
     def on_stopped(self, completed: bool) -> None:
         """Park only. Emission happens from the tick, so the callback stays trivial."""
         session = self._session
         self._session = None
         if session is None:
+            skipped, self._skipped_play = self._skipped_play, None
+            if skipped is not None and self._plays is not None:
+                # Kodi raised or will raise its count by its own rule, which the add-on can't
+                # judge without a session, so the one raise is taken for playback's.
+                self._plays.stopped(skipped[0], skipped[1], raised=True, now=self._monotonic())
             _log.info("service.event_dropped", kind="stop", reason="no_session")
             return
         self._park(session, reason="callback", completed=completed)
 
     def on_abort(self) -> None:
         self._shutting_down = True
+        self._flush_marks()
         dropped = self._ratings.clear()
         if dropped:
             _log.info("rating.dropped", reason="shutdown", count=dropped)
@@ -264,6 +294,13 @@ class Controller:
         # Sampled from the monitor, not from on_abort: no tick runs after abort, so a flag
         # set there could never reach the gate.
         self._shutting_down = shutting_down
+        # First, before any early return: a mark must reach the inbox file during playback too.
+        self._flush_marks()
+        if self._plays is not None:
+            if self._kodi.is_playing():
+                self._plays.active()
+            else:
+                self._plays.quiet(self._monotonic())
         if self._ping_requested is not None and self._ping_requested.is_set():
             self._ping_requested.clear()
             self.ping_now()
@@ -412,13 +449,63 @@ class Controller:
         ignore_percent_at_end is for.
         """
         self._paused = False
+        ended = completed is True
+        percent = session.percent()
         if completed is None:
-            percent = session.percent()
             completed = percent is not None and percent >= (100.0 - self._thresholds.ignore_percent_at_end)
+        self._note_play_stopped(session, 100.0 if ended else percent, known=reason == "callback")
         if completed:
             session.mark_complete()
         self._pending_stop = session
         _log.debug("service.stop_parked", session_id=session.session_id, reason=reason, completed=completed)
+
+    # -- library sync ------------------------------------------------------
+
+    def _note_play_started(self, resolution: Resolution) -> None:
+        plays = self._plays
+        if plays is None:
+            return
+        now = self._monotonic()
+        media = resolution.media
+        if media is not None and media.library_id is not None:
+            plays.started(media.media_type, media.library_id, media.playcount, now)
+        elif resolution.reason in ("not_listed", "error") and self._kodi.is_playing_video():
+            # A library item may be playing under an id the add-on couldn't read.
+            plays.started(None, None, None, now)
+        else:
+            # Music, live TV or a file outside the library has no library row to announce,
+            # but it ends a video play that couldn't be resolved. A plugin item Kodi finds
+            # by its path in the library announces that row (SaveFileStateJob.cpp:86-97),
+            # which is server-backed and never a person's mark.
+            plays.quiet(now)
+
+    def _note_play_stopped(self, session: PlaybackSession, percent: float | None, *, known: bool) -> None:
+        """Every park reason ends the play. known is a stop callback: only then has Kodi
+        closed the file, judging the position at that moment. For a liveness, superseded or
+        abort park the close may still be coming from a position the add-on never sampled,
+        so the play's one raise stays covered. percent is the last sample, or 100 when Kodi
+        reported the end; a sample trails Kodi's position by up to one tick."""
+        plays = self._plays
+        media = session.media
+        if plays is None or media.library_id is None:
+            return
+        band = TICK_SECONDS * 100_000.0 / session.duration_ms if session.duration_ms else 0.0
+        raised = not known or kodi_counts_play(percent, self._playcount_percent, band)
+        plays.stopped(media.media_type, media.library_id, raised, self._monotonic())
+
+    def _flush_marks(self) -> None:
+        buffer, inbox = self._person_buffer, self._inbox
+        if buffer is None or inbox is None:
+            return
+        try:
+            if buffer.flush(inbox):
+                self._inbox_untold = True
+            if self._inbox_untold and self._on_inbox is not None:
+                self._on_inbox()
+                self._inbox_untold = False
+        except Exception as exc:
+            # Marks not written stay buffered, and the worker is told on the next tick.
+            _log.warning("service.inbox_flush_failed", error=str(exc))
 
     def _flush_pending(self, allow_prompt: bool) -> None:
         session = self._pending_stop

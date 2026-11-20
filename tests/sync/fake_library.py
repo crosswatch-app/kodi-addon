@@ -11,6 +11,14 @@ is announced as OnUpdate, with "playcount" only when the count changed and "tran
 during a scan (VideoDatabase.cpp SetPlayCount); rating- and resume-only writes announce
 nothing. Announcements queue in `announcements` for the test to deliver when it chooses, as
 Kodi delivers them asynchronously.
+
+Playback, as recorded on Kodi 21.3 and 22 RC1 (verification.md, Task 13a Step 0): a play
+that reaches the play-count threshold announces OnUpdate with "playcount" = the count + 1,
+then a bare {"id", "type"}; below it, an update without "playcount" (UpdateLastPlayed,
+SaveFileStateJob.cpp:133-139), unless the count changed during the play, when the close
+announces the current count (VideoDatabase.cpp:6672-6673). Refresh information re-adds the
+row (a new id unless it was the highest, so SQLite reuses it) and announces it with "added".
+Clean and rescan loses the play count and bookmark, kept per file row.
 """
 
 from collections.abc import Callable
@@ -21,6 +29,8 @@ _LISTS = {
     "VideoLibrary.GetEpisodes": ("episodes", "episodeid"),
     "VideoLibrary.GetTVShows": ("tvshows", "tvshowid"),
 }
+
+_ID_FIELDS = {"movies": ("movieid", "movie"), "episodes": ("episodeid", "episode")}
 
 
 class FakeLibrary:
@@ -36,6 +46,8 @@ class FakeLibrary:
         # counted in the total, as Kodi does for a profile without the master lock code.
         self.locked: set[int] = set()
         self.announcements: list[dict[str, Any]] = []
+        # VideoLibrary.OnRemove data, in order.
+        self.removals: list[dict[str, Any]] = []
         self.scanning = False
         self.writes: list[tuple[str, dict[str, Any]]] = []
 
@@ -79,6 +91,57 @@ class FakeLibrary:
     def row(self, kind: str, kodi_id: int) -> dict[str, Any]:
         id_field = {"movies": "movieid", "episodes": "episodeid", "tvshows": "tvshowid"}[kind]
         return next(r for r in getattr(self, kind) if r[id_field] == kodi_id)
+
+    def play(
+        self, kind: str, kodi_id: int, percent: float, minimum: float = 90.0, *, count_at_start: int | None = None
+    ) -> None:
+        """A play stopped at percent; count_at_start is the count when it began, when another
+        write changed it during the play."""
+        id_field, kodi_type = _ID_FIELDS[kind]
+        row = self.row(kind, kodi_id)
+        item = {"id": kodi_id, "type": kodi_type}
+        row["lastplayed"] = "2026-11-20 20:00:00"
+        if 0 < minimum <= percent:
+            row["playcount"] += 1
+            row["resume"] = {"position": 0.0, "total": 0.0}
+            self.announcements.append({"item": item, "playcount": row["playcount"]})
+        elif count_at_start is not None and count_at_start != row["playcount"]:
+            self.announcements.append({"item": item, "playcount": row["playcount"]})
+        else:
+            self.announcements.append({"item": item})
+        self.announcements.append(dict(item))
+
+    def refresh(self, kind: str, kodi_id: int) -> int:
+        """Refresh information: the row is deleted and added again. Returns its new id."""
+        id_field, kodi_type = _ID_FIELDS[kind]
+        rows: list[dict[str, Any]] = getattr(self, kind)
+        row = self.row(kind, kodi_id)
+        new_id = self._readd(rows, row, id_field)
+        self.removals.append({"id": kodi_id, "type": kodi_type})
+        self.announcements.append({"item": {"id": new_id, "type": kodi_type}, "added": True})
+        return new_id
+
+    def clean_and_rescan(self, kind: str, kodi_id: int) -> int:
+        """The file went away and came back: Clean removes the row and its file row, so the
+        play count and bookmark go with them; the scan adds it again."""
+        id_field, kodi_type = _ID_FIELDS[kind]
+        rows: list[dict[str, Any]] = getattr(self, kind)
+        row = self.row(kind, kodi_id)
+        row.update(playcount=0, lastplayed="", resume={"position": 0.0, "total": 0.0})
+        new_id = self._readd(rows, row, id_field)
+        self.removals.append({"id": kodi_id, "type": kodi_type})
+        self.announcements.append({"item": {"id": new_id, "type": kodi_type}, "added": True, "transaction": True})
+        return new_id
+
+    @staticmethod
+    def _readd(rows: list[dict[str, Any]], row: dict[str, Any], id_field: str) -> int:
+        highest = max(r[id_field] for r in rows)
+        rows.remove(row)
+        # SQLite gives a new row the highest id + 1, so a deleted highest row's id comes back.
+        new_id = row[id_field] if row[id_field] == highest else highest + 1
+        row[id_field] = new_id
+        rows.append(row)
+        return new_id
 
     def _details(self, kind: str, id_field: str, key: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
