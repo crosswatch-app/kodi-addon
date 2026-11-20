@@ -20,7 +20,7 @@ CW never connects to Kodi, and Kodi's web server isn't needed. Pairing, playback
 2. In CW, the user picks a target per viewer, for example user1 to Trakt user1 and user2 to Trakt user2, with switches for live scrobble and library sync.
 3. CW creates the watcher route and the sync pair itself, marked as managed by the add-on. Power users can still edit both.
 
-Each viewer becomes its own Kodi instance in CW: a sync user of the paired instance, for example `default~kv-2`. With one viewer, that's the paired instance itself. When a second viewer shows up before sync users exist, the viewer already on the paired instance stays there; the new viewer waits for its own sync user.
+Each viewer becomes its own Kodi instance in CW: a sync user of the paired instance, for example `default~kv-2`. With one viewer, that's the paired instance itself. When a second viewer shows up before sync users exist, the viewer that already uploaded to the paired instance stays there; the others wait for their own sync user. When no viewer has uploaded yet, they all wait.
 
 **One sync device per connection.**
 - The first device that pings with sync on becomes the sync device for that paired connection. Other devices keep the watcher, and get `403 not_sync_device` on sync requests.
@@ -68,7 +68,7 @@ Authenticated ping replies, including those with `ignored: true`, carry:
 - `enabled` is true only when sync is on in CW and on this device, this device is the sync device, and its library has no other sync connection. Otherwise `reason` says why: `not_sync_device`, `device_id_missing` or `library_has_sync_device`. A ping from a device that isn't the sync device never changes anything in CW.
 - `viewers` lists the viewers CW mapped to an instance; an unmapped viewer is left out.
   - `upload_seq` is the last one CW saw for that viewer.
-  - `next_change` is the `seq` CW gives the next queued change for that viewer.
+    - `next_change` is the lowest `seq` CW can give the next queued change for that viewer; the change may get a higher one.
   - `run_pending` is true from a completed full upload until the pair run it started has finished, including a follow-up run for an upload that came in during that run. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
 - `queue_pending` tells the add-on to fetch the queue.
 
@@ -175,7 +175,7 @@ With `has_more: true`, fetch the next page with `after` set to `next_after`.
 - `change_id` is a random id for this one change. Keep it with the change and send it back in the ack. Together with `seq` it identifies the change, so an old ack can never confirm a newer change, even after a restore of CW's state.
 
 **When it was queued.**
-- `after` is the `upload_seq` CW had already seen from this viewer when the change was queued.
+- `after` is the highest `upload_seq` whose rows CW had already applied when the change was queued. A full upload counts once its last part has arrived, not while parts are still missing. A delta counts once it was applied.
 - `queued_at` is the UTC time it was queued.
 - Use them to tell which decision is newer. A change with `after` at or above an upload's `upload_seq` was made after CW saw that upload, so it is the newer one.
 
