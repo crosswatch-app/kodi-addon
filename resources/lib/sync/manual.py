@@ -39,7 +39,7 @@ from resources.lib.sync.record import (
     fresh_state,
     merge,
 )
-from resources.lib.sync.rows import entry_meta
+from resources.lib.sync.rows import entry_meta, item_groups
 from resources.lib.sync.settings import SyncSettings
 
 
@@ -332,3 +332,41 @@ def apply_assignment(
             # Nothing to record, but the merge or the new tokens the match found are kept.
             batch.entries.setdefault(viewer, []).append(entry)
     return batch
+
+
+def existing_ratings(
+    entries: Sequence[Entry],
+    rows: Sequence[LibraryRow],
+    owners_of: Callable[[LibraryRow], Sequence[str]],
+    viewer: str,
+    made_at: str,
+) -> list[Entry]:
+    """Send existing ratings: the viewer's single-owner items the first run seeded, that
+    CrossWatch queued no rating for (none, and none removed), whose Kodi rating still equals
+    the one the first full stored (on every rated copy; an unrated copy doesn't count). A
+    rating given later, perhaps by another owner, is never sent as this viewer's. An item
+    whose rows hit two entries not yet merged waits for the next full to merge them. Each
+    goes up as a person change made now."""
+    by_token: dict[str, list[Entry]] = {}
+    for entry in entries:
+        for token in entry.tokens:
+            by_token.setdefault(token, []).append(entry)
+    out: dict[str, Entry] = {}
+    for item in item_groups(list(rows)):
+        if any(tuple(dict.fromkeys(owners_of(r))) != (viewer,) for r in item):
+            continue
+        hits = {e.key: e for r in item for t in r.tokens for e in by_token.get(t, ())}
+        if len(hits) != 1:
+            continue
+        entry = next(iter(hits.values()))
+        if entry.key in out or entry.origin != "seed" or entry.seed_rating <= 0:
+            continue
+        rating = entry.state.rating
+        if rating.value or rating.from_cw or rating.removed:
+            continue
+        rated = [value for r in item if (value := int(r.raw.get("userrating") or 0))]
+        if not rated or any(value != entry.seed_rating for value in rated):
+            continue
+        state = replace(entry.state, rating=Rating(value=entry.seed_rating, src=rating.src))
+        out[entry.key] = _person_group(entry, state, "ratings", made_at)
+    return list(out.values())

@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from resources.lib.sync.constants import BACKOFF_SECONDS
+from resources.lib.sync.constants import BACKOFF_SECONDS, DAILY_FULL_SECONDS, SETTLE_SECONDS
 from resources.lib.sync.plan import (
     PING_ANSWER_SECONDS,
     Delta,
@@ -13,18 +13,32 @@ from resources.lib.sync.plan import (
     Idle,
     Ping,
     RatingScan,
+    RequestRebuild,
     Reset,
     SendAcks,
+    SendExistingRatings,
     TakeRequests,
     ViewerState,
     Wait,
     WriteKodi,
     active,
     arm_gate,
+    daily_full_due,
+    first_round_settled,
+    late_seed,
     local_active,
+    mapping_of,
     next_action,
+    on_full_part,
+    on_library_read,
+    on_mapping,
     on_ping_asked,
+    on_rebuild_asked,
     on_reply,
+    on_snapshot,
+    request_full,
+    seeded,
+    session_start,
     waiting_on,
 )
 from resources.lib.sync.record import SeqState
@@ -362,3 +376,205 @@ def test_viewer_uploads_before_kodi_writes():
 
 def test_idle_when_nothing_to_do():
     assert next_action(_state(**{"kv-a": READY}), NOW) == Idle()
+
+
+# -- triggers -------------------------------------------------------------------------------
+
+
+def test_full_triggers():
+    state = _state(**{"kv-a": READY, "kv-b": READY})
+    both = request_full(state)
+    assert all(vs.full_due for vs in both.viewers.values())
+    one = request_full(state, ["kv-b"])
+    assert not one.viewers["kv-a"].full_due and one.viewers["kv-b"].full_due
+    assert next_action(one, NOW) == FullUpload("kv-b")
+
+
+def test_restart_never_resumes_full():
+    state = _state(**{"kv-a": replace(READY, full_in_progress=True, in_flight=True)})
+    after = session_start(state, NOW)
+    vs = after.viewers["kv-a"]
+    assert not vs.full_in_progress and not vs.in_flight and not vs.judged
+    assert after.armed_at == NOW and after.start_full_pending
+
+
+def test_daily_full_due():
+    assert daily_full_due(None, NOW)
+    assert not daily_full_due(NOW - DAILY_FULL_SECONDS + 1, NOW)
+    assert daily_full_due(NOW - DAILY_FULL_SECONDS, NOW)
+
+
+def _two_viewer_reply(**instances: str) -> SyncReply:
+    return SyncReply(True, None, {v: ReplyViewer(instance=i, upload_seq=0) for v, i in instances.items()}, 0)
+
+
+def test_mapping_change_triggers_full_for_all():
+    state = _state(**{"kv-a": READY, "kv-b": READY})
+    before = mapping_of("L1", _two_viewer_reply(**{"kv-a": "default", "kv-b": "default~kv-b"}))
+    same = on_mapping(state, before, before, {"kv-a": "L1", "kv-b": "L1"})
+    assert same == state
+    moved = mapping_of("L1", _two_viewer_reply(**{"kv-a": "default", "kv-b": "other"}))
+    after = on_mapping(state, moved, before, {"kv-a": "L1", "kv-b": "L1"})
+    assert all(vs.full_due for vs in after.viewers.values())
+    new_library = mapping_of("L2", _two_viewer_reply(**{"kv-a": "default", "kv-b": "default~kv-b"}))
+    assert all(vs.full_due for vs in on_mapping(state, new_library, before, {}).viewers.values())
+
+
+def test_viewer_without_a_full_under_the_mapping_gets_one():
+    state = _state(**{"kv-a": READY, "kv-b": READY})
+    current = mapping_of("L1", _two_viewer_reply(**{"kv-a": "default", "kv-b": "default~kv-b"}))
+    after = on_mapping(state, current, current, {"kv-a": "L1", "kv-b": "L0"})
+    assert not after.viewers["kv-a"].full_due and after.viewers["kv-b"].full_due
+
+
+def test_show_ids_changed_requests_rebuild():
+    state = replace(_state(**{"kv-a": replace(READY, full_due=True)}))
+    assert on_library_read(state, frozenset({1, 2}), None) == state
+    assert on_library_read(state, frozenset({1, 2}), frozenset({1, 2})) == state
+    changed = on_library_read(state, frozenset({1, 2, 3}), frozenset({1, 2}))
+    assert next_action(changed, NOW) == RequestRebuild()
+    asked = on_rebuild_asked(changed)
+    assert waiting_on(asked) == "index" and next_action(asked, NOW) == Idle()
+    arrived = on_snapshot(asked, usable=True, after_scan=False)
+    assert next_action(arrived, NOW) == FullUpload("kv-a")
+
+
+def test_index_after_a_scan_sends_fulls():
+    state = _state(**{"kv-a": READY})
+    assert on_snapshot(state, usable=True, after_scan=True).viewers["kv-a"].full_due
+    assert not on_snapshot(state, usable=False, after_scan=True).viewers["kv-a"].full_due
+
+
+def test_first_full_committed_on_complete_not_ok():
+    state = _state(**{"kv-a": ViewerState(judged=True, full_due=True, fresh=True)})
+    part = on_full_part(state, "kv-a", complete=False, fresh=True)
+    vs = part.viewers["kv-a"]
+    assert vs.full_in_progress and not vs.first_full_committed and vs.fresh
+    done = on_full_part(part, "kv-a", complete=True, fresh=True).viewers["kv-a"]
+    assert done.first_full_committed and not done.full_due and not done.full_in_progress
+    assert not done.fresh and done.queue_due
+
+
+def test_fresh_kept_when_a_normal_full_completed_first():
+    state = _state(**{"kv-a": ViewerState(judged=True, full_due=True, fresh=True)})
+    assert on_full_part(state, "kv-a", complete=True, fresh=False).viewers["kv-a"].fresh
+
+
+def test_empty_record_after_first_full_still_uploads():
+    state = request_full(_state(**{"kv-a": READY}))
+    assert next_action(state, NOW) == FullUpload("kv-a")
+
+
+# -- first run ------------------------------------------------------------------------------
+
+START = "2026-11-20T10:00:00Z"
+
+
+def _seeded(now_utc: str, *, viewer="kv-a", committed=False, seed=frozenset({"kv-a"}), mapped="2026-11-20T11:00:00Z"):
+    def ask(rule):
+        return rule(viewer, first_full_committed=committed, seed_viewers=seed, seed_started_at=START,
+                    first_mapped_at=mapped, now_utc=now_utc)  # fmt: skip
+
+    return ask(seeded), ask(late_seed)
+
+
+def test_seed_window_from_first_mapping():
+    # The window runs from the later of Start and the first mapping.
+    assert _seeded("2026-11-21T10:59:00Z") == (True, False)
+    assert _seeded("2026-11-21T11:00:00Z") == (True, False)
+    assert _seeded("2026-11-21T11:00:01Z") == (False, True)
+    assert _seeded("2026-11-21T09:00:00Z", mapped="") == (True, False)
+
+
+def test_late_seed_status_line():
+    assert _seeded("2026-11-22T10:00:00Z")[1] is True
+    # Not before the viewer was mapped at all: nothing has failed yet.
+    assert _seeded("2026-11-22T10:00:00Z", mapped="")[1] is False
+
+
+def test_fresh_until_first_full_committed():
+    assert _seeded("2026-11-20T12:00:00Z", committed=True) == (False, False)
+
+
+def test_interrupted_first_full_continues_seeding():
+    """A first full cut off by a restart is sent again seeded while the window lasts."""
+    assert _seeded("2026-11-20T18:00:00Z") == (True, False)
+
+
+def test_viewer_added_later_starts_empty():
+    assert _seeded("2026-11-20T12:00:00Z", viewer="kv-new") == (False, False)
+
+
+def test_start_again_never_reseeds():
+    """seed_viewers is written by the first Start only; a later Start leaves it."""
+    assert _seeded("2026-11-20T12:00:00Z", seed=frozenset()) == (False, False)
+
+
+FIRST_FULL = "2026-11-20T10:00:00Z"
+SETTLED_AT = "2026-11-20T10:40:00Z"
+
+
+def _settled(first_full_at: str = FIRST_FULL, now_utc: str = SETTLED_AT, queue_pending: int = 0,
+             run_pending: bool = False, unsent: bool = False, unapplied: bool = False) -> bool:  # fmt: skip
+    return first_round_settled(first_full_at=first_full_at, now_utc=now_utc, queue_pending=queue_pending,
+                               run_pending=run_pending, unsent=unsent, unapplied=unapplied)  # fmt: skip
+
+
+def test_first_round_settled_needs_quiet_ping_after_settle_seconds():
+    assert SETTLE_SECONDS == 2400 and _settled()
+    assert not _settled(now_utc="2026-11-20T10:39:59Z")
+    assert not _settled(first_full_at="")
+    assert not _settled(queue_pending=1)
+    assert not _settled(run_pending=True)
+    assert not _settled(unsent=True)
+    assert not _settled(unapplied=True)
+
+
+def test_existing_ratings_only_when_chosen_and_settled():
+    due = replace(READY, existing_ratings_due=True, settled=True)
+    assert next_action(_state(**{"kv-a": due}), NOW) == SendExistingRatings("kv-a")
+    assert next_action(_state(**{"kv-a": replace(due, settled=False)}), NOW) == Idle()
+    assert next_action(_state(**{"kv-a": replace(due, existing_ratings_due=False)}), NOW) == Idle()
+    # After the person's own changes, and never while the pair run may still bring ratings.
+    assert next_action(_state(**{"kv-a": replace(due, unsent=True, queue_settled=True)}), NOW) == Delta("kv-a")
+    running = replace(
+        _state(**{"kv-a": due}), reply=SyncReply(True, None, {"kv-a": ReplyViewer("default", 5, run_pending=True)}, 0)
+    )
+    assert next_action(running, NOW) == Idle()
+
+
+def test_session_start_full_goes_to_every_viewer_the_first_reply_maps():
+    """A new process has no reply yet; the first one names the viewers."""
+    state = session_start(replace(_state(), reply=None, viewers={}), NOW)
+    ticket = PingTicket(sent_at=NOW, epochs={"kv-a": 0, "kv-b": 0})
+    after, _ = on_reply(state, _reply("kv-a", "kv-b", upload_seq=0), ticket, {}, NOW)
+    assert all(vs.full_due for vs in after.viewers.values()) and not after.start_full_pending
+    # Only once: the next reply asks for nothing more.
+    done = replace(after, viewers={v: replace(vs, full_due=False) for v, vs in after.viewers.items()})
+    again, _ = on_reply(done, _reply("kv-a", "kv-b", upload_seq=0), ticket, {}, NOW)
+    assert not any(vs.full_due for vs in again.viewers.values())
+
+
+def test_full_asked_during_a_full_follows_it():
+    state = _state(**{"kv-a": replace(READY, full_due=True, full_in_progress=True)})
+    asked = on_snapshot(state, usable=True, after_scan=True)
+    done = on_full_part(asked, "kv-a", complete=True, fresh=False).viewers["kv-a"]
+    assert done.full_due and not done.full_again
+    plain = on_full_part(state, "kv-a", complete=True, fresh=False).viewers["kv-a"]
+    assert not plain.full_due
+
+
+def test_existing_ratings_wait_for_a_judged_ping_after_a_full():
+    """CrossWatch starts a pair run for a committed full; the reply from before it says none."""
+    due = replace(READY, existing_ratings_due=True, settled=True, full_due=True)
+    after_full = on_full_part(_state(**{"kv-a": due}), "kv-a", complete=True, fresh=False)
+    fetched = replace(after_full, viewers={"kv-a": replace(after_full.viewers["kv-a"], queue_due=False)})
+    assert next_action(fetched, NOW) == Idle()
+    ticket = PingTicket(sent_at=NOW, epochs={"kv-a": 0})
+    judged, _ = on_reply(fetched, _reply("kv-a"), ticket, {"kv-a": SeqState(sent=5, confirmed=5)}, NOW)
+    assert next_action(judged, NOW) == SendExistingRatings("kv-a")
+
+
+def test_existing_ratings_wait_for_a_due_queue_fetch():
+    due = replace(READY, existing_ratings_due=True, settled=True, queue_due=True)
+    assert next_action(replace(_state(**{"kv-a": due}), library_complete=False), NOW) == Idle()

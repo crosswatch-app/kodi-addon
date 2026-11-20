@@ -11,6 +11,7 @@ from resources.lib.sync.manual import (
     Recorded,
     ToAssign,
     apply_assignment,
+    existing_ratings,
     rating_change,
     rating_window_write,
     watched_change,
@@ -367,3 +368,57 @@ def test_shared_rating_every_owner_already_holds_is_nothing_new():
     assert _rate({"kv-a": rated, "kv-b": rated}, 8, owners=("kv-a", "kv-b")) == [Ignored("same_rating")]
     [out] = _rate({"kv-a": rated}, 8, owners=("kv-a", "kv-b"))
     assert isinstance(out, ToAssign)
+
+
+# -- send existing ratings -------------------------------------------------------------------
+
+
+def _seed_entry(seed_rating=7, **rating) -> Entry:
+    return replace(_entry(), origin="seed", seed_rating=seed_rating, state=ItemState(rating=Rating(**rating)))
+
+
+def _existing(entry: Entry, kodi_rating=7, owners=("kv-a",)):
+    row = _movie(userrating=kodi_rating)
+    return existing_ratings([entry], [row], lambda r: owners, "kv-a", AT)
+
+
+def test_existing_ratings_sent_once_and_only_unchanged():
+    [sent] = _existing(_seed_entry())
+    assert sent.state.rating.value == 7 and sent.unsent == {"ratings": AT} and sent.touched
+    # Kodi's rating changed since the first full: someone rated it later.
+    assert _existing(_seed_entry(), kodi_rating=8) == []
+    # Once sent the record holds the rating, so a second run finds nothing.
+    assert existing_ratings([sent], [_movie(userrating=7)], lambda r: ("kv-a",), "kv-a", AT) == []
+
+
+def test_existing_ratings_skip_cw_removed():
+    assert _existing(_seed_entry(from_cw=True)) == []
+    assert _existing(_seed_entry(removed=True)) == []
+    assert _existing(_seed_entry(value=5)) == []
+
+
+def test_existing_ratings_skip_changed_owner():
+    assert _existing(_seed_entry(), owners=("kv-a", "kv-b")) == []
+    assert _existing(_seed_entry(), owners=("kv-b",)) == []
+
+
+def test_existing_ratings_only_for_seeded_entries():
+    assert _existing(replace(_seed_entry(), origin="empty")) == []
+    assert _existing(_seed_entry(seed_rating=0), kodi_rating=0) == []
+
+
+def test_existing_rating_on_two_copies_needs_both_unchanged():
+    one, two = _movie(userrating=7), replace(_movie(userrating=8), raw={**_movie().raw, "movieid": 4, "userrating": 8})
+    assert existing_ratings([_seed_entry()], [one, two], lambda r: ("kv-a",), "kv-a", AT) == []
+
+
+def test_existing_rating_ignores_an_unrated_copy():
+    one = _movie(userrating=7)
+    two = replace(one, key=replace(one.key, kodi_id=4), raw={**one.raw, "movieid": 4, "userrating": 0})
+    [sent] = existing_ratings([_seed_entry()], [one, two], lambda r: ("kv-a",), "kv-a", AT)
+    assert sent.state.rating.value == 7
+
+
+def test_existing_ratings_wait_for_unmerged_entries():
+    a, b = _seed_entry(), replace(_seed_entry(), key="other")
+    assert existing_ratings([a, b], [_movie(userrating=7)], lambda r: ("kv-a",), "kv-a", AT) == []
