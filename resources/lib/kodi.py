@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from resources.lib.ui.list_window import ListRequest, ListResult, ListState
     from resources.lib.ui.rating import RateRequest
     from resources.lib.ui.sync_setup import SetupRequest, SetupResult
+    from resources.lib.ui.sync_status import StatusRequest
     from resources.lib.ui.viewers_window import ViewersRequest, ViewersResult
     from resources.lib.ui.who_watched import WhoWatchedRequest
 
@@ -56,6 +57,8 @@ class KodiApi(Protocol):
     def viewers_window(self, request: ViewersRequest, key: str) -> ViewersResult: ...
     def sync_setup_window(self, request: SetupRequest) -> SetupResult | None: ...
     def busy(self, on: bool) -> None: ...
+    def sync_status_window(self, request: StatusRequest) -> str | None: ...
+    def choice_window(self, heading: str, message: str, yes: str, no: str) -> bool | None: ...
     def text_input(self, heading: str, default: str = "") -> str: ...
     def confirm(self, heading: str, message: str, autoclose: int = 0) -> bool: ...
     def notify(self, heading: str, message: str) -> None: ...
@@ -262,6 +265,33 @@ class KodiRuntime:
         dialog = self._modal("sync_setup", make)
         return None if dialog is None else dialog.result
 
+    def sync_status_window(self, request: StatusRequest) -> str | None:
+        """The chosen row's key or SEND_RATINGS; "" for Close and Back, None when the window failed."""
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.SyncStatusDialog(window.SYNC_STATUS_XML, path, "Default", "1080i")
+            dialog.prepare(request, self.localised)
+            return dialog
+
+        dialog = self._modal("sync_status", make)
+        return None if dialog is None else dialog.result
+
+    def choice_window(self, heading: str, message: str, yes: str, no: str) -> bool | None:
+        """The confirm window with its own button labels: True for yes, False for no, and None
+        for Back or a failed window, which leave the question open."""
+
+        def make(path: str) -> Any:
+            from resources.lib.ui import window
+
+            dialog = window.ConfirmDialog(window.CONFIRM_XML, path, "Default", "1080i")
+            dialog.prepare(heading, message, self.localised, yes, no)
+            return dialog
+
+        dialog = self._modal("confirm", make)
+        return None if dialog is None else dialog.result
+
     def busy(self, on: bool) -> None:
         """Kodi's own busy spinner, for a settings script reading the library."""
         self._xbmc.executebuiltin("ActivateWindow(busydialognocancel)" if on else "Dialog.Close(busydialognocancel)")
@@ -286,7 +316,8 @@ class KodiRuntime:
         def make(path: str) -> Any:
             from resources.lib.ui import window
 
-            dialog = window.PickListDialog(window.LIST_XML, path, "Default", "1080i")
+            kind = window.ListDialog if request.read_only else window.PickListDialog
+            dialog = kind(window.LIST_XML, path, "Default", "1080i")
             dialog.prepare(request, state, self.localised)
             return dialog
 

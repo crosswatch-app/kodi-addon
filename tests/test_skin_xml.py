@@ -119,16 +119,15 @@ def test_a_missing_poster_says_so_in_translatable_text():
 CONFIRM = SKIN / "1080i" / "crosswatch-confirm.xml"
 
 
-def test_confirm_starts_on_no_and_labels_come_from_strings_po():
-    from resources.lib.constants import WINDOW_NO, WINDOW_YES
-
+def test_confirm_starts_on_no_and_labels_come_from_the_dialog():
+    # ConfirmDialog.prepare sets them, Yes and No unless a question names its own.
     root = ET.parse(CONFIRM).getroot()
     assert root.findtext("defaultcontrol") == "11"
     yes = root.find(".//control[@id='10']")
     no = root.find(".//control[@id='11']")
     assert yes is not None and no is not None
-    assert yes.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_YES}]"
-    assert no.findtext("label") == f"$ADDON[{ADDON_ID} {WINDOW_NO}]"
+    assert yes.findtext("label") == "$INFO[Window.Property(CW.YesLabel)]"
+    assert no.findtext("label") == "$INFO[Window.Property(CW.NoLabel)]"
     CONFIRM.read_text(encoding="ascii")
 
 
@@ -179,7 +178,9 @@ def test_a_pick_list_has_an_accent_done_button_below_the_list():
     close = root.find(".//control[@id='21']")
     assert done is not None and rows is not None and close is not None
     assert done.findtext("visible") is None
-    assert done.findtext("label") == f"$ADDON[{ADDON_ID} {WHO_WATCHED_DONE}]"
+    # Done on a pick list, Close on a read-only one, which hides the Close on the right.
+    assert done.findtext("label") == "$INFO[Window.Property(CW.DoneLabel)]"
+    assert close.findtext("visible") == "String.IsEmpty(Window.Property(CW.ReadOnly))"
     assert done.findtext("texturenofocus") == "crosswatch/box_accent.png"
     assert done.findtext("texturefocus") == "crosswatch/box_accent_focus.png"
     assert (done.findtext("left"), done.findtext("top")) == ("50", "740")

@@ -137,6 +137,13 @@
                         <close>true</close>
                     </control>
                 </setting>
+                <setting id="sync_status" type="action" label="30191">
+                    <level>0</level>
+                    <data>RunScript(service.crosswatch,sync_status)</data>
+                    <control type="button" format="action">
+                        <close>true</close>
+                    </control>
+                </setting>
                 <setting id="sync_enabled" type="boolean" label="30162">
                     <level>0</level>
                     <default>false</default>

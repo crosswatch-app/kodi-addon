@@ -6,13 +6,24 @@ from dataclasses import replace
 import pytest
 
 from resources.lib.config import Settings
+from resources.lib.media import clean_ids
 from resources.lib.models import Viewer
 from resources.lib.playlist_index import PlaylistIndex
+from resources.lib.prompt import key_for_show
 from resources.lib.storage import JsonViewerStore, PromptMemory
-from resources.lib.sync import items
-from resources.lib.sync.constants import BACKOFF_SECONDS
+from resources.lib.sync import items, plan
+from resources.lib.sync.constants import BACKOFF_SECONDS, STATUS_FIGURES_SECONDS
 from resources.lib.sync.engine import IDLE_SECONDS, SyncEngine, SyncPaths
-from resources.lib.sync.files import Inbox, InboxRecord, StartedFile, read_started, read_status, write_started
+from resources.lib.sync.files import (
+    Inbox,
+    InboxRecord,
+    StartedFile,
+    StatusFile,
+    read_started,
+    read_status,
+    write_started,
+    write_status,
+)
 from resources.lib.sync.items import Library, LibraryRow, RowKey
 from resources.lib.sync.local import FileIndex
 from resources.lib.sync.ownership import IndexSnapshot
@@ -568,3 +579,116 @@ def test_changed_device_id_shows_in_the_status(tmp_path):
     rig.engine.step()
     status = read_status(rig.paths.status)
     assert status is not None and status.reason == "device_id_changed"
+
+
+def test_status_carries_the_figures_for_the_status_screen(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.lib.row("movies", 3)["playcount"] = 1
+    rig.mark()
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None
+    assert status.waiting_changes == 1 and status.last_upload == ""
+    assert status.counts == {"viewers": {"kv-a": [0, 1]}, "shared": [0, 0], "unowned": [0, 0]}
+    assert status.unowned_titles == [] and status.unreadable_playlists == []
+
+
+def test_status_names_unreadable_playlists_and_recounts_on_a_new_index(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine.step()
+    rig.viewers.save([Viewer(name="anna", sync_id="kv-a"), Viewer(name="ben", sync_id="kv-b")])
+    snapshot = IndexSnapshot(index=PlaylistIndex(unreadable=frozenset({"Anna's films"})), built_at=2.0,
+                             invalidated_at=0.0, viewers=(Viewer(name="anna", sync_id="kv-a"),
+                                                          Viewer(name="ben", sync_id="kv-b")))  # fmt: skip
+    rig.engine.on_snapshot(snapshot)
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.unreadable_playlists == ["Anna's films"]
+    # Two viewers and no playlist or answer for the film: nobody owns it.
+    assert status.counts["unowned"] == [0, 1] and status.unowned_titles == ["Film (2001)"]
+
+
+def _status_of(rig: "Rig", **viewer: object) -> tuple[str, str, dict]:
+    state = rig.engine.state
+    vs = replace(plan.ViewerState(), settled=True, **viewer)  # type: ignore[arg-type]
+    rig.engine._state = replace(state, viewers={"kv-a": vs})
+    rig.engine._write_status()
+    status = read_status(rig.paths.status)
+    assert status is not None
+    return status.state, status.reason, status.per_viewer
+
+
+def _cw_ready(rig: "Rig") -> None:
+    rig.ready()
+    reply = SyncReply(enabled=True, reason=None, viewers={}, queue_pending=0)
+    rig.engine._state = replace(rig.engine.state, reply=reply)
+
+
+def test_up_to_date_needs_the_first_round_settled_and_nothing_waiting(tmp_path):
+    rig = Rig(tmp_path)
+    _cw_ready(rig)
+    rig.engine._take_inputs()
+    assert _status_of(rig)[0] == "settled"
+    assert _status_of(rig, unsent=True)[0] == "syncing"
+    assert _status_of(rig, acks_pending=True)[0] == "syncing"
+    assert _status_of(rig, failures=1, error="network")[:2] == ("waiting", "crosswatch")
+    assert _status_of(rig, run_unknown=True)[:2] == ("waiting", "crosswatch")
+
+
+def test_a_halving_too_large_is_not_reported_but_a_stop_is(tmp_path):
+    rig = Rig(tmp_path)
+    _cw_ready(rig)
+    rig.engine._take_inputs()
+    assert _status_of(rig, error="too_large")[2] == {}
+    assert _status_of(rig, error="too_large", uploads_stopped="too_large")[2] == {"kv-a": "too_large"}
+    assert _status_of(rig, error="certificate")[2] == {"kv-a": "certificate"}
+
+
+def test_a_new_session_keeps_the_last_counts_until_it_reads_the_library(tmp_path):
+    rig = Rig(tmp_path)
+    counts = {"viewers": {"kv-a": [3, 4]}, "shared": [0, 0], "unowned": [1, 0]}
+    write_status(rig.paths.status, StatusFile(state="settled", counts=counts, unowned_titles=["Some Show"]))
+    rig.engine.begin()
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.counts == counts and status.unowned_titles == ["Some Show"]
+
+
+def test_counts_follow_a_remembered_answer_without_a_new_index(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    viewers = (Viewer(name="anna", sync_id="kv-a"), Viewer(name="ben", sync_id="kv-b"))
+    rig.viewers.save(list(viewers))
+    rig.engine.on_snapshot(IndexSnapshot(index=PlaylistIndex(), built_at=2.0, invalidated_at=0.0, viewers=viewers))
+    show = {"uniqueid": {"tvdb": "7"}, "title": "Some Show", "year": 2010}
+    raw = {"uniqueid": {}, "title": "Pilot", "file": "/e/1.mkv", "tvshowid": 7, "season": 1, "episode": 1}
+    row = LibraryRow(RowKey("L1", "episodes", 1, "/e/1.mkv"), tuple(items.tokens("episodes", raw, show)), raw, 7)
+    rig.engine.library = Library("L1", [], [row], {7: show}, [], True)
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.counts["unowned"] == [1, 0] and status.unowned_titles == ["Some Show"]
+    key = key_for_show(clean_ids(show["uniqueid"]), 7)
+    assert key is not None
+    rig.engine._memory.remember(key, ("anna",))
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.counts["viewers"] == {"kv-a": [1, 0]} and status.unowned_titles == []
+
+
+def test_upload_figures_recounted_at_most_every_so_often(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine.step()
+    store = rig.engine._store
+    assert store is not None
+    rig.lib.row("movies", 3)["playcount"] = 1
+    rig.mark()
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.waiting_changes == 0
+    rig.clock.now += STATUS_FIGURES_SECONDS
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.waiting_changes == 1

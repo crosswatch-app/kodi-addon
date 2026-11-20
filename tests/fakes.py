@@ -57,6 +57,10 @@ class FakeKodi:
         self.sync_setup_requests: list[Any] = []
         self.sync_setup_answer: Any = None
         self.busy_calls: list[bool] = []
+        self.sync_status_requests: list[Any] = []
+        self.sync_status_answers: list[Any] = []
+        self.choices: list[tuple[str, str, str]] = []
+        self.choice_answer: bool | None = None
         # None: a video whenever something plays.
         self.playing_video = playing_video
         self.position_ms = position_ms
@@ -114,6 +118,14 @@ class FakeKodi:
 
     def busy(self, on: bool) -> None:
         self.busy_calls.append(on)
+
+    def sync_status_window(self, request: Any) -> Any:
+        self.sync_status_requests.append(request)
+        return self.sync_status_answers.pop(0) if self.sync_status_answers else ""
+
+    def choice_window(self, heading: str, message: str, yes: str, no: str) -> bool | None:
+        self.choices.append((heading, yes, no))
+        return self.choice_answer
 
     def is_playing_video(self) -> bool:
         return self.playing if self.playing_video is None else self.playing_video

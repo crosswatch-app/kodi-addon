@@ -173,6 +173,7 @@ class StatusFile:
     mass_ratings: int = 0
     per_viewer: dict[str, str] = field(default_factory=dict)
     dropped_marks: int = 0
+    unreadable_playlists: list[str] = field(default_factory=list)
     updated: str = ""
 
 

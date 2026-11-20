@@ -28,3 +28,7 @@ SEED_WINDOW_SECONDS = 86_400
 INBOX_MAX = 10_000
 INBOX_MAX_AGE_SECONDS = 2_592_000
 RESUME_GUARD_SECONDS = 604_800
+
+# The status screen's upload time and changes waiting are recounted from the whole record, so at
+# most this often while the record keeps changing.
+STATUS_FIGURES_SECONDS = 30.0

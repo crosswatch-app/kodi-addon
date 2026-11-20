@@ -379,6 +379,8 @@ class RecordStore:
         self._connect = connect
         self._timeout = busy_timeout
         self._conn: sqlite3.Connection | None = None
+        # Counts committed batches, so a reader can tell the record changed since it looked.
+        self.commits = 0
 
     def open(self, create: bool = False) -> None:
         """Open sync.db. Without create, a file that isn't there stays absent: it is opened
@@ -690,6 +692,7 @@ class RecordStore:
         except BaseException:
             self._rollback()
             raise
+        self.commits += 1
 
     def _apply(self, batch: Batch) -> None:
         db = self._db

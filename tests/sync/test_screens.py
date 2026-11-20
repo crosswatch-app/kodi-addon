@@ -1,15 +1,18 @@
 import os
+from typing import Any
 
 from resources.lib import paths
 from resources.lib.config import KEY_BASE_URL, KEY_SYNC_ENABLED, KEY_SYNC_REQUEST, KEY_TOKEN, read_settings
 from resources.lib.models import Viewer
 from resources.lib.storage import JsonViewerStore
 from resources.lib.sync import items, screens
-from resources.lib.sync.files import StartedFile, read_started, write_started
+from resources.lib.sync.counts import Counts, count_owners
+from resources.lib.sync.files import StartedFile, StatusFile, read_requests, read_started, write_started, write_status
 from resources.lib.sync.items import Library, LibraryRow, RowKey
 from resources.lib.sync.record import RecordStore
 from resources.lib.sync.reply import connection_id
 from resources.lib.ui.sync_setup import SetupResult
+from resources.lib.ui.sync_status import SEND_RATINGS
 from tests.fakes import FakeKodi
 from tests.sync.fake_library import FakeLibrary
 
@@ -41,7 +44,7 @@ def test_setup_counts():
                       [_row("episodes", 10, show=7), _row("episodes", 11, show=7), _row("episodes", 12, show=8),
                        _row("episodes", 13, show=9)], {}, [], True)  # fmt: skip
     owners = {1: ("kv-a",), 2: ("kv-a", "kv-b"), 3: (), 10: ("kv-a",), 11: ("kv-a",), 12: ("kv-a", "kv-b"), 13: ()}
-    counts = screens.count_owners(library, lambda row: owners.get(row.key.kodi_id, ("kv-a",)))
+    counts = count_owners(library, lambda row: owners.get(row.key.kodi_id, ("kv-a",)))
     assert counts.films == {"kv-a": 1} and counts.shared_films == 1 and counts.unowned_films == 1
     assert counts.shows == {"kv-a": {7}} and counts.shared_shows == {8} and counts.unowned_shows == {9}
     request = screens.setup_request(_words, [Viewer(name="Anna", sync_id="kv-a"), Viewer(name="Ben", sync_id="kv-b")],
@@ -58,18 +61,18 @@ def test_setup_counts():
 
 def test_films_without_ids_count_by_title():
     library = Library("L1", [_row("movies", 1, ids={}), _row("movies", 2, ids={})], [], {}, [], True)
-    counts = screens.count_owners(library, lambda row: ("kv-a",))
+    counts = count_owners(library, lambda row: ("kv-a",))
     assert counts.films == {"kv-a": 2}
 
 
 def test_setup_without_usable_index_offers_no_start():
-    request = screens.setup_request(_words, [], screens.Counts(), again=False, trakt=True, insecure=True,
+    request = screens.setup_request(_words, [], Counts(), again=False, trakt=True, insecure=True,
                                     unreadable=("Anna's shows",))  # fmt: skip
     assert not request.can_start and request.counts == () and "Anna's shows" in request.intro
 
 
 def test_trakt_addon_and_http_warnings():
-    request = screens.setup_request(_words, [], screens.Counts(), again=True, trakt=True, insecure=True, unreadable=())
+    request = screens.setup_request(_words, [], Counts(), again=True, trakt=True, insecure=True, unreadable=())
     assert f"#{screens.TRAKT_WARNING}" in request.warnings and f"#{screens.HTTP_WARNING}" in request.warnings
     # Again: nothing is sent from Kodi's history, so no history note.
     assert request.note == "" and request.heading == f"#{screens.HEADING_AGAIN}"
@@ -224,3 +227,178 @@ def test_an_unusable_record_is_not_reported_as_started(tmp_path, monkeypatch):
     monkeypatch.setattr(RecordStore, "open", busy)
     _run(kodi, SetupResult(start=True))
     assert KEY_SYNC_ENABLED not in kodi.settings and kodi.ok_calls and not kodi.notifications
+
+
+def _status_words(string_id: int) -> str:
+    formats = {screens.LAST_UPLOAD: "Last upload {when} · {count} changes waiting", screens.MINUTES_AGO: "{count} min ago",
+               screens.SHOWS: "{count} shows", screens.FILMS: "{count} films",
+               screens.PLAYLISTS_UNREADABLE: "playlists: {names}", screens.VIEWER_UNKNOWN: "{name} unknown",
+               screens.VIEWER_LATE_SEED: "{name} late", screens.MARKS_DROPPED: "{count} dropped",
+               screens.ASSIGN_WATCHED: "watched? {title}", screens.ASSIGN_RATED: "rated? {title}",
+               screens.UNOWNED_ROW: "{count} unowned", screens.MASS_RATINGS: "{count} at once"}  # fmt: skip
+    return formats.get(string_id, f"#{string_id}")
+
+
+VIEWERS = [Viewer(name="Anna", sync_id="kv-a"), Viewer(name="Tom", sync_id="kv-t")]
+
+
+def _request(status: StatusFile | None, **kwargs: Any) -> Any:
+    args = {"now_utc": NOW, "insecure": False, "address_changed": False, **kwargs}
+    return screens.status_request(_status_words, status, VIEWERS, **args)
+
+
+def test_status_lines_per_state():
+    cases = {
+        ("settled", ""): (f"#{screens.STATE_SETTLED}", "good"),
+        ("syncing", ""): (f"#{screens.STATE_SYNCING}", "busy"),
+        ("waiting", "playback"): (f"#{screens.WAIT_PLAYBACK}", "busy"),
+        ("waiting", "scan"): (f"#{screens.WAIT_SCAN}", "busy"),
+        ("waiting", "index"): (f"#{screens.WAIT_INDEX}", "busy"),
+        ("waiting", ""): (f"#{screens.WAIT_CROSSWATCH}", "busy"),
+        ("waiting", "not_sync_device"): (f"#{screens.WAIT_CROSSWATCH}", "busy"),
+        ("stopped", "record_missing"): (f"#{screens.STOP_RECORD}", "stopped"),
+        ("stopped", "unauthorized"): (f"#{screens.STOP_TOKEN}", "stopped"),
+        ("stopped", "no_sync"): (f"#{screens.STOP_NO_SYNC}", "stopped"),
+        ("stopped", "paused"): (f"#{screens.STOP_PAUSED}", "stopped"),
+        ("stopped", "device_id_changed"): (f"#{screens.STOP_DEVICE_ID}", "stopped"),
+        ("off", ""): (f"#{screens.STATE_OFF}", "busy"),
+    }
+    for (state, reason), expected in cases.items():
+        request = _request(StatusFile(state=state, reason=reason))  # type: ignore[arg-type]
+        assert (request.state, request.tone) == expected, (state, reason)
+    off = _request(None)
+    assert off.state == f"#{screens.STATE_OFF}" and off.summary == "" and off.send_ratings == ""
+
+
+def test_status_summary_counts_and_rows():
+    status = StatusFile(
+        state="waiting", reason="library_has_sync_device", last_upload="2026-11-20T09:55:00Z", waiting_changes=3,
+        counts={"viewers": {"kv-a": [2, 1]}, "shared": [1, 0], "unowned": [1, 2]},
+        unowned_titles=["Old Film (1990)", "Some Show"], unreadable_playlists=["Tom's shows"],
+        per_viewer={"kv-t": "viewer_unknown", "kv-gone": "late_seed"}, dropped_marks=4, mass_ratings=142,
+        assignments=[{"id": "a1", "title": "The Office S02E03", "group": "history", "at": NOW},
+                     {"id": "a2", "title": "Dune (2021)", "group": "ratings", "at": NOW}],
+    )  # fmt: skip
+    request = _request(status, insecure=True, address_changed=True)
+    assert request.summary == "Last upload 5 min ago · 3 changes waiting"
+    assert request.counts == ("Anna: 2 shows · 1 films", "Tom: 0", f"#{screens.SHARED}: 1 shows",
+                              f"#{screens.NO_OWNER}: 1 shows · 2 films")  # fmt: skip
+    assert [(r.key, r.text, r.problem) for r in request.rows] == [
+        ("problem:0", f"#{screens.ADDRESS_CHANGED}", True),
+        ("problem:1", f"#{screens.OTHER_SYNC_DEVICE}", True),
+        ("problem:2", "playlists: Tom's shows", True),
+        ("problem:3", f"#{screens.REMOVED_VIEWER} late", True),
+        ("problem:4", "Tom unknown", True),
+        ("problem:5", "4 dropped", True),
+        ("problem:6", f"#{screens.HTTP_WARNING}", True),
+        ("mass", f"142 at once. #{screens.MASS_ROW_ASK}", False),
+        ("assign:a1", "watched? The Office S02E03", False),
+        ("assign:a2", "rated? Dune (2021)", False),
+        ("unowned", "3 unowned", False),
+    ]
+
+
+def _status_kodi(tmp_path, status: StatusFile) -> FakeKodi:
+    kodi = _kodi(tmp_path)
+    JsonViewerStore(paths.viewers_path(kodi)).save(VIEWERS)
+    write_status(paths.sync_status_path(kodi), status)
+    return kodi
+
+
+def _requests(kodi: FakeKodi) -> list[tuple[str, dict]]:
+    return [(r.kind, r.args) for r in read_requests(paths.sync_requests_path(kodi))]
+
+
+def test_assign_writes_request(tmp_path):
+    status = StatusFile(state="settled", assignments=[{"id": "a1", "title": "The Office S02E03", "group": "history"}])
+    kodi = _status_kodi(tmp_path, status)
+    kodi.who_watched_answer = ("Tom",)
+    kodi.sync_status_answers = ["assign:a1"]
+    screens.run_status(kodi, lambda: NOW)
+    assert _requests(kodi) == [("assign", {"assignment": "a1", "viewers": ["kv-t"]})]
+    assert kodi.settings[KEY_SYNC_REQUEST] == "1" and len(kodi.sync_status_requests) == 2
+
+
+def test_assign_skipped_writes_nothing(tmp_path):
+    status = StatusFile(state="settled", assignments=[{"id": "a1", "title": "The Office S02E03", "group": "history"}])
+    kodi = _status_kodi(tmp_path, status)
+    kodi.who_watched_answer = None
+    kodi.sync_status_answers = ["assign:a1"]
+    screens.run_status(kodi, lambda: NOW)
+    assert _requests(kodi) == [] and KEY_SYNC_REQUEST not in kodi.settings
+
+
+def test_send_existing_ratings_writes_request(tmp_path):
+    kodi = _status_kodi(tmp_path, StatusFile(state="settled"))
+    kodi.sync_status_answers = [SEND_RATINGS]
+    screens.run_status(kodi, lambda: NOW)
+    assert _requests(kodi) == [("send_existing_ratings", {})] and kodi.notifications
+
+
+def test_mass_ratings_send_and_dont_send_write_requests(tmp_path):
+    kodi = _status_kodi(tmp_path, StatusFile(state="settled", mass_ratings=142))
+    for answer in (True, False, None):
+        kodi.choice_answer = answer
+        kodi.sync_status_answers = ["mass"]
+        screens.run_status(kodi, lambda: NOW)
+    assert [kind for kind, _ in _requests(kodi)] == ["mass_ratings_send", "mass_ratings_drop"]
+    assert len(kodi.choices) == 3
+
+
+def test_a_problem_row_shows_its_full_text_and_unowned_opens_the_titles(tmp_path):
+    status = StatusFile(state="stopped", reason="paused", counts={"unowned": [0, 1]}, unowned_titles=["Old Film (1990)"],
+                        dropped_marks=2)  # fmt: skip
+    kodi = _status_kodi(tmp_path, status)
+    kodi.sync_status_answers = ["problem:0", "unowned"]
+    screens.run_status(kodi, lambda: NOW)
+    assert len(kodi.ok_calls) == 1
+    [(request, _)] = kodi.list_window_calls
+    assert [r.title for r in request.rows] == ["Old Film (1990)"]
+
+
+def test_status_flags_a_changed_pairing(tmp_path):
+    kodi = _status_kodi(tmp_path, StatusFile(state="off"))
+    write_started(
+        paths.sync_started_path(kodi),
+        StartedFile(connection=connection_id("https://old:8787/webhook/kodiwatcher"), start_id="s"),
+    )
+    screens.run_status(kodi, lambda: NOW)
+    [request] = kodi.sync_status_requests
+    assert request.rows[0].key == "problem:0" and request.rows[0].problem
+
+
+def test_an_unmapped_viewer_error_still_gets_a_row():
+    request = _request(StatusFile(state="waiting", reason="crosswatch", per_viewer={"kv-a": "certificate"}))
+    assert request.state == f"#{screens.WAIT_CROSSWATCH}"
+    assert [r.text for r in request.rows] == [f"#{screens.VIEWER_PROBLEM}"]
+
+
+def test_answered_rows_are_left_off_until_the_engine_takes_them(tmp_path):
+    status = StatusFile(state="settled", mass_ratings=5,
+                        assignments=[{"id": "a1", "title": "T", "group": "history"},
+                                     {"id": "a2", "title": "U", "group": "history"}])  # fmt: skip
+    kodi = _status_kodi(tmp_path, status)
+    kodi.who_watched_answer = ("Anna",)
+    kodi.choice_answer = False
+    kodi.sync_status_answers = ["assign:a1", "mass"]
+    screens.run_status(kodi, lambda: NOW)
+    first, second, third = kodi.sync_status_requests
+    assert [r.key for r in first.rows] == ["mass", "assign:a1", "assign:a2"]
+    assert [r.key for r in second.rows] == ["mass", "assign:a2"]
+    assert [r.key for r in third.rows] == ["assign:a2"]
+
+
+def test_assign_names_the_item_and_asks_whose_rating(tmp_path):
+    status = StatusFile(state="settled", assignments=[{"id": "a2", "title": "Dune (2021)", "group": "ratings"}])
+    kodi = _status_kodi(tmp_path, status)
+    kodi.sync_status_answers = ["assign:a2"]
+    screens.run_status(kodi, lambda: NOW)
+    [request] = kodi.who_watched_calls
+    assert request.title == "Dune (2021)"
+    assert kodi.localised(screens.ASSIGN_RATED_HERE) == request.subtitle
+    assert request.question == kodi.localised(screens.ASSIGN_RATING_QUESTION)
+
+
+def test_status_when_off_shows_only_the_state():
+    request = _request(StatusFile(state="off"))
+    assert (request.needs_you, request.empty, request.note, request.send_ratings) == ("", "", "", "")

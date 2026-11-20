@@ -349,5 +349,17 @@
     ],
     "keys": [],
     "group": "sync"
+  },
+  "sync-status": {
+    "window": "crosswatch-sync-status.xml",
+    "status": "needs-you",
+    "keys": [],
+    "group": "sync"
+  },
+  "sync-status-problems": {
+    "window": "crosswatch-sync-status.xml",
+    "status": "problems",
+    "keys": [],
+    "group": "sync"
   }
 }

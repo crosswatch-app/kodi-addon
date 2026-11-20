@@ -40,7 +40,8 @@ from resources.lib.sync import plan
 from resources.lib.sync.apply import apply_changes, settle_unsent
 from resources.lib.sync.client import SyncClient, SyncError
 from resources.lib.sync.clock import kodi_to_utc
-from resources.lib.sync.constants import RATING_SCAN_SECONDS
+from resources.lib.sync.constants import RATING_SCAN_SECONDS, STATUS_FIGURES_SECONDS
+from resources.lib.sync.counts import count_owners, to_status, unowned_titles
 from resources.lib.sync.files import (
     Inbox,
     InboxRecord,
@@ -50,6 +51,7 @@ from resources.lib.sync.files import (
     done_requests,
     read_requests,
     read_started,
+    read_status,
     update_started,
     write_status,
 )
@@ -210,6 +212,12 @@ class SyncEngine:
         self.device_id_changed = False
         # Seed viewers whose first full started after their window: the status names them.
         self.late_seeds: set[str] = set()
+        # The status screen's figures, recounted only when what they come from changed: the
+        # record's commit count, and the library and index the ownership was counted from.
+        self._record_figures: tuple[int, str, int] | None = None
+        self._figures_at = 0.0
+        self._owned_from: tuple[Library, IndexSnapshot, Mapping[str, Any]] | None = None
+        self._owned: tuple[dict[str, Any], list[str]] = ({}, [])
 
         # Published for the service thread; replaced whole.
         self.server_backed_rows: frozenset[tuple[str, int]] = frozenset()
@@ -261,6 +269,11 @@ class SyncEngine:
             requests_waiting=bool(read_requests(self._paths.requests)),
         )
         self._open_store()
+        # The counts as the last session left them, until this session has read the library:
+        # a session that never gets that far would otherwise wipe them from the screen.
+        previous = read_status(self._paths.status)
+        if previous is not None and not self._owned[0]:
+            self._owned = (previous.counts, previous.unowned_titles)
 
     def step(self) -> float | None:
         """Take the inputs, do what next_action says, write the status. The seconds to wait
@@ -745,12 +758,21 @@ class SyncEngine:
             status, reason = "waiting", state.reply.reason
         elif not plan.active(state) or plan.waiting_on(state) is not None:
             status, reason = "waiting", plan.waiting_on(state) or ""
-        elif state.viewers and all(vs.settled for vs in state.viewers.values()):
+        elif state.ping_failures or any(vs.run_unknown or vs.failures for vs in state.viewers.values()):
+            # A ping CrossWatch refused, a call that failed and backs off, or a full CrossWatch
+            # hasn't judged yet: the next step is CrossWatch's.
+            status, reason = "waiting", "crosswatch"
+        elif state.viewers and all(vs.settled and not _has_work(vs) for vs in state.viewers.values()):
+            # settled alone stays true once the first round settled; up to date also needs
+            # nothing waiting to go up or be acknowledged.
             status = "settled"
         else:
             status = "syncing"
+        # A too_large while uploads go on is the parts being halved; only a stop is news.
         per_viewer = {
-            v: vs.uploads_stopped or vs.error for v, vs in state.viewers.items() if vs.uploads_stopped or vs.error
+            v: problem
+            for v, vs in state.viewers.items()
+            if (problem := vs.uploads_stopped or ("" if vs.error == "too_large" else vs.error))
         }
         for viewer in self.late_seeds:
             per_viewer.setdefault(viewer, "late_seed")
@@ -766,6 +788,10 @@ class SyncEngine:
         except Exception:
             listed = []
         assignments = [{"id": a.id, "title": a.title, "group": a.group, "at": a.at} for a in listed]
+        last_upload, waiting = self._upload_figures()
+        counts, unowned = self._ownership_figures()
+        snapshot = self._snapshot
+        unreadable = sorted(snapshot.index.unreadable) if snapshot is not None and snapshot.index is not None else []
         current = StatusFile(
             state=status,
             reason=reason,
@@ -773,6 +799,11 @@ class SyncEngine:
             dropped_marks=dropped,
             mass_ratings=len(self.held_ratings),
             assignments=assignments,
+            last_upload=last_upload,
+            waiting_changes=waiting,
+            counts=counts,
+            unowned_titles=unowned,
+            unreadable_playlists=unreadable,
         )
         if current == self._last_status:
             return
@@ -782,6 +813,47 @@ class SyncEngine:
             return
         if write_status(self._paths.status, replace(current, updated=self._utc_now())):
             self._last_status = current
+
+    def _upload_figures(self) -> tuple[str, int]:
+        """The last upload's time and the entries not yet sent, across viewers."""
+        store = self._store
+        if store is None:
+            return "", 0
+        known = self._record_figures
+        if known is not None and (
+            known[0] == store.commits or self._clock() - self._figures_at < STATUS_FIGURES_SECONDS
+        ):
+            return known[1], known[2]
+        last, waiting = "", 0
+        try:
+            for viewer in self._known_viewers():
+                for entry in store.entries(viewer):
+                    last = max(last, entry.uploaded_at)
+                    waiting += entry.touched
+        except Exception:
+            return (known[1], known[2]) if known is not None else ("", 0)
+        self._record_figures = (store.commits, last, waiting)
+        self._figures_at = self._clock()
+        return last, waiting
+
+    def _ownership_figures(self) -> tuple[dict[str, Any], list[str]]:
+        """Who owns what, as of the last complete library read with an index."""
+        library, snapshot = self.library, self._snapshot
+        if library is None or snapshot is None or not library.complete:
+            return self._owned
+        try:
+            # Ownership also follows the remembered answers, which change without a new library
+            # read or index (a viewer change brings a new index).
+            inputs = self._memory.entries()
+            known = self._owned_from
+            if known is not None and known[0] is library and known[1] is snapshot and known[2] == inputs:
+                return self._owned
+            counted = count_owners(library, self._owners(library))
+        except Exception:
+            return self._owned
+        self._owned_from = (library, snapshot, inputs)
+        self._owned = (to_status(counted), unowned_titles(counted, library))
+        return self._owned
 
     # -- the library and uploads ----------------------------------------------------------
 
@@ -1516,6 +1588,18 @@ class SyncEngine:
                 viewers[viewer] = replace(vs, settled=True, existing_ratings_due=vs.existing_ratings_due or wanted)
                 _log.info("sync.first_round_settled", viewer=viewer)
         return replace(state, viewers=viewers)
+
+
+def _has_work(vs: plan.ViewerState) -> bool:
+    return (
+        vs.unsent
+        or vs.acks_pending
+        or vs.full_due
+        or vs.full_in_progress
+        or vs.full_again
+        or vs.in_flight
+        or vs.existing_ratings_due
+    )
 
 
 def _carried(job_built: Mapping[str, Entry], bodies: list[UploadBody], seq: int, settled: bool) -> dict[str, Carried]:

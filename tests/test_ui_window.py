@@ -3,6 +3,7 @@ from typing import Any
 
 from resources.lib.constants import (
     PROMPT_EVERYONE,
+    WHO_WATCHED_DONE,
     WHO_WATCHED_QUESTION,
     WINDOW_CANCEL,
     WINDOW_CLOSE,
@@ -17,6 +18,7 @@ from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, ListS
 from resources.lib.ui.panel import PanelLine
 from resources.lib.ui.rating import RateRequest
 from resources.lib.ui.sync_setup import SetupRequest, SetupResult
+from resources.lib.ui.sync_status import SEND_RATINGS, StatusRequest, StatusRow
 from resources.lib.ui.viewers_window import ViewerRow, ViewersRequest, ViewersResult
 from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
@@ -34,10 +36,12 @@ from resources.lib.ui.window import (
     BUTTON_REMOVE,
     BUTTON_REMOVE_RATING,
     BUTTON_RENAME,
+    BUTTON_SEND_RATINGS,
     BUTTON_SETUP_CANCEL,
     BUTTON_SETUP_CLOSE,
     BUTTON_SKIP,
     BUTTON_START,
+    BUTTON_STATUS_CLOSE,
     BUTTON_VIEWERS_CLOSE,
     BUTTON_YES,
     LIST_FILTER,
@@ -45,7 +49,9 @@ from resources.lib.ui.window import (
     LIST_SCORES,
     LIST_SEARCH,
     LIST_VIEWERS,
+    STATUS_ROWS,
     SYNC_SETUP_XML,
+    SYNC_STATUS_XML,
     TOGGLE_RATINGS,
     VIEWERS_ROWS,
     ConfirmDialog,
@@ -54,6 +60,7 @@ from resources.lib.ui.window import (
     RatingDialog,
     RememberedDialog,
     SyncSetupDialog,
+    SyncStatusDialog,
     ViewersDialog,
     WhoWatchedDialog,
 )
@@ -302,6 +309,14 @@ def test_confirm_shows_its_heading_and_message_and_starts_on_no():
     assert dialog.getProperty("CW.Heading") == "Remembered answers"
     assert dialog.getProperty("CW.Message") == "Forget who watched 3 shows?"
     assert dialog.focused == BUTTON_NO
+
+
+def test_confirm_buttons_say_yes_and_no_unless_named():
+    dialog = _confirm()
+    assert (dialog.getProperty("CW.YesLabel"), dialog.getProperty("CW.NoLabel")) == ("Yes", "No")
+    named: Any = ConfirmDialog("crosswatch-confirm.xml", "/addon", "Default", "1080i")
+    named.prepare("142 ratings changed at once", "Send them?", lambda i: "", "Send", "Don't send")
+    assert (named.getProperty("CW.YesLabel"), named.getProperty("CW.NoLabel")) == ("Send", "Don't send")
 
 
 def test_confirm_yes_is_true_and_no_or_back_is_not():
@@ -960,3 +975,85 @@ def test_setup_without_start_offers_close_only():
     assert dialog.closed == 0
     dialog.onClick(BUTTON_SETUP_CLOSE)
     assert dialog.result == SetupResult(start=False)
+
+
+class _Rows:
+    def __init__(self) -> None:
+        self.items: list[Any] = []
+        self.position = 0
+
+    def addItem(self, item: Any) -> None:
+        self.items.append(item)
+
+    def getSelectedPosition(self) -> int:
+        return self.position
+
+
+def _status(rows: tuple[StatusRow, ...], send: str = "Send existing ratings") -> Any:
+    request = StatusRequest(heading="Library sync status", state="Up to date", tone="good", summary="",
+                            counts=(), needs_you="Needs you", rows=rows, empty="Nothing needs you.", note="",
+                            send_ratings=send)  # fmt: skip
+    dialog: Any = SyncStatusDialog(SYNC_STATUS_XML, "/addon", "Default", "1080i")
+    dialog.prepare(request, lambda i: "")
+    dialog.set_control(STATUS_ROWS, _Rows())
+    return dialog
+
+
+def test_status_lists_the_rows_and_returns_the_chosen_key():
+    dialog = _status((StatusRow("problem:0", "Another device syncs this library.", problem=True),
+                      StatusRow("assign:a1", "Whose was this?")))  # fmt: skip
+    dialog.onInit()
+    rows = dialog.getControl(STATUS_ROWS)
+    assert [i.getProperty("problem") for i in rows.items] == ["true", ""]
+    assert dialog.focused == STATUS_ROWS and dialog.getProperty("CW.Empty") == ""
+    rows.position = 1
+    dialog.onClick(STATUS_ROWS)
+    assert dialog.result == "assign:a1"
+
+
+def test_status_with_nothing_to_do_focuses_close():
+    dialog = _status(())
+    dialog.onInit()
+    assert dialog.focused == BUTTON_STATUS_CLOSE and dialog.getProperty("CW.Empty") == "Nothing needs you."
+    dialog.onClick(BUTTON_SEND_RATINGS)
+    assert dialog.result == SEND_RATINGS
+
+
+def test_status_without_send_ratings_ignores_the_hidden_button():
+    dialog = _status((), send="")
+    dialog.onInit()
+    dialog.onClick(BUTTON_SEND_RATINGS)
+    assert dialog.closed == 0
+    dialog.onClick(BUTTON_STATUS_CLOSE)
+    assert dialog.result == ""
+
+
+def test_a_read_only_list_has_one_close_button_where_done_would_be():
+    request = ListRequest(heading="Shows and films with no owner", rows=SHOWS, count_one="1 title",
+                          count_all="%s titles", read_only=True)  # fmt: skip
+    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, START, lambda i: {WINDOW_CLOSE: "Close"}.get(i, ""))
+    rows, edit = FakeRows(), FakeEdit()
+    dialog.set_control(LIST_ROWS, rows)
+    dialog.set_control(LIST_SEARCH, edit)
+    dialog.onInit()
+    assert dialog.getProperty("CW.ReadOnly") == "1" and dialog.getProperty("CW.DoneLabel") == "Close"
+    dialog.onClick(LIST_ROWS)
+    assert dialog.closed == 0
+    dialog.onClick(BUTTON_PICK_DONE)
+    assert dialog.result.action == "close"
+
+
+def test_a_pick_list_keeps_its_done_button():
+    dialog, _, _ = _pick()
+    assert dialog.getProperty("CW.ReadOnly") == "" and dialog.getProperty("CW.DoneLabel") == PICK_TEXTS.get(
+        WHO_WATCHED_DONE, ""
+    )
+
+
+def test_who_watched_asks_a_question_of_its_own():
+    request = WhoWatchedRequest(title="Dune (2021)", subtitle="Rated on this device", poster="", names=("Anna",),
+                                question="Whose rating was this?")  # fmt: skip
+    dialog: Any = WhoWatchedDialog("crosswatch-who.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, lambda i: "Who watched it?", lambda: False, lambda s: False)
+    assert dialog.getProperty("CW.Question") == "Whose rating was this?"
