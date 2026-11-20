@@ -207,7 +207,7 @@ class WriteReport:
     deferred: int = 0
 
 
-def _seen_of(raw: Mapping[str, Any]) -> Seen:
+def seen_of(raw: Mapping[str, Any]) -> Seen:
     resume = raw.get("resume") or {}
     return Seen(
         playcount=int(raw.get("playcount") or 0),
@@ -394,7 +394,7 @@ class Writer:
         """The fields for one copy; {} for nothing to write; None to wait (multi-episode file)."""
         states = self._states(row)
         seen = self._store.seen(row.key)
-        kodi_now = _seen_of(row.raw)
+        kodi_now = seen_of(row.raw)
         siblings = self._siblings(row)
         sibling_states = [[st.history for st in self._states(s)] for s in siblings]
         siblings_watched = any(rule_met(h, self._settings) for h in sibling_states)
@@ -455,7 +455,7 @@ class Writer:
         raw_after = {**after.raw, "lastplayed": utc_to_kodi(str(after.raw.get("lastplayed") or ""))}
         landed = _landed(sent, raw_after)
         stored = self._store.seen(row.key)
-        now_seen = _seen_of(after.raw)
+        now_seen = seen_of(after.raw)
         if stored is not None:
             keep: dict[str, Any] = {}
             if "userrating" not in fields:

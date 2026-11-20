@@ -6,8 +6,16 @@ import pytest
 
 from resources.lib.sync import items
 from resources.lib.sync.items import LibraryRow, RowKey
-from resources.lib.sync.manual import Ignored, Recorded, ToAssign, apply_assignment, watched_change
-from resources.lib.sync.record import Batch, Entry, History, ItemState, RecordStore, fresh_state
+from resources.lib.sync.manual import (
+    Ignored,
+    Recorded,
+    ToAssign,
+    apply_assignment,
+    rating_change,
+    rating_window_write,
+    watched_change,
+)
+from resources.lib.sync.record import Batch, Entry, History, ItemState, Rating, RecordStore, fresh_state
 from resources.lib.sync.settings import SyncSettings
 
 AT = "2026-11-20T10:00:00Z"
@@ -274,3 +282,88 @@ def test_episode_title_without_numbers():
     raw = {**row.raw, "season": None}
     out = _mark(None, owners=("kv-a", "kv-b"), row=replace(row, raw=raw), show=SHOW)
     assert isinstance(out, ToAssign) and out.assignment.title == "Breaking Bad"
+
+
+# -- ratings --------------------------------------------------------------------------------
+
+
+def _rate(entries, value, owners=("kv-a",), settings=OFF, row=None):
+    ids = itertools.count(1)
+    return rating_change(entries, row or _movie(), None, value=value, owners=owners, settings=settings, made_at=AT,
+                         new_id=lambda: f"r-{next(ids)}")  # fmt: skip
+
+
+def test_rating_on_single_owner_item_recorded():
+    [out] = _rate({"kv-a": _entry(unsent_upload={"ratings": 4})}, 7)
+    assert isinstance(out, Recorded) and out.sent
+    assert out.entry.state.rating == Rating(value=7) and out.entry.unsent == {"ratings": AT}
+    assert out.entry.unsent_upload == {} and out.entry.touched
+
+
+def test_same_rating_ignored():
+    entry = replace(_entry(), state=ItemState(rating=Rating(value=7)))
+    assert _rate({"kv-a": entry}, 7) == [Ignored("same_rating")]
+
+
+@pytest.mark.parametrize("settings", [OFF, ON])
+def test_cleared_rating_needs_setting(settings):
+    entry = replace(_entry(), state=ItemState(rating=Rating(value=7)))
+    out = _rate({"kv-a": entry}, 0, settings=settings)
+    if settings.send_removals:
+        [rec] = out
+        assert isinstance(rec, Recorded) and rec.entry.state.rating == Rating(value=0, removed=True)
+    else:
+        assert out == [Ignored("removals_off")]
+
+
+def test_shared_rating_goes_to_assignment_list(store):
+    [out] = _rate({}, 8, owners=("kv-a", "kv-b"))
+    assert isinstance(out, ToAssign) and out.assignment.group == "ratings"
+    assert out.assignment.value.rating.value == 8
+    store.commit(Batch(assignments_add=[out.assignment]))
+    store.commit(_assign(out.assignment, ["kv-b"], store))
+    [entry] = store.entries("kv-b")
+    assert entry.state.rating.value == 8 and entry.unsent == {"ratings": AT}
+    assert store.entries("kv-a") == []
+
+
+def test_rating_without_owner_ignored():
+    assert _rate({}, 8, owners=()) == [Ignored("no_owner")]
+
+
+def _window(entries, rated, owners, value=6):
+    return rating_window_write(entries, _movie(), None, value=value, rated=rated, owners=owners, made_at=AT)
+
+
+def test_rating_window_write_recorded_when_viewers_are_owners():
+    out = _window({}, ["kv-b", "kv-a"], ["kv-a", "kv-b"])
+    assert [(o.viewer, o.entry.state.rating.value, o.sent) for o in out if isinstance(o, Recorded)] == [
+        ("kv-a", 6, True),
+        ("kv-b", 6, True),
+    ]
+
+
+def test_rating_window_write_for_others_records_nothing():
+    assert _window({}, ["kv-a"], ["kv-a", "kv-b"]) == [Ignored("not_the_owners")]
+    assert _window({}, ["kv-c"], ["kv-a"]) == [Ignored("not_the_owners")]
+    assert _window({}, [], []) == [Ignored("not_the_owners")]
+
+
+def test_rating_window_equal_to_record_is_nothing_new():
+    entry = replace(_entry(), state=ItemState(rating=Rating(value=6)))
+    assert _window({"kv-a": entry}, ["kv-a"], ["kv-a"]) == [Ignored("same_rating")]
+
+
+def test_older_rating_assignment_keeps_a_newer_person_rating(store):
+    [out] = _rate({}, 8, owners=("kv-a", "kv-b"))
+    assert isinstance(out, ToAssign)
+    newer = replace(_entry(), key="k", state=ItemState(rating=Rating(value=3)), unsent={"ratings": "2026-11-20T12:00:00Z"})
+    store.commit(Batch(entries={"kv-a": [newer]}))
+    assert _assign(out.assignment, ["kv-a"], store).entries == {}
+
+
+def test_shared_rating_every_owner_already_holds_is_nothing_new():
+    rated = replace(_entry(), state=ItemState(rating=Rating(value=8)))
+    assert _rate({"kv-a": rated, "kv-b": rated}, 8, owners=("kv-a", "kv-b")) == [Ignored("same_rating")]
+    [out] = _rate({"kv-a": rated}, 8, owners=("kv-a", "kv-b"))
+    assert isinstance(out, ToAssign)

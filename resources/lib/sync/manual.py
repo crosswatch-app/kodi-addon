@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""A person's watched mark made in Kodi, taken into the record.
+"""A person's watched mark or rating made in Kodi, taken into the record.
 
 The mark reaches here only after local.classify found it to be a person's (not playback, a
 scan, Refresh information or the add-on's own write) and the worker drained it from the
@@ -8,6 +8,11 @@ inbox against a fresh read of the row. What happens to it depends on who owns th
 - several owners: it goes to the assignment list, and nothing is sent until the household
   says whose it was (contract, Setup: shared items);
 - no owner: nothing, as the item is in no upload.
+
+Ratings follow the same split; a rating cleared to 0 is a removal, sent only with the same
+setting on. A rating set on one copy of an item is the item's: the engine has the writer give
+the other copies the value. With it off the record keeps its rating and Kodi keeps the person's 0: the writer
+rates Kodi only for a queued change or a row that lost its rating, never on its own.
 
 An unwatch is sent only with "Send removals made in Kodi" on. Wherever it isn't sent (the
 setting is off, or a shared item waits on the assignment list) each owner's record keeps the
@@ -22,7 +27,18 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from resources.lib.sync.items import LibraryRow, identity
-from resources.lib.sync.record import Assignment, Batch, Entry, History, ItemState, RecordStore, fresh_state, merge
+from resources.lib.sync.record import (
+    Assignment,
+    Batch,
+    Entry,
+    Group,
+    History,
+    ItemState,
+    Rating,
+    RecordStore,
+    fresh_state,
+    merge,
+)
 from resources.lib.sync.rows import entry_meta
 from resources.lib.sync.settings import SyncSettings
 
@@ -68,12 +84,16 @@ def _new_entry(key: str, tokens: frozenset[str], meta: dict[str, Any]) -> Entry:
 
 
 def _person_change(entry: Entry, history: History, made_at: str) -> Entry:
+    return _person_group(entry, replace(entry.state, history=history), "history", made_at)
+
+
+def _person_group(entry: Entry, state: ItemState, group: Group, made_at: str) -> Entry:
     return replace(
         entry,
-        state=replace(entry.state, history=history),
-        unsent={**entry.unsent, "history": made_at},
+        state=state,
+        unsent={**entry.unsent, group: made_at},
         # A new person change is carried by a new upload, not by one that carried an older one.
-        unsent_upload={k: v for k, v in entry.unsent_upload.items() if k != "history"},
+        unsent_upload={k: v for k, v in entry.unsent_upload.items() if k != group},
         touched=True,
         change_count=entry.change_count + 1,
     )
@@ -177,6 +197,88 @@ def watched_change(
     return [*out, ToAssign(assignment)]
 
 
+def _decide_rating(viewer: str, entry: Entry, value: int, send_removals: bool, made_at: str) -> Recorded | Ignored:
+    old = entry.state.rating
+    if value == old.value:
+        return Ignored("same_rating")
+    if value == 0 and not send_removals:
+        return Ignored("removals_off")
+    rating = Rating(value=value, removed=value == 0, src=old.src)
+    return Recorded(viewer, _person_group(entry, replace(entry.state, rating=rating), "ratings", made_at), True)
+
+
+def rating_change(
+    entries: Mapping[str, Entry],
+    row: LibraryRow,
+    show: Mapping[str, Any] | None,
+    *,
+    value: int,
+    owners: Sequence[str],
+    settings: SyncSettings,
+    made_at: str,
+    new_id: Callable[[], str],
+) -> list[LocalOutcome]:
+    """A person's rating found by the rating scan: value 0 is a cleared rating. entries as
+    for watched_change."""
+    owners = list(dict.fromkeys(owners))
+    if not owners:
+        return [Ignored("no_owner")]
+    if value == 0 and not settings.send_removals:
+        return [Ignored("removals_off")]
+    key = identity(row.key.kind, row.raw, show)
+    tokens = frozenset(row.tokens)
+    meta = entry_meta(row, show)
+    if len(owners) == 1:
+        viewer = owners[0]
+        entry = entries.get(viewer) or _new_entry(key, tokens, meta)
+        return [_decide_rating(viewer, entry, value, settings.send_removals, made_at)]
+    if all((e := entries.get(v)) is not None and e.state.rating.value == value for v in owners):
+        return [Ignored("same_rating")]
+    assignment = Assignment(
+        id=new_id(),
+        entry_key=key,
+        tokens=tokens,
+        group="ratings",
+        value=ItemState(rating=Rating(value=value, removed=value == 0)),
+        title=_title(row),
+        at=made_at,
+        meta=meta,
+    )
+    return [ToAssign(assignment)]
+
+
+def rating_window_write(
+    entries: Mapping[str, Entry],
+    row: LibraryRow,
+    show: Mapping[str, Any] | None,
+    *,
+    value: int,
+    rated: Sequence[str],
+    owners: Sequence[str],
+    made_at: str,
+) -> list[LocalOutcome]:
+    """The add-on's own rating window wrote value to Kodi for the viewers in rated (sync ids).
+    The caller passes row as read back after the write, and only when it holds value: a write
+    whose answer was lost may not have landed.
+
+    Their scores already went to CrossWatch as rate events, so the record takes them as a
+    person's change only when the viewers who rated are exactly the item's owners: Kodi's
+    one rating then stands for each of them, and an equal value at CrossWatch is a no-op.
+    Otherwise the owners' records are left alone; the caller still stores the row's Seen,
+    so the next rating scan doesn't take the window's write for a person's change.
+    """
+    owners = list(dict.fromkeys(owners))
+    if not owners or set(rated) != set(owners) or value <= 0:
+        return [Ignored("not_the_owners")]
+    key = identity(row.key.kind, row.raw, show)
+    tokens = frozenset(row.tokens)
+    meta = entry_meta(row, show)
+    return [
+        _decide_rating(viewer, entries.get(viewer) or _new_entry(key, tokens, meta), value, False, made_at)
+        for viewer in owners
+    ]
+
+
 def _title(row: LibraryRow) -> str:
     raw = row.raw
     if row.key.kind == "episodes":
@@ -211,13 +313,18 @@ def apply_assignment(
         if not assignment.tokens <= entry.tokens:
             entry = replace(entry, tokens=entry.tokens | assignment.tokens, change_count=entry.change_count + 1)
             changed = True
-        newer = entry.unsent.get("history", "")
-        value = assignment.value.history
-        outcome: Recorded | Ignored = Ignored("newer_change")
-        if not newer or newer <= assignment.at:
-            playcount = max(value.playcount, 1) if value.watched else 0
+        newer = entry.unsent.get(assignment.group, "")
+        outcome: Recorded | Ignored
+        if newer and newer > assignment.at:
+            outcome = Ignored("newer_change")
+        elif assignment.group == "ratings":
+            value = assignment.value.rating.value
+            outcome = _decide_rating(viewer, entry, value, settings.send_removals, assignment.at)
+        else:
+            history = assignment.value.history
+            playcount = max(history.playcount, 1) if history.watched else 0
             outcome = _decide(
-                viewer, entry, playcount, value.lastplayed, settings.send_removals, assignment.at, next_upload_seq
+                viewer, entry, playcount, history.lastplayed, settings.send_removals, assignment.at, next_upload_seq
             )
         if isinstance(outcome, Recorded):
             batch.entries.setdefault(viewer, []).append(outcome.entry)

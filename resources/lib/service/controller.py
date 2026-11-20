@@ -45,6 +45,7 @@ from resources.lib.sync.files import Inbox
 from resources.lib.sync.local import PersonBuffer, RecentPlays, kodi_counts_play, kodi_playcount_percent
 from resources.lib.sync.ownership import EMPTY_SNAPSHOT, IndexSnapshot
 from resources.lib.sync.reply import PingTicket
+from resources.lib.sync.writer import OwnWrites, episode_counts, restore_copies
 from resources.lib.ui.rating import RATE_FAILED, RateRequest, counter_text, question_text
 
 _log = get_logger("service")
@@ -70,6 +71,8 @@ class Controller:
         person_buffer: PersonBuffer | None = None,
         inbox: Inbox | None = None,
         on_inbox: Callable[[], None] | None = None,
+        own: OwnWrites | None = None,
+        on_rating_written: Callable[[str, int, int, tuple[str, ...]], None] | None = None,
     ) -> None:
         self._kodi = kodi
         self._store = viewer_store
@@ -123,6 +126,13 @@ class Controller:
         self._on_inbox = on_inbox
         # Marks are in the inbox file and the worker hasn't been told yet.
         self._inbox_untold = False
+        # The rating window's own library writes, so library sync knows them (writer.OwnWrites).
+        self._own = own
+        self._on_rating_written = on_rating_written
+        self._own_writes = 0
+        # True from a rating run's first window until the run returns: library sync neither
+        # writes to Kodi nor scans ratings meanwhile.
+        self.rating_run_open = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -586,6 +596,12 @@ class Controller:
         # household is watching that next item.
 
     def _run_ratings(self, watches: list[rating_mod.Watch], after_window: bool) -> None:
+        try:
+            self._rate_all(watches, after_window)
+        finally:
+            self.rating_run_open = False
+
+    def _rate_all(self, watches: list[rating_mod.Watch], after_window: bool) -> None:
         viewers = self._viewers()
         plan = [(w, rating_mod.questions(w, viewers, self._settings.rating_shared)) for w in watches]
         total = sum(len(qs) for _, qs in plan)
@@ -605,6 +621,7 @@ class Controller:
                 return
             subtitle, poster = prompt_mod.header(self._kodi, watch.media)
             scores: list[int] = []
+            rated: list[str] = []
             for question in questions:
                 index += 1
                 request = RateRequest(
@@ -616,6 +633,7 @@ class Controller:
                     autoclose_seconds=RATING_AUTOCLOSE_SECONDS,
                     close_on_playback=True,
                 )
+                self.rating_run_open = True
                 score = self._kodi.rate(request)
                 after_window = True
                 if score == RATE_FAILED:
@@ -624,13 +642,14 @@ class Controller:
                     return
                 if score is not None:
                     scores.append(score)
+                    rated.extend(question.targets)
                     for target in question.targets or (None,):
                         self._emit_rate(watch, target, score)
                 if self._kodi.is_playing():
-                    self._write_back(watch, scores)
+                    self._write_back(watch, scores, rated)
                     self._abandon(total - index)
                     return
-            self._write_back(watch, scores)
+            self._write_back(watch, scores, rated)
 
     def _abandon(self, left: int) -> None:
         dropped = self._ratings.clear()
@@ -655,7 +674,7 @@ class Controller:
         if not self._queue.submit(event):
             _log.warning("rating.not_queued", session_id=watch.session_id)
 
-    def _write_back(self, watch: rating_mod.Watch, scores: list[int]) -> None:
+    def _write_back(self, watch: rating_mod.Watch, scores: list[int], rated: list[str]) -> None:
         if not self._settings.rating_write_library or not scores:
             return
         media = watch.media
@@ -666,8 +685,42 @@ class Controller:
         if value is None:
             _log.info("rating.library_skipped", media_type=media.media_type, reason="scores_differ")
             return
-        if self._kodi.set_user_rating(media.media_type, media.library_id, value):
+        before = self._episode_counts(media)
+        if media.media_type == "episode" and self._own is not None and before is None:
+            # Without the counts a play count Kodi copies over from another watched copy
+            # couldn't be put back, so the write waits, as the library sync writer's does.
+            _log.info("rating.library_skipped", media_type=media.media_type, reason="counts_unreadable")
+            return
+        written = self._kodi.set_user_rating(media.media_type, media.library_id, value)
+        if written:
             _log.info("rating.library_written", media_type=media.media_type, library_id=media.library_id)
+        if written and before is not None and self._own is not None:
+            # SetEpisodeDetails copies another watched copy's play count onto this episode
+            # first, silently (VideoDatabase.cpp SetDetailsForEpisode); put it back, as the
+            # library sync writer does, under a note so the restore isn't a person's mark.
+            self._own_writes += 1
+            try:
+                restore_copies(self._kodi, self._own, media.library_id, before, f"controller-{self._own_writes}")
+            except Exception as exc:
+                _log.warning("rating.restore_failed", library_id=media.library_id, error=str(exc))
+        if self._on_rating_written is not None:
+            # Told even when Kodi's answer was lost: the write may have landed, and library
+            # sync reads the row back and records only what Kodi holds.
+            ids = {v.name: v.sync_id for v in self._viewers() if v.sync_id}
+            sync_ids = tuple(dict.fromkeys(ids[name] for name in rated if name in ids))
+            try:
+                self._on_rating_written(media.media_type, media.library_id, value, sync_ids)
+            except Exception as exc:
+                _log.warning("rating.sync_not_told", library_id=media.library_id, error=str(exc))
+
+    def _episode_counts(self, media: MediaItem) -> tuple[int, str] | None:
+        if media.media_type != "episode" or media.library_id is None or self._own is None:
+            return None
+        try:
+            return episode_counts(self._kodi, media.library_id)
+        except Exception as exc:
+            _log.warning("rating.counts_failed", library_id=media.library_id, error=str(exc))
+            return None
 
     # -- helpers -----------------------------------------------------------
 

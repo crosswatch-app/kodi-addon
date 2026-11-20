@@ -182,11 +182,11 @@ _METHODS: dict[str, tuple[str, str, str]] = {
 }
 
 
-class _Stopped(Exception):
+class Stopped(Exception):
     pass
 
 
-def _pages(
+def pages(
     kodi: JsonRpc, what: str, properties: list[str], page: int, may_continue: Callable[[], bool]
 ) -> tuple[list[dict[str, Any]], bool]:
     """All rows of one list, page by page, and whether the total held still while paging.
@@ -202,7 +202,7 @@ def _pages(
     start = 0
     while True:
         if not may_continue():
-            raise _Stopped
+            raise Stopped
         result = kodi.jsonrpc(method, {"properties": properties, "limits": {"start": start, "end": start + page}})
         batch = [r for r in result.get(field) or [] if isinstance(r, dict)]
         total = int((result.get("limits") or {}).get("total") or 0)
@@ -245,7 +245,7 @@ def read_library(
     are filtered out, or a household with a media server add-on would never read complete.
     """
     try:
-        show_rows, shows_ok = _pages(kodi, "tvshows", SHOW_PROPERTIES, page, may_continue)
+        show_rows, shows_ok = pages(kodi, "tvshows", SHOW_PROPERTIES, page, may_continue)
         tvshows = {int(s["tvshowid"]): dict(s) for s in show_rows if "tvshowid" in s}
         keep_show_ids(tvshows, previous_shows)
         complete = shows_ok
@@ -253,9 +253,9 @@ def read_library(
         server_backed: set[tuple[ItemKind, int]] = set()
         reads: tuple[tuple[ItemKind, list[str]], ...] = (("movies", MOVIE_PROPERTIES), ("episodes", EPISODE_PROPERTIES))
         for kind, properties in reads:
-            raws, held = _pages(kodi, kind, properties, page, may_continue)
+            raws, held = pages(kodi, kind, properties, page, may_continue)
             if not may_continue():
-                raise _Stopped
+                raise Stopped
             id_field = _METHODS[kind][2]
             seen_ids = {int(r[id_field]) for r in raws if id_field in r}
             complete = complete and held and seen_ids == _ids(kodi, kind)
@@ -270,7 +270,7 @@ def read_library(
                 if id_field in raw and is_server_backed(strip_credentials(str(raw.get("file") or "")))
             }
         sources = _sources(kodi)
-    except _Stopped:
+    except Stopped:
         return None
     return Library(
         library_id=library_id,

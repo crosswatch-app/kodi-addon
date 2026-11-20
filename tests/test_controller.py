@@ -17,6 +17,7 @@ from resources.lib.sync.files import InboxRecord
 from resources.lib.sync.local import PersonBuffer, RecentPlays
 from resources.lib.sync.reply import PingTicket
 from resources.lib.sync.settings import SyncSettings
+from resources.lib.sync.writer import OwnWrites
 from resources.lib.ui.rating import RATE_FAILED
 from tests.fakes import FakeKodi
 
@@ -2039,3 +2040,125 @@ def test_failing_inbox_hook_is_logged_and_retried(tmp_path, capture_log):
     controller.on_tick()
     controller.on_tick()
     assert calls == [1, 1]
+
+
+# -- library sync: the rating window's own writes ------------------------------------------
+
+SYNCED = [Viewer(name="anna", profiles=("Living",), sync_id="kv-a"), Viewer(name="bob", profiles=("Living",), sync_id="kv-b")]
+
+
+def _copying_kodi(counts: list[tuple[int, str]]):
+    """GetEpisodeDetails answers the counts in turn: Kodi copying another copy's play count
+    onto the episode during the rating write shows as a change between the first two."""
+    answers = iter(counts)
+    last = counts[-1]
+
+    def details(params):
+        playcount, lastplayed = next(answers, last)
+        return {"episodedetails": {"episodeid": 5, "playcount": playcount, "lastplayed": lastplayed}}
+
+    kodi = _rated_kodi(overrides={"VideoLibrary.GetEpisodeDetails": details, "VideoLibrary.SetEpisodeDetails": lambda p: "OK"})
+    kodi.rate_answers = [8, 8]
+    return kodi
+
+
+def test_rating_window_episode_write_restores_copies_as_own(tmp_path):
+    kodi = _copying_kodi([(0, ""), (2, "2026-11-19 20:00:00")])
+    own, told = OwnWrites(), []
+    controller = _controller(tmp_path, kodi, SYNCED, Collector(), settings=_rating_settings(rating_write_library=True),
+                             own=own, on_rating_written=lambda *a: told.append(a))  # fmt: skip
+    _watch(controller, kodi)
+    assert kodi.user_ratings == [("episode", 5, 8)]
+    sets = [p for m, p in kodi.calls if m == "VideoLibrary.SetEpisodeDetails"]
+    assert sets == [{"episodeid": 5, "playcount": 0, "lastplayed": ""}]
+    # The restore's own announcement is the add-on's, not a person's mark.
+    assert own.matches("episode", 5, {"item": {"id": 5, "type": "episode"}, "playcount": 0})
+    assert told == [("episode", 5, 8, ("kv-a", "kv-b"))]
+
+
+def test_rating_window_write_without_a_copy_restores_nothing(tmp_path):
+    kodi = _copying_kodi([(1, "2026-11-19 20:00:00")])
+    controller = _controller(tmp_path, kodi, SYNCED, Collector(), settings=_rating_settings(rating_write_library=True),
+                             own=OwnWrites())  # fmt: skip
+    _watch(controller, kodi)
+    assert [m for m, _ in kodi.calls if m == "VideoLibrary.SetEpisodeDetails"] == []
+
+
+def test_rating_window_tells_sync_only_who_rated(tmp_path):
+    kodi = _copying_kodi([(0, "")])
+    kodi.rate_answers = [8, None]
+    told = []
+    settings = _rating_settings(rating_write_library=True)
+    controller = _controller(tmp_path, kodi, SYNCED, Collector(), settings=settings,
+                             on_rating_written=lambda *a: told.append(a))  # fmt: skip
+    _watch(controller, kodi)
+    assert told == [("episode", 5, 8, ("kv-a",))]
+
+
+def test_failing_sync_hook_is_logged_and_contained(tmp_path, capture_log):
+    def boom(*args):
+        raise RuntimeError("engine gone")
+
+    kodi = _copying_kodi([(0, "")])
+    controller = _controller(tmp_path, kodi, SYNCED, Collector(), settings=_rating_settings(rating_write_library=True),
+                             on_rating_written=boom)  # fmt: skip
+    _watch(controller, kodi)
+    assert kodi.user_ratings == [("episode", 5, 8)]
+    assert any("rating.sync_not_told" in line for line in capture_log)
+
+
+def test_failing_restore_is_logged_and_the_write_still_told(tmp_path, capture_log):
+    kodi = _copying_kodi([(0, ""), (2, "2026-11-19 20:00:00")])
+
+    def fails(params):
+        raise RuntimeError("busy")
+
+    kodi.rpc_handlers["VideoLibrary.SetEpisodeDetails"] = fails
+    told = []
+    controller = _controller(tmp_path, kodi, SYNCED, Collector(), settings=_rating_settings(rating_write_library=True),
+                             own=OwnWrites(), on_rating_written=lambda *a: told.append(a))  # fmt: skip
+    _watch(controller, kodi)
+    assert any("rating.restore_failed" in line for line in capture_log) and len(told) == 1
+
+
+def test_failing_count_read_skips_the_write(tmp_path, capture_log):
+    """With library sync on, an episode's rating waits when its counts can't be read: a play
+    count Kodi copies over couldn't be put back."""
+    def fails(params):
+        raise RuntimeError("busy")
+
+    kodi = _rated_kodi(overrides={"VideoLibrary.GetEpisodeDetails": fails})
+    kodi.rate_answers = [8, 8]
+    controller = _controller(tmp_path, kodi, SYNCED, Collector(), settings=_rating_settings(rating_write_library=True),
+                             own=OwnWrites())  # fmt: skip
+    _watch(controller, kodi)
+    assert kodi.user_ratings == []
+    assert any("rating.counts_failed" in line for line in capture_log)
+    assert any("counts_unreadable" in line for line in capture_log)
+
+
+def test_sync_told_even_when_kodis_answer_was_lost(tmp_path):
+    kodi = _copying_kodi([(0, "")])
+    kodi.user_rating_ok = False
+    told = []
+    controller = _controller(tmp_path, kodi, SYNCED, Collector(), settings=_rating_settings(rating_write_library=True),
+                             own=OwnWrites(), on_rating_written=lambda *a: told.append(a))  # fmt: skip
+    _watch(controller, kodi)
+    assert told == [("episode", 5, 8, ("kv-a", "kv-b"))]
+    assert [m for m, _ in kodi.calls if m == "VideoLibrary.SetEpisodeDetails"] == []
+def test_rating_run_flag_spans_all_windows(tmp_path):
+    kodi = _rated_kodi()
+    seen: list[bool] = []
+    controller = _controller(tmp_path, kodi, LIVING, Collector(), settings=_rating_settings())
+
+    def answer(score):
+        def run():
+            seen.append(controller.rating_run_open)
+            return score
+
+        return run
+
+    kodi.rate_answers = [answer(8), answer(6)]
+    assert controller.rating_run_open is False
+    _watch(controller, kodi)
+    assert seen == [True, True] and controller.rating_run_open is False

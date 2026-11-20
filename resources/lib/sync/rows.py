@@ -132,7 +132,7 @@ def _removed_row(entry: Entry, kind: str) -> dict[str, Any]:
     return out
 
 
-def _items(rows: Sequence[LibraryRow]) -> list[list[LibraryRow]]:
+def item_groups(rows: Sequence[LibraryRow]) -> list[list[LibraryRow]]:
     """Rows sharing a token are one item; each item's rows sorted by Kodi id."""
     parent: dict[int, int] = {}
 
@@ -187,7 +187,7 @@ def viewer_rows(
     done: dict[str, Entry] = {}
     live_files: dict[str, list[UploadRow]] = {}
     for kind_rows in (library.movies, library.episodes):
-        for item in _items(kind_rows):
+        for item in item_groups(kind_rows):
             who = tuple(dict.fromkeys(v for row in item for v in owners(row)))
             if viewer not in who:
                 continue
