@@ -13,23 +13,31 @@ from dataclasses import replace
 from resources.lib import log as logmod
 from resources.lib import paths
 from resources.lib.advanced_settings import read_thresholds
-from resources.lib.config import read_settings, write_back_pasted_url
+from resources.lib.config import Settings, read_settings, write_back_pasted_url
 from resources.lib.constants import ADDON_ID, SHUTDOWN_DRAIN_SECONDS
 from resources.lib.device import device_identity
 from resources.lib.kodi import KodiApi, KodiRuntime
 from resources.lib.media import MediaResolver
+from resources.lib.models import Device
 from resources.lib.reporter import ReporterQueue
 from resources.lib.service.controller import Controller
 from resources.lib.service.delivery import Delivery
 from resources.lib.service.playback_monitor import PlaybackMonitor
 from resources.lib.service.service_monitor import ServiceMonitor
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
+from resources.lib.sync.ping import PingBlocks
 
 TICK_SECONDS = 1.0
 
 
 def _timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _device(kodi: KodiApi, settings: Settings) -> Device:
+    # device_identity owns identity, not versioning, and is used by tests that should not
+    # need a Kodi handle just to produce a version string.
+    return replace(device_identity(kodi, settings, paths.device_path(kodi)), addon_version=kodi.addon_version())
 
 
 def apply_settings(
@@ -46,6 +54,14 @@ def apply_settings(
         queue.replace(*delivery.build(fresh))
         controller.ping_now()
         log.info("service.connection_changed", configured=fresh.webhook_url() is not None)
+    # After the connection: a failing id lookup must not keep events going to the old server.
+    device, before = _device(kodi, fresh), queue.device
+    if device != before:
+        # The id is a setting: library sync's sync device is the device with this id, so
+        # CrossWatch hears of a change at once.
+        queue.set_device(device)
+        controller.ping_now()
+        log.info("service.device_changed", id_changed=device.id != before.id)
     log.info("service.settings_reloaded", debug=fresh.debug_logging)
 
 
@@ -79,10 +95,7 @@ def main() -> None:
         on_renamed=lambda old, new: controller.rename_viewer(old, new),
     )
     sink, lane = delivery.build(settings)
-    # device_identity owns identity, not versioning, and is used by tests that should not
-    # need a Kodi handle just to produce a version string.
-    device = replace(device_identity(kodi, settings, paths.device_path(kodi)), addon_version=kodi.addon_version())
-    queue = ReporterQueue(sink, device, abort, outbox=lane)
+    queue = ReporterQueue(sink, _device(kodi, settings), abort, outbox=lane)
     controller = Controller(
         kodi=kodi,
         viewer_store=viewer_store,
@@ -94,6 +107,9 @@ def main() -> None:
         clock=_timestamp,
         monotonic=time.monotonic,
         ids=lambda: str(uuid.uuid4()),
+        library_sync_block=PingBlocks(
+            kodi, viewer_store, paths.sync_started_path(kodi), clock=time.monotonic, device_id=lambda: queue.device.id
+        ),
     )
     player._controller = controller
 

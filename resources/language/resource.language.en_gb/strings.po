@@ -498,3 +498,31 @@ msgstr ""
 msgctxt "#30160"
 msgid "CrossWatch treats %s as the same as the viewer %s. Remove that viewer first, or rename the profile in CrossWatch."
 msgstr ""
+
+msgctxt "#30161"
+msgid "Library sync"
+msgstr ""
+
+msgctxt "#30162"
+msgid "Sync this library with CrossWatch"
+msgstr ""
+
+msgctxt "#30163"
+msgid "Send removals made in Kodi"
+msgstr ""
+
+msgctxt "#30164"
+msgid "A shared item counts as watched when"
+msgstr ""
+
+msgctxt "#30165"
+msgid "Every owner watched it"
+msgstr ""
+
+msgctxt "#30166"
+msgid "Any owner watched it"
+msgstr ""
+
+msgctxt "#30167"
+msgid "Library sync request"
+msgstr ""

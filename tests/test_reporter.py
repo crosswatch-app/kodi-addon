@@ -29,6 +29,7 @@ from resources.lib.reporter import (
     target_of,
     validate_webhook_url,
 )
+from resources.lib.sync.reply import PingTicket, connection_id
 
 DEVICE = Device(id="htpc-1", name="Living room")
 
@@ -1311,3 +1312,136 @@ def test_a_failing_route_callback_does_not_fail_the_delivery(reporter_factory):
         "http://host/hook", connection_factory=_replying(b'{"ok": true, "routes": []}'), on_routes=broken
     )
     assert reporter.report(PING, DEVICE) is True
+
+
+# -- library sync's ping reply ------------------------------------------------------------
+
+TICKET = PingTicket(sent_at=5.0, epochs={"kv-1": 2}, connection=connection_id("http://host/hook"))
+SYNC_PING = replace(PING, library_sync={"version": 1, "enabled": True, "viewers": []}, ticket=TICKET)
+
+
+def _sync_seen(reporter_factory, status: int, body: bytes, event: Event = SYNC_PING):
+    seen: list[tuple[Any, Any]] = []
+    reporter = reporter_factory(
+        "http://host/hook",
+        connection_factory=lambda *a, **k: FakeConnection(FakeResponse(status, body)),
+        on_library_sync=lambda block, ticket: seen.append((block, ticket)),
+    )
+    delivered = reporter.report(event, DEVICE)
+    return delivered, seen
+
+
+def test_ping_ticket_returned_with_reply(reporter_factory):
+    block = {"version": 1, "enabled": True, "viewers": [], "queue_pending": 0}
+    delivered, seen = _sync_seen(reporter_factory, 200, json.dumps({"ok": True, "library_sync": block}).encode())
+    assert delivered is True
+    assert seen == [(block, TICKET)]
+
+
+def test_ignored_ping_reply_reaches_sync(reporter_factory):
+    """CrossWatch answers ignored: true with the watcher off and still carries the block."""
+    block = {"version": 1, "enabled": False, "reason": "not_sync_device", "viewers": [], "queue_pending": 0}
+    body = {"ok": True, "ignored": True, "error": "watcher_disabled", "library_sync": block}
+    delivered, seen = _sync_seen(reporter_factory, 200, json.dumps(body).encode())
+    assert delivered is False
+    assert seen == [(block, TICKET)]
+
+
+def test_ping_reply_without_block_reports_none(reporter_factory):
+    _, seen = _sync_seen(reporter_factory, 200, b'{"ok": true, "library_sync": "junk"}')
+    assert seen == [(None, TICKET)]
+
+
+def test_4xx_ping_reply_reports_none(reporter_factory):
+    delivered, seen = _sync_seen(reporter_factory, 401, CROSSWATCH_401)
+    assert delivered is False
+    assert seen == [(None, TICKET)]
+
+
+@pytest.mark.parametrize(("status", "body"), [(200, b"<html>login</html>"), (403, b"<html>denied</html>"), (302, b"")])
+def test_a_reply_not_from_crosswatch_reports_nothing(reporter_factory, status, body):
+    _, seen = _sync_seen(reporter_factory, status, body)
+    assert seen == []
+
+
+def test_only_a_ping_reply_reaches_sync(reporter_factory):
+    _, seen = _sync_seen(reporter_factory, 200, b'{"ok": true, "library_sync": {"version": 1}}', event=_event("start"))
+    assert seen == []
+
+
+class _Recording(FakeConnection):
+    sent: list[dict[str, Any]] = []
+
+    def request(self, method, path, body=None, headers=None):
+        _Recording.sent.append(json.loads(body))
+        return super().request(method, path, body=body, headers=headers)
+
+
+@pytest.mark.parametrize(
+    "ticket",
+    [replace(TICKET, connection=connection_id("http://old-server/hook")), None],
+)
+def test_a_block_built_for_another_pairing_is_not_sent(reporter_factory, ticket):
+    """The queue sends what it holds to the server paired when an event is taken."""
+    _Recording.sent = []
+    seen: list[tuple[Any, Any]] = []
+    reporter = reporter_factory(
+        "http://host/hook",
+        connection_factory=lambda *a, **k: _Recording(FakeResponse(200, b'{"ok": true, "library_sync": {"version": 1}}')),
+        on_library_sync=lambda block, t: seen.append((block, t)),
+    )
+    assert reporter.report(replace(SYNC_PING, ticket=ticket), DEVICE) is True
+    assert "library_sync" not in _Recording.sent[0]
+    assert seen == [({"version": 1}, None)]
+
+
+def test_a_block_for_this_pairing_is_sent(reporter_factory):
+    _Recording.sent = []
+    reporter = reporter_factory(
+        "http://host/hook/", connection_factory=lambda *a, **k: _Recording(FakeResponse(200, b'{"ok": true}'))
+    )
+    reporter.report(SYNC_PING, DEVICE)
+    assert _Recording.sent[0]["library_sync"] == SYNC_PING.library_sync
+
+
+def test_a_failing_sync_callback_does_not_fail_the_delivery(lines, reporter_factory):
+    def broken(block, ticket) -> None:
+        raise RuntimeError("engine gone")
+
+    reporter = reporter_factory("http://host/hook", connection_factory=_replying(b'{"ok": true}'), on_library_sync=broken)
+    assert reporter.report(SYNC_PING, DEVICE) is True
+    assert any("reporter.library_sync_not_noted" in line for line in lines)
+
+
+def test_the_block_goes_out_on_the_wire():
+    body = build_payload(SYNC_PING, DEVICE)
+    assert body["library_sync"] == {"version": 1, "enabled": True, "viewers": []}
+    assert "ticket" not in json.dumps(body)
+
+
+def test_a_ping_without_block_sends_none():
+    assert "library_sync" not in build_payload(PING, DEVICE)
+
+
+class _DeviceSink:
+    def __init__(self) -> None:
+        self.devices: list[str] = []
+        self.done = threading.Event()
+
+    def report(self, event, device, deadline=None):
+        self.devices.append(device.id)
+        self.done.set()
+        return True
+
+
+def test_set_device_sends_under_the_new_id():
+    sink = _DeviceSink()
+    queue = ReporterQueue(sink, DEVICE, abort=threading.Event())
+    try:
+        queue.set_device(Device(id="htpc-2", name="Living room"))
+        assert queue.device.id == "htpc-2"
+        queue.submit(_event("start"))
+        assert sink.done.wait(2.0)
+        assert sink.devices == ["htpc-2"]
+    finally:
+        queue.stop(deadline=0.5)

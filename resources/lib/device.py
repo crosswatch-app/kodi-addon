@@ -6,8 +6,6 @@ install in a household the same value, which defeats the per-device routing the 
 integration exists for.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import uuid
@@ -19,16 +17,23 @@ from resources.lib.models import Device
 
 _log = get_logger("device")
 
+# An id that could not be written, per path, kept for the life of the service: the id is read
+# again on every settings change, and a new random id each time would make this device a
+# stranger to CrossWatch's sync device check.
+_unpersisted: dict[str, str] = {}
+
 
 def _persisted_id(path: str) -> str:
     try:
         with open(path, encoding="utf-8") as handle:
             stored = json.load(handle)
-        existing = str(stored.get("device_id") or "").strip()
+        existing = str(stored.get("device_id") or "").strip() if isinstance(stored, dict) else ""
         if existing:
             return existing
     except (OSError, ValueError):
         pass
+    if path in _unpersisted:
+        return _unpersisted[path]
 
     generated = uuid.uuid4().hex
     try:
@@ -38,6 +43,7 @@ def _persisted_id(path: str) -> str:
         os.chmod(path, 0o600)
     except OSError as exc:
         _log.warning("device.id_not_persisted", error=str(exc))
+        _unpersisted[path] = generated
     return generated
 
 

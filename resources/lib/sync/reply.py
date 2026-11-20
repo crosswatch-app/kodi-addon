@@ -64,6 +64,10 @@ class PingTicket:
 
     sent_at: float
     epochs: dict[str, int] = field(default_factory=dict)
+    # The connection_id the block was built for. The reporter queue sends what it holds to
+    # whatever server is paired when an event is taken, so a ping built for one pairing can
+    # reach the next one; the reporter drops the block there.
+    connection: str = ""
 
 
 def _int(value: Any) -> int | None:

@@ -45,3 +45,21 @@ def test_two_installs_do_not_share_an_id(tmp_path):
 def test_the_device_name_comes_from_settings(tmp_path):
     got = device_identity(FakeKodi(), Settings(device_name="Living room"), str(tmp_path / "device.json"))
     assert got.name == "Living room"
+
+
+def test_an_id_that_cannot_be_persisted_stays_the_same(tmp_path):
+    """Read again on every settings change: a fresh random id each time would make this
+    device a stranger to CrossWatch's sync device check."""
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+    path = str(blocker / "device.json")  # its folder is a file, so the write fails
+    first = device_identity(FakeKodi(), Settings(), path)
+    second = device_identity(FakeKodi(), Settings(), path)
+    assert first.id == second.id
+
+
+def test_a_device_file_that_is_not_an_object_gets_a_new_id(tmp_path):
+    path = tmp_path / "device.json"
+    path.write_text("[1, 2]")
+    got = device_identity(FakeKodi(), Settings(), str(path))
+    assert got.id and got.id == device_identity(FakeKodi(), Settings(), str(path)).id

@@ -1,6 +1,16 @@
 import pytest
 
-from resources.lib.config import Settings, read_settings, split_token, write_back_pasted_url
+from resources.lib.config import (
+    KEY_SYNC_ENABLED,
+    KEY_SYNC_REQUEST,
+    KEY_SYNC_SEND_REMOVALS,
+    KEY_SYNC_SHARED_RULE,
+    Settings,
+    read_settings,
+    split_token,
+    write_back_pasted_url,
+)
+from resources.lib.sync.settings import SyncSettings
 from tests.fakes import FakeKodi
 
 
@@ -122,3 +132,30 @@ def test_when_to_ask_and_the_rating_toggles_are_read():
     kodi = FakeKodi(settings={"rating_when": "1", "rating_shared": "true", "rating_write_library": "true"})
     settings = read_settings(kodi)
     assert settings.rating_at_end and settings.rating_shared and settings.rating_write_library
+
+
+def test_library_sync_is_off_by_default():
+    got = read_settings(FakeKodi())
+    assert got.sync_enabled is False
+    assert got.sync_settings == SyncSettings(send_removals=False, shared_rule="everyone")
+    assert got.sync_request == 0
+
+
+def test_library_sync_settings_are_read():
+    got = read_settings(
+        FakeKodi(
+            settings={
+                KEY_SYNC_ENABLED: "true",
+                KEY_SYNC_SEND_REMOVALS: "true",
+                KEY_SYNC_SHARED_RULE: "1",
+                KEY_SYNC_REQUEST: "4",
+            }
+        )
+    )
+    assert got.sync_enabled is True
+    assert got.sync_settings == SyncSettings(send_removals=True, shared_rule="anyone")
+    assert got.sync_request == 4
+
+
+def test_an_unknown_shared_rule_reads_as_everyone():
+    assert read_settings(FakeKodi(settings={KEY_SYNC_SHARED_RULE: "7"})).sync_settings.shared_rule == "everyone"

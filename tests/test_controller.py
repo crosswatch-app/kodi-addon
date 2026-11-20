@@ -13,6 +13,8 @@ from resources.lib.media import MediaResolver
 from resources.lib.models import Device, PingEvent, PlaybackEvent, Viewer
 from resources.lib.service.controller import Controller
 from resources.lib.storage import JsonViewerStore, PromptMemory
+from resources.lib.sync.reply import PingTicket
+from resources.lib.sync.settings import SyncSettings
 from resources.lib.ui.rating import RATE_FAILED
 from tests.fakes import FakeKodi
 
@@ -93,7 +95,9 @@ def _kodi(members, profile: str = "Master user", overrides: dict[str, Any] | Non
     return kodi
 
 
-def _controller(tmp_path, kodi, viewers, collector, settings=None, ttl=3600, monotonic=None, rebuild_requested=None):
+def _controller(
+    tmp_path, kodi, viewers, collector, settings=None, ttl=3600, monotonic=None, rebuild_requested=None, **extra
+):
     store = JsonViewerStore(str(tmp_path / "viewers.json"))
     store.save(viewers)
     counter = itertools.count(1)
@@ -113,6 +117,7 @@ def _controller(tmp_path, kodi, viewers, collector, settings=None, ttl=3600, mon
         monotonic=monotonic or (lambda: float(next(clock))),
         ids=lambda: f"id-{next(counter)}",
         rebuild_requested=rebuild_requested,
+        **extra,
     )
 
 
@@ -1687,3 +1692,107 @@ def test_rebuild_event_invalidates_index(tmp_path):
     _warm_index(controller, kodi)
     assert not event.is_set()
     assert len([c for c in kodi.calls if c[0] == "Files.GetDirectory"]) > expanded
+
+
+# -- library sync's ping block ------------------------------------------------------------
+
+
+def _pings(collector) -> list[PingEvent]:
+    return [e for e in collector.events if isinstance(e, PingEvent)]
+
+
+def test_the_ping_carries_the_sync_block_and_ticket(tmp_path):
+    collector = Collector()
+    ticket = PingTicket(sent_at=1.0, epochs={"kv-a": 1})
+    seen: list[Settings] = []
+
+    def blocks(settings: Settings):
+        seen.append(settings)
+        return {"version": 1, "enabled": True}, ticket
+
+    settings = Settings(progress_interval_seconds=60, sync_enabled=True)
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector, settings=settings, library_sync_block=blocks)
+    controller.on_tick()
+    [ping] = _pings(collector)
+    assert ping.library_sync == {"version": 1, "enabled": True} and ping.ticket is ticket
+    assert seen == [settings]
+
+
+def test_no_block_before_start_sends_the_plain_ping(tmp_path):
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector, library_sync_block=lambda s: None)
+    controller.on_tick()
+    [ping] = _pings(collector)
+    assert ping.library_sync is None and ping.ticket is None
+
+
+def test_a_failing_block_still_pings(tmp_path, capture_log):
+    def broken(settings):
+        raise RuntimeError("no library")
+
+    collector = Collector()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector, library_sync_block=broken)
+    controller.on_tick()
+    [ping] = _pings(collector)
+    assert ping.library_sync is None
+    assert any("service.library_sync_block_failed" in line for line in capture_log)
+
+
+def test_ping_requested_pings_on_the_next_tick(tmp_path):
+    collector = Collector()
+    requested = threading.Event()
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector, ping_requested=requested)
+    controller.on_tick()
+    requested.set()
+    controller.on_tick()
+    assert len(_pings(collector)) == 2
+    assert not requested.is_set()
+    controller.on_tick()
+    assert len(_pings(collector)) == 2
+
+
+def test_turning_sync_off_pings_at_once(tmp_path):
+    collector = Collector()
+    on = Settings(progress_interval_seconds=60, sync_enabled=True)
+    controller = _controller(tmp_path, _kodi([]), [Viewer(name="anna")], collector, settings=on)
+    controller.on_tick()
+    controller.on_settings_changed(replace(on, sync_enabled=False), Thresholds())
+    controller.on_tick()
+    assert len(_pings(collector)) == 2
+
+
+def _directory_calls(kodi) -> int:
+    return len([c for c in kodi.calls if c[0] == "Files.GetDirectory"])
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"sync_enabled": True},
+        {"sync_settings": SyncSettings(send_removals=True)},
+        {"sync_settings": SyncSettings(shared_rule="anyone")},
+        {"sync_request": 3},
+    ],
+)
+def test_sync_only_setting_change_keeps_index(tmp_path, change):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    settings = Settings(progress_interval_seconds=60, movie_prompts=True, index_ttl_seconds=3600)
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector, settings=settings)
+    _warm_index(controller, kodi)
+    before = _directory_calls(kodi)
+    controller.on_settings_changed(replace(settings, **change), Thresholds())
+    _warm_index(controller, kodi)
+    assert _directory_calls(kodi) == before
+
+
+def test_a_sync_change_with_another_change_invalidates(tmp_path):
+    collector = Collector()
+    kodi = _kodi([{"id": 42, "type": "tvshow"}])
+    settings = Settings(progress_interval_seconds=60, movie_prompts=True, index_ttl_seconds=3600)
+    controller = _controller(tmp_path, kodi, [Viewer(name="anna", playlists=("Anna TV",))], collector, settings=settings)
+    _warm_index(controller, kodi)
+    before = _directory_calls(kodi)
+    controller.on_settings_changed(replace(settings, sync_enabled=True, movie_prompts=False), Thresholds())
+    _warm_index(controller, kodi)
+    assert _directory_calls(kodi) > before

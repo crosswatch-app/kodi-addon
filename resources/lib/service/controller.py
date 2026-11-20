@@ -15,6 +15,7 @@ follow a stop. The reporter worker touches only its own queue. Library sync's wo
 import threading
 from collections.abc import Callable
 from dataclasses import replace
+from typing import Any
 
 from resources.lib import identity as identity_mod
 from resources.lib import prompt as prompt_mod
@@ -40,6 +41,7 @@ from resources.lib.reporter import EventQueue
 from resources.lib.service.session import PlaybackSession
 from resources.lib.storage import PromptMemory, ViewerStore
 from resources.lib.sync.ownership import EMPTY_SNAPSHOT, IndexSnapshot
+from resources.lib.sync.reply import PingTicket
 from resources.lib.ui.rating import RATE_FAILED, RateRequest, counter_text, question_text
 
 _log = get_logger("service")
@@ -59,6 +61,8 @@ class Controller:
         monotonic: Callable[[], float],
         ids: Callable[[], str],
         rebuild_requested: threading.Event | None = None,
+        library_sync_block: Callable[[Settings], tuple[dict[str, Any], PingTicket] | None] | None = None,
+        ping_requested: threading.Event | None = None,
     ) -> None:
         self._kodi = kodi
         self._store = viewer_store
@@ -95,6 +99,10 @@ class Controller:
         # Library sync decides ownership on its own thread, so it gets an immutable snapshot,
         # replaced as a whole on this thread and never mutated.
         self.snapshot: IndexSnapshot = EMPTY_SNAPSHOT
+        # Builds the ping's library_sync block; None leaves it out (sync/ping.py).
+        self._library_sync_block = library_sync_block
+        # Set by library sync when it needs CrossWatch's answer before the next interval.
+        self._ping_requested = ping_requested
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -105,8 +113,26 @@ class Controller:
             dropped = self._ratings.clear()
             if dropped:
                 _log.info("rating.dropped", reason="settings", count=dropped)
+        previous = self._settings
         self._settings = settings
         self._thresholds = thresholds
+        if previous.sync_enabled != settings.sync_enabled:
+            # Turning sync off releases this device at CrossWatch only through a ping, so it
+            # goes now rather than at the end of the interval.
+            self.ping_now()
+        same_apart_from_sync = (
+            replace(
+                previous,
+                sync_enabled=settings.sync_enabled,
+                sync_settings=settings.sync_settings,
+                sync_request=settings.sync_request,
+            )
+            == settings
+        )
+        if same_apart_from_sync and previous != settings:
+            # Library sync's own settings, and the bump its scripts make after leaving a
+            # request, change nothing the playlist index is built from.
+            return
         self.invalidate_index()
 
     def ping_now(self) -> None:
@@ -238,6 +264,9 @@ class Controller:
         # Sampled from the monitor, not from on_abort: no tick runs after abort, so a flag
         # set there could never reach the gate.
         self._shutting_down = shutting_down
+        if self._ping_requested is not None and self._ping_requested.is_set():
+            self._ping_requested.clear()
+            self.ping_now()
         self._flush_pending(allow_prompt=True)
         # After the flush, never before: the queue is FIFO and the worker blocks, so a ping
         # submitted first sits in front of the parked stop and can cost it at shutdown.
@@ -574,12 +603,15 @@ class Controller:
         recent = self._last_ping_at is not None and (now - self._last_ping_at) < PING_INTERVAL_SECONDS
         if recent and names == self._pinged_names:
             return
+        block, ticket = self._sync_block()
         queued = self._queue.submit(
             PingEvent(
                 event_id=self._ids(),
                 sent_at=self._clock(),
                 viewers=names,
                 pkc_skipped=self.pkc_skipped,
+                library_sync=block,
+                ticket=ticket,
             )
         )
         if not queued:
@@ -590,6 +622,17 @@ class Controller:
         self._last_ping_at = now
         self._pinged_names = names
         _log.info("service.ping", viewers_count=len(names), pkc_skipped=self.pkc_skipped)
+
+    def _sync_block(self) -> tuple[dict[str, Any] | None, PingTicket | None]:
+        if self._library_sync_block is None:
+            return None, None
+        try:
+            built = self._library_sync_block(self._settings)
+        except Exception as exc:
+            # The ping still goes: without a block CrossWatch changes nothing about sync.
+            _log.warning("service.library_sync_block_failed", error=str(exc))
+            return None, None
+        return built if built is not None else (None, None)
 
     @staticmethod
     def _has_usable_id(media: MediaItem) -> bool:

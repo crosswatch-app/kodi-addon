@@ -58,6 +58,10 @@ def test_setting_ids_match_the_config_keys():
         config.KEY_RATING_WHEN,
         config.KEY_RATING_SHARED,
         config.KEY_RATING_WRITE_LIBRARY,
+        config.KEY_SYNC_ENABLED,
+        config.KEY_SYNC_SEND_REMOVALS,
+        config.KEY_SYNC_SHARED_RULE,
+        config.KEY_SYNC_REQUEST,
     ):
         assert key in ids, key
 
@@ -119,3 +123,24 @@ def test_pairing_comes_first_and_the_manual_fields_are_advanced():
     assert order[:3] == ["pair", config.KEY_STATUS, "unpair"]
     for key in (config.KEY_BASE_URL, config.KEY_TOKEN):
         assert settings[key].findtext("level") == "2", key
+
+
+def test_library_sync_settings_are_off_or_safe_by_default():
+    settings = _settings()
+
+    def default_of(key: str) -> str:
+        node = settings[key].find("default")
+        assert node is not None, key
+        return (node.text or "").strip()
+
+    assert default_of(config.KEY_SYNC_ENABLED) == "false"
+    assert default_of(config.KEY_SYNC_SEND_REMOVALS) == "false"
+    # Position 0 is "every owner watched it", config._SHARED_RULES.
+    assert default_of(config.KEY_SYNC_SHARED_RULE) == "0"
+    assert [o.text for o in settings[config.KEY_SYNC_SHARED_RULE].iter("option")] == ["0", "1"]
+
+
+def test_the_sync_request_bump_is_never_shown():
+    """Level 4 is Kodi's internal level, above anything the settings dialog lists."""
+    level = _settings()[config.KEY_SYNC_REQUEST].find("level")
+    assert level is not None and level.text == "4"

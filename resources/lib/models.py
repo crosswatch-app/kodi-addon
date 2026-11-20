@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Domain objects. These are what the addon reasons about; payload.py turns them into JSON."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
+
+from resources.lib.sync.reply import PingTicket
 
 MediaType = Literal["episode", "movie"]
 EventKind = Literal["start", "pause", "resume", "progress", "stop", "rate"]
@@ -98,3 +98,7 @@ class PingEvent:
     # act on it. Proposed to the CrossWatch maintainer, not yet agreed: if declined, drop
     # this field and the single line in payload.py that emits it. Nothing else reads it.
     pkc_skipped: int = 0
+    # Present once Start ran for the current pairing (sync/ping.py), absent before.
+    library_sync: dict[str, Any] | None = None
+    # Not on the wire: what the ping knew when it was built, handed back with its reply.
+    ticket: PingTicket | None = None
