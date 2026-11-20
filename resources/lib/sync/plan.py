@@ -34,9 +34,18 @@ Log events: none; the engine logs what it does.
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
+from typing import Literal
 
+from resources.lib.sync.client import SyncError
 from resources.lib.sync.clock import parse_utc
-from resources.lib.sync.constants import BACKOFF_SECONDS, DAILY_FULL_SECONDS, SEED_WINDOW_SECONDS, SETTLE_SECONDS
+from resources.lib.sync.constants import (
+    BACKOFF_SECONDS,
+    DAILY_FULL_SECONDS,
+    MAX_ROWS_PER_LIST,
+    MIN_PART_ROWS,
+    SEED_WINDOW_SECONDS,
+    SETTLE_SECONDS,
+)
 from resources.lib.sync.record import SeqState
 from resources.lib.sync.reply import PingTicket, SyncReply
 
@@ -74,6 +83,16 @@ class ViewerState:
     run_unknown: bool = False
     # Another full was asked for while one was going up: it goes up next.
     full_again: bool = False
+    # Failed requests in a row, for the backoff; a success clears it.
+    failures: int = 0
+    # 409 viewer_unknown in a row: after two the status names the viewer.
+    viewer_unknown: int = 0
+    # Rows per list in a full's part; halved after a 413, never below MIN_PART_ROWS.
+    part_rows: int = MAX_ROWS_PER_LIST
+    # Set when uploads for this viewer stopped until the next session; the status key.
+    uploads_stopped: str = ""
+    # The last error's status key, for the status screen; cleared by a success.
+    error: str = ""
 
 
 @dataclass(frozen=True)
@@ -84,6 +103,8 @@ class EngineState:
     record_missing: bool = False
     # A 401 stops talking to CrossWatch until the token changes.
     unauthorized: bool = False
+    # The paired server has no library sync (a 404): stopped until the pairing changes.
+    no_sync: bool = False
     reply: SyncReply | None = None
     # When the judged-ping gate last armed; only tickets built after it are judged.
     armed_at: float = 0.0
@@ -94,6 +115,8 @@ class EngineState:
     ping_asked_at: float = 0.0
     ping_failures: int = 0
     ping_backoff_until: float = 0.0
+    # A ping is wanted for itself (409 viewer_unknown: CrossWatch's viewers changed).
+    ping_wanted: bool = False
     quiet: bool = False
     scanning: bool = False
     snapshot_usable: bool = False
@@ -219,7 +242,12 @@ def active(state: EngineState) -> bool:
     """Sync may also talk to CrossWatch."""
     reply = state.reply
     return (
-        local_active(state) and not state.unauthorized and reply is not None and reply.enabled and reply.reason is None
+        local_active(state)
+        and not state.unauthorized
+        and not state.no_sync
+        and reply is not None
+        and reply.enabled
+        and reply.reason is None
     )
 
 
@@ -237,14 +265,15 @@ def waiting_on(state: EngineState) -> str | None:
 def _viewer_action(viewer: str, vs: ViewerState, library_complete: bool, run_pending: bool) -> Action | None:
     if vs.in_flight:
         return None
+    uploads = not vs.uploads_stopped
     if vs.acks_pending:
         return SendAcks(viewer)
     can_fetch = vs.first_full_committed and library_complete
     if can_fetch and (vs.queue_due or (vs.unsent and not vs.queue_settled)):
         return FetchQueue(viewer)
-    if vs.full_due or vs.full_in_progress:
+    if uploads and (vs.full_due or vs.full_in_progress):
         return FullUpload(viewer, fresh=vs.fresh, queue_settled=can_fetch and vs.queue_settled)
-    if vs.unsent and vs.first_full_committed and vs.queue_settled:
+    if uploads and vs.unsent and vs.first_full_committed and vs.queue_settled:
         # Never before the queue was fetched and applied: CrossWatch's change may be newer.
         return Delta(viewer)
     if (
@@ -286,7 +315,7 @@ def next_action(state: EngineState, now: float) -> Action:
     if active(state):
         reply = state.reply
         assert reply is not None
-        need_ping = False
+        need_ping = state.ping_wanted
         for viewer in _turn(sorted(reply.viewers), state.last_viewer):
             vs = state.viewers.get(viewer, ViewerState())
             action = _viewer_action(viewer, vs, state.library_complete, reply.viewers[viewer].run_pending)
@@ -335,7 +364,7 @@ def on_reply(
     that never answers, or a ticket that can't be judged, isn't pinged in a loop. The ticket
     must list every mapped viewer's epoch, 0 included, or that viewer is never judged.
     """
-    state = replace(state, ping_asked_at=0.0)
+    state = replace(state, ping_asked_at=0.0, ping_wanted=False)
     if reply is None or ticket is None:
         return _ping_backoff(state, now), []
     viewers = dict(state.viewers)
@@ -395,7 +424,8 @@ def session_start(state: EngineState, now: float) -> EngineState:
     a full for every viewer the next reply maps. A full that was going up when the last
     session ended is never resumed: a new one goes with a higher seq."""
     viewers = {
-        v: replace(vs, full_in_progress=False, in_flight=False, full_again=False) for v, vs in state.viewers.items()
+        v: replace(vs, full_in_progress=False, in_flight=False, full_again=False, uploads_stopped="", failures=0)
+        for v, vs in state.viewers.items()
     }
     return replace(arm_gate(replace(state, viewers=viewers), now), start_full_pending=True)
 
@@ -538,3 +568,151 @@ def first_round_settled(
         and not unsent
         and not unapplied
     )
+
+
+# -- errors ---------------------------------------------------------------------------------
+
+Request = Literal["full", "delta", "queue", "ack"]
+
+
+@dataclass(frozen=True)
+class ErrorOutcome:
+    """What the worker does besides storing the new state, when CrossWatch refused a request
+    (400) that would be refused again unchanged: a delta's person changes leave unsent,
+    logged, so they can't win over CrossWatch forever; a batch of acks is dropped (the
+    changes stay queued at CrossWatch and come back in a later fetch)."""
+
+    drop_unsent: bool = False
+    drop_acks: bool = False
+
+
+def _backoff(vs: ViewerState, now: float, retry_after: float | None) -> ViewerState:
+    step = BACKOFF_SECONDS[min(vs.failures, len(BACKOFF_SECONDS) - 1)]
+    wait = max(step, retry_after or 0.0)
+    return replace(vs, failures=vs.failures + 1, backoff_until=now + wait)
+
+
+def _restart_full(vs: ViewerState) -> ViewerState:
+    """A full that can't go on: a new one goes up (new upload_id, higher seq), which also
+    covers any full asked for meanwhile."""
+    return replace(vs, full_due=True, full_in_progress=False, full_again=False)
+
+
+def _smaller_parts(vs: ViewerState, request: Request) -> ViewerState:
+    """A request refused for its size goes again in parts half the size (a full as a new
+    full); at the floor, uploads stop until the next session. CrossWatch's own limits per
+    request are above the add-on's, so its 413 is usually about a library over its total
+    limit, which halving can't fix: the floor is reached in a few backed-off rounds."""
+    if vs.part_rows <= MIN_PART_ROWS:
+        return replace(
+            vs, uploads_stopped="too_large", full_due=False, full_in_progress=False, full_again=False, error="too_large"
+        )
+    vs = replace(vs, part_rows=max(vs.part_rows // 2, MIN_PART_ROWS), error="too_large")
+    return _restart_full(vs) if request == "full" else vs
+
+
+def on_error(
+    state: EngineState, viewer: str, request: Request, err: SyncError, now: float
+) -> tuple[EngineState, ErrorOutcome]:
+    """A sync request to CrossWatch failed. Every failure arms the judged-ping gate (the
+    answer, or its absence, may hide a CrossWatch that lost or restored state) and, unless it
+    stops sync, backs the viewer off, so nothing CrossWatch keeps refusing is sent in a loop.
+    The contract's actions are taken only for an answer CrossWatch gave (err.from_crosswatch);
+    anything else answering is a proxy or a portal, and only backs off.
+
+    A full in progress goes on with its next part after a backoff, the failed part sent again;
+    only a failure of the full itself starts it over."""
+    vs = state.viewers.get(viewer, ViewerState())
+    vs = replace(vs, in_flight=False)
+    outcome = ErrorOutcome()
+    stops = False
+    if not err.from_crosswatch:
+        if err.code == "no_sync":
+            state = replace(state, no_sync=True)
+            vs = replace(vs, error="no_sync")
+            stops = True
+        elif err.code == "request_too_large" or (err.code == "not_crosswatch" and err.status == 413):
+            vs = _smaller_parts(vs, request)
+        else:
+            # Includes lost_reply: an upload that may have landed, which the next judged
+            # ping's seq rule settles.
+            vs = replace(vs, error=err.code)
+    elif err.status == 401:
+        # Stop and keep the records (contract, Errors). Queue fetches always start from the
+        # beginning, so there is no queue position to reset; applied_seq stays.
+        state = replace(state, unauthorized=True)
+        vs = replace(vs, error="unauthorized")
+        stops = True
+    elif err.status == 413:
+        vs = _smaller_parts(vs, request)
+    elif err.status == 409 and err.code == "viewer_unknown":
+        count = vs.viewer_unknown + 1
+        vs = replace(vs, viewer_unknown=count, error="viewer_unknown" if count >= 2 else vs.error)
+        state = replace(state, ping_wanted=True)
+    elif err.status == 409 and err.code == "upload_incomplete":
+        # CrossWatch has no complete full under this viewer: one goes up, unless one is.
+        if not vs.full_in_progress:
+            vs = replace(vs, full_due=True)
+    elif err.status == 409 and err.code == "upload_stale":
+        # A full CrossWatch dropped can't be resumed: a new one goes up with a higher seq
+        # (contract, Upload). A delta goes with a new seq (delta_resend_seq), after the next
+        # judged ping's seq rule has had its say.
+        if request == "full":
+            vs = _restart_full(vs)
+    elif err.status == 400:
+        vs = replace(vs, error="rejected")
+        if request == "full":
+            vs = replace(vs, full_due=False, full_in_progress=False, full_again=False)
+        elif request == "delta":
+            vs = replace(vs, unsent=False)
+            outcome = ErrorOutcome(drop_unsent=True)
+        elif request == "ack":
+            vs = replace(vs, acks_pending=False)
+            outcome = ErrorOutcome(drop_acks=True)
+        else:
+            vs = replace(vs, queue_due=False)
+    elif err.status == 403:
+        vs = replace(vs, error="refused")
+    elif err.status in (429, 503) or err.status >= 500:
+        # A 503 on a first or fresh full means a sync is running: the same part goes again
+        # (a single-part full goes again as a new full) after the backoff.
+        vs = replace(vs, error="busy")
+    else:
+        vs = replace(vs, error=err.code or "error")
+    if not stops and vs.uploads_stopped != "too_large":
+        vs = _backoff(vs, now, err.retry_after)
+    state = replace(state, viewers={**state.viewers, viewer: vs})
+    return arm_gate(state, now), outcome
+
+
+def on_success(state: EngineState, viewer: str) -> EngineState:
+    """A request for this viewer went through: the backoff and the error clear."""
+    vs = state.viewers.get(viewer, ViewerState())
+    vs = replace(vs, in_flight=False, failures=0, viewer_unknown=0, error="", backoff_until=0.0)
+    return replace(state, viewers={**state.viewers, viewer: vs})
+
+
+def on_too_large(state: EngineState, viewer: str) -> EngineState:
+    """The library is too big to upload at all (upload.UploadTooLarge): nothing goes up for
+    this viewer until the next session."""
+    vs = state.viewers.get(viewer, ViewerState())
+    vs = replace(
+        vs, uploads_stopped="library_too_large", full_due=False, full_in_progress=False, error="library_too_large"
+    )
+    return replace(state, viewers={**state.viewers, viewer: vs})
+
+
+def on_token_changed(state: EngineState, now: float) -> EngineState:
+    """A new token (re-pair or Link) or pairing: a 401 or a missing sync endpoint no longer
+    holds, and the gate arms for the new connection."""
+    return arm_gate(replace(state, unauthorized=False, no_sync=False), now)
+
+
+def delta_resend_seq(last: tuple[int, bytes] | None, body: bytes) -> int | None:
+    """A delta keeps its seq only when it is exactly the last delta sent: CrossWatch accepts
+    an exact retry of its last delta without applying it twice and refuses anything else
+    that isn't newer (contract, Upload; _addon_sync.py matches its last_delta_seq). Any other
+    body, an older one of a batch included, goes with a new seq."""
+    if last is not None and last[1] == body:
+        return last[0]
+    return None

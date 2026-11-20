@@ -2,7 +2,14 @@ from dataclasses import replace
 
 import pytest
 
-from resources.lib.sync.constants import BACKOFF_SECONDS, DAILY_FULL_SECONDS, SETTLE_SECONDS
+from resources.lib.sync.client import SyncError
+from resources.lib.sync.constants import (
+    BACKOFF_SECONDS,
+    DAILY_FULL_SECONDS,
+    MAX_ROWS_PER_LIST,
+    MIN_PART_ROWS,
+    SETTLE_SECONDS,
+)
 from resources.lib.sync.plan import (
     PING_ANSWER_SECONDS,
     Delta,
@@ -24,11 +31,13 @@ from resources.lib.sync.plan import (
     active,
     arm_gate,
     daily_full_due,
+    delta_resend_seq,
     first_round_settled,
     late_seed,
     local_active,
     mapping_of,
     next_action,
+    on_error,
     on_full_part,
     on_library_read,
     on_mapping,
@@ -36,6 +45,9 @@ from resources.lib.sync.plan import (
     on_rebuild_asked,
     on_reply,
     on_snapshot,
+    on_success,
+    on_token_changed,
+    on_too_large,
     request_full,
     seeded,
     session_start,
@@ -578,3 +590,171 @@ def test_existing_ratings_wait_for_a_judged_ping_after_a_full():
 def test_existing_ratings_wait_for_a_due_queue_fetch():
     due = replace(READY, existing_ratings_due=True, settled=True, queue_due=True)
     assert next_action(replace(_state(**{"kv-a": due}), library_complete=False), NOW) == Idle()
+
+
+# -- errors ---------------------------------------------------------------------------------
+
+
+def _err(status: int, code: str = "", *, cw: bool = True, retry_after: float | None = None) -> SyncError:
+    return SyncError(status, code, retryable=False, retry_after=retry_after, from_crosswatch=cw)
+
+
+def _fail(vs: ViewerState, request, err: SyncError):
+    state = _state(**{"kv-a": replace(vs, in_flight=True)})
+    after, outcome = on_error(state, "kv-a", request, err, NOW)
+    return after, after.viewers["kv-a"], outcome
+
+
+@pytest.mark.parametrize(
+    ("err", "kind", "check"),
+    [
+        (_err(400, "invalid_request"), "delta", lambda st, vs, out: vs.error == "rejected" and out.drop_unsent),
+        (_err(401, "unauthorized"), "full", lambda st, vs, out: st.unauthorized and not active(st)),
+        (_err(403, "sync_disabled"), "queue", lambda st, vs, out: vs.error == "refused" and vs.failures == 1),
+        (_err(409, "upload_incomplete"), "delta", lambda st, vs, out: vs.full_due),
+        (_err(409, "upload_stale"), "delta", lambda st, vs, out: not vs.full_due),
+        (_err(429, "rate_limited", retry_after=40), "delta", lambda st, vs, out: vs.backoff_until == NOW + 40),
+        (
+            _err(503, "temporarily_unavailable"),
+            "delta",
+            lambda st, vs, out: vs.backoff_until == NOW + BACKOFF_SECONDS[0],
+        ),
+        (_err(502, "bad_gateway"), "ack", lambda st, vs, out: vs.error == "busy" and vs.failures == 1),
+        (_err(0, "network", cw=False), "full", lambda st, vs, out: vs.error == "network" and vs.failures == 1),
+        (_err(0, "lost_reply", cw=False), "delta", lambda st, vs, out: vs.error == "lost_reply" and vs.failures == 1),
+        (_err(0, "certificate", cw=False), "queue", lambda st, vs, out: vs.error == "certificate"),
+        (_err(401, "not_crosswatch", cw=False), "full", lambda st, vs, out: not st.unauthorized and vs.failures == 1),
+        (_err(404, "no_sync", cw=False), "full", lambda st, vs, out: st.no_sync and not active(st)),
+    ],
+)
+def test_error_table(err, kind, check):
+    state, vs, outcome = _fail(READY, kind, err)
+    assert check(state, vs, outcome)
+    # Every failure arms the gate, and nothing stays in flight.
+    assert not vs.judged and not vs.in_flight and state.armed_at == NOW
+
+
+def test_upload_incomplete_keeps_full_in_flight():
+    """A queue fetch or ack between the parts of a full gets upload_incomplete: the full goes on."""
+    _, vs, _ = _fail(replace(READY, full_in_progress=True), "queue", _err(409, "upload_incomplete"))
+    assert vs.full_in_progress and not vs.full_due
+
+
+def test_503_on_a_part_keeps_the_full_going():
+    """The same part goes again after the backoff; the full isn't started over."""
+    _, vs, _ = _fail(replace(READY, full_in_progress=True), "full", _err(503, "temporarily_unavailable"))
+    assert vs.full_in_progress and vs.backoff_until == NOW + BACKOFF_SECONDS[0]
+    state = _state(**{"kv-a": replace(vs, judged=True)})
+    assert next_action(state, vs.backoff_until) == FullUpload("kv-a", queue_settled=False)
+
+
+@pytest.mark.parametrize(
+    ("err", "kind"),
+    [
+        (_err(400, "invalid_request"), "queue"),
+        (_err(400, "invalid_request"), "ack"),
+        (_err(403, "sync_disabled"), "delta"),
+        (_err(409, "viewer_unknown"), "delta"),
+        (_err(409, "upload_stale"), "delta"),
+        (_err(409, "upload_incomplete"), "delta"),
+    ],
+)
+def test_refusals_never_repeat_without_a_backoff(err, kind):
+    """CrossWatch answering the same request the same way must not make a tight loop."""
+    _, vs, _ = _fail(replace(READY, acks_pending=True, queue_due=True, unsent=True, queue_settled=True), kind, err)
+    assert vs.backoff_until > NOW
+
+
+def test_400_on_a_fetch_or_ack_drops_it_and_keeps_the_full():
+    base = replace(READY, full_in_progress=True, acks_pending=True, queue_due=True)
+    _, vs, out = _fail(base, "ack", _err(400, "invalid_request"))
+    assert out.drop_acks and not vs.acks_pending and vs.full_in_progress
+    _, vs, _ = _fail(base, "queue", _err(400, "invalid_request"))
+    assert not vs.queue_due and vs.full_in_progress
+
+
+def test_400_on_a_full_drops_it():
+    _, vs, out = _fail(
+        replace(READY, full_due=True, full_in_progress=True, full_again=True), "full", _err(400, "invalid_request")
+    )
+    assert not vs.full_due and not vs.full_in_progress and not vs.full_again and not out.drop_unsent
+
+
+def test_stale_full_starts_over_once():
+    _, vs, _ = _fail(
+        replace(READY, full_due=True, full_in_progress=True, full_again=True), "full", _err(409, "upload_stale")
+    )
+    assert vs.full_due and not vs.full_in_progress and not vs.full_again
+
+
+def test_413_on_a_delta_halves_its_requests():
+    _, vs, _ = _fail(replace(READY, unsent=True), "delta", _err(413, "payload_too_large"))
+    assert vs.part_rows == MAX_ROWS_PER_LIST // 2 and not vs.full_due and vs.backoff_until > NOW
+
+
+def test_backoff_grows_and_success_clears_it():
+    state = _state(**{"kv-a": READY})
+    for step in BACKOFF_SECONDS + (BACKOFF_SECONDS[-1],):
+        state, _ = on_error(state, "kv-a", "delta", _err(0, "network", cw=False), NOW)
+        assert state.viewers["kv-a"].backoff_until == NOW + step
+    cleared = on_success(state, "kv-a").viewers["kv-a"]
+    assert cleared.failures == 0 and cleared.backoff_until == 0 and cleared.error == ""
+
+
+def test_viewer_unknown_pings_and_names_the_viewer_after_two():
+    state, vs, _ = _fail(READY, "delta", _err(409, "viewer_unknown"))
+    assert vs.viewer_unknown == 1 and vs.error == "" and next_action(state, NOW) == Ping()
+    state, _ = on_error(state, "kv-a", "delta", _err(409, "viewer_unknown"), NOW)
+    assert state.viewers["kv-a"].error == "viewer_unknown"
+
+
+def test_401_resumes_on_new_token():
+    state, _, _ = _fail(replace(READY, full_due=True), "full", _err(401, "unauthorized"))
+    assert next_action(state, NOW) == Idle()
+    resumed = on_token_changed(state, NOW + 1)
+    assert not resumed.unauthorized and resumed.armed_at == NOW + 1 and next_action(resumed, NOW + 1) == Ping()
+
+
+def test_413_new_full_with_half_parts_down_to_the_floor():
+    _, vs, _ = _fail(replace(READY, full_in_progress=True), "full", _err(413, "payload_too_large"))
+    assert vs.full_due and not vs.full_in_progress and vs.part_rows == MAX_ROWS_PER_LIST // 2
+    _, vs, _ = _fail(replace(READY, part_rows=MIN_PART_ROWS + 1), "full", _err(413, "payload_too_large"))
+    assert vs.part_rows == MIN_PART_ROWS
+    # A proxy's 413 and the add-on's own size check halve the same way.
+    _, vs, _ = _fail(READY, "full", _err(413, "not_crosswatch", cw=False))
+    assert vs.part_rows == MAX_ROWS_PER_LIST // 2
+    _, vs, _ = _fail(READY, "full", _err(0, "request_too_large", cw=False))
+    assert vs.part_rows == MAX_ROWS_PER_LIST // 2
+
+
+def test_413_at_floor_stops_with_status():
+    state, vs, _ = _fail(replace(READY, part_rows=MIN_PART_ROWS, full_due=True), "full", _err(413, "payload_too_large"))
+    assert vs.uploads_stopped == "too_large" and not vs.full_due
+    assert (
+        next_action(replace(state, viewers={"kv-a": replace(vs, judged=True, unsent=True, queue_settled=True)}), NOW)
+        == Idle()
+    )
+    # Until the next session.
+    restarted = session_start(state, NOW).viewers["kv-a"]
+    assert restarted.uploads_stopped == "" and restarted.part_rows == MIN_PART_ROWS
+
+
+def test_upload_too_large_stops_the_viewer():
+    state = on_too_large(_state(**{"kv-a": replace(READY, full_due=True)}), "kv-a")
+    assert state.viewers["kv-a"].uploads_stopped == "library_too_large" and next_action(state, NOW) == Idle()
+
+
+def test_stopped_uploads_still_fetch_and_ack():
+    vs = replace(READY, uploads_stopped="too_large", acks_pending=True)
+    assert next_action(_state(**{"kv-a": vs}), NOW) == SendAcks("kv-a")
+
+
+def test_refused_delta_drops_unsent():
+    _, vs, outcome = _fail(replace(READY, unsent=True), "delta", _err(400, "invalid_request"))
+    assert outcome.drop_unsent and not vs.unsent
+
+
+def test_delta_resend_identical_or_new_seq():
+    assert delta_resend_seq((42, b"b"), b"b") == 42
+    assert delta_resend_seq((42, b"b"), b"c") is None
+    assert delta_resend_seq(None, b"a") is None
