@@ -74,7 +74,7 @@ def _show_row(show: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _meta(row: LibraryRow, show: Mapping[str, Any] | None) -> dict[str, Any]:
+def entry_meta(row: LibraryRow, show: Mapping[str, Any] | None) -> dict[str, Any]:
     raw = row.raw
     meta: dict[str, Any] = {
         "uniqueid": _sorted_ids(raw.get("uniqueid")),
@@ -212,14 +212,14 @@ def viewer_rows(
                 entry = Entry(
                     key=identity(rep.key.kind, rep.raw, show),
                     tokens=tokens,
-                    meta=_meta(rep, show),
+                    meta=entry_meta(rep, show),
                     state=_seed_state(item) if seeded else fresh_state(),
                     origin="seed" if seeded else "empty",
                     seed_rating=max(int(r.raw.get("userrating") or 0) for r in item) if seeded else 0,
                 )
                 changed = True
             if found:
-                meta = {**entry.meta, **_meta(rep, show)}
+                meta = {**entry.meta, **entry_meta(rep, show)}
                 if not tokens <= entry.tokens or meta != entry.meta:
                     # Its file or title moved on, or it gained ids: keep the entry current, so
                     # a removed row later carries the right file.

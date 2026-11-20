@@ -440,3 +440,30 @@ def test_open_without_create_never_makes_a_file(tmp_path) -> None:
     with pytest.raises(RecordMissing):
         RecordStore(str(tmp_path / "sync.db")).open()
     assert not (tmp_path / "sync.db").exists()
+
+
+@pytest.mark.parametrize("noted_key", ["a", "b"])
+def test_merge_keeps_a_local_unwatch_noted_on_any_entry(noted_key) -> None:
+    watched = History(watched=True, playcount=1, lastplayed="2026-11-20T09:00:00Z")
+    noted = replace(watched, local_unwatch=True, local_unwatch_seq=41)
+    one = _entry("a", state=ItemState(history=noted if noted_key == "a" else watched))
+    two = _entry("b", state=ItemState(history=noted if noted_key == "b" else watched))
+    history = record.merge([one, two]).state.history
+    assert history.watched and history.local_unwatch and history.local_unwatch_seq == 41
+
+
+@pytest.mark.parametrize(("after", "kept"), [(40, True), (41, False)])
+def test_merge_drops_the_note_for_a_crosswatch_watch_made_after_it(after, kept) -> None:
+    noted = History(watched=True, playcount=1, local_unwatch=True, local_unwatch_seq=41)
+    cw = History(watched=True, playcount=2, lastplayed="2026-11-20T12:00:00Z")
+    one = _entry("a", state=ItemState(history=noted))
+    two = _entry("b", state=ItemState(history=cw), applied_change={"history": 900}, applied_after={"history": after})
+    assert record.merge([one, two]).state.history.local_unwatch is kept
+
+
+def test_assignment_keeps_its_meta(tmp_path) -> None:
+    store = _store(tmp_path)
+    a = Assignment(id="a1", entry_key="k", tokens=frozenset({"t"}), group="history", value=ItemState(),
+                   title="A", at="2026-11-20T10:00:00Z", meta={"file": "smb://nas/a.mkv"})  # fmt: skip
+    store.commit(Batch(assignments_add=[a]))
+    assert store.assignments()[0].meta == {"file": "smb://nas/a.mkv"}

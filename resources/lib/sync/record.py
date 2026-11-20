@@ -169,6 +169,9 @@ class Assignment:
     value: ItemState
     title: str
     at: str
+    # The item's info as the mark found it, so an entry made from the assignment can go up
+    # as a removed row CrossWatch can place, should the item leave the library meanwhile.
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -345,6 +348,7 @@ def _assignment_from(body: str) -> Assignment:
         value=_state_from(raw.get("value") or {}),
         title=raw.get("title") or "",
         at=raw.get("at") or "",
+        meta=raw.get("meta") or {},
     )
 
 
@@ -884,6 +888,7 @@ def merge(entries: list[Entry]) -> Entry:
     unsent_upload: dict[str, int] = {}
     applied_change: dict[str, int] = {}
     applied_after: dict[str, int] = {}
+    newest_history: Entry | None = None
     for group in GROUPS:
         applied = [e for e in ordered if group in e.applied_change]
         newest = max(applied, key=lambda e: e.applied_change[group]) if applied else None
@@ -908,10 +913,21 @@ def merge(entries: list[Entry]) -> Entry:
             for other in ordered[1:]:
                 folded = _fold(group, folded, _group_of(other.state, group), empty[group])
             states[group] = folded
+        if group == "history":
+            newest_history = newest
         if newest is not None:
             applied_change[group] = newest.applied_change[group]
             if group in newest.applied_after:
                 applied_after[group] = newest.applied_after[group]
+    history = states["history"]
+    noted = [e.state.history for e in ordered if e.state.history.local_unwatch]
+    if noted and history.watched and not history.local_unwatch:
+        # A person's unwatch noted on any copy holds for the item, unless the CrossWatch
+        # watch that won was made after it (apply.py lifts it the same way on one entry).
+        seq = max(h.local_unwatch_seq for h in noted)
+        lifted = newest_history is not None and newest_history.applied_after.get("history", -1) >= seq
+        if not lifted:
+            states["history"] = replace(history, local_unwatch=True, local_unwatch_seq=seq)
     rating = states["ratings"]
     if any(e.state.rating.from_cw for e in ordered):
         # A rating CrossWatch removed on any copy stays removed for "Send existing ratings".
