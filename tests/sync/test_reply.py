@@ -57,3 +57,25 @@ def test_viewers_not_a_list_and_negative_seq() -> None:
         assert reply is not None and reply.viewers == {}
     reply = parse_reply({"version": 1, "viewers": [{"viewer_id": "kv-1", "instance": "d", "upload_seq": -7}]})
     assert reply is not None and reply.viewers["kv-1"].upload_seq == 0
+
+
+def test_viewer_next_change_and_run_pending() -> None:
+    reply = parse_reply(
+        {
+            "version": 1,
+            "enabled": True,
+            "viewers": [
+                {"viewer_id": "kv-1", "instance": "default", "upload_seq": 41, "next_change": 1763560000123,
+                 "run_pending": True},
+                {"viewer_id": "kv-2", "instance": "default~kv-2", "next_change": "x", "run_pending": "true"},
+            ],
+        }
+    )  # fmt: skip
+    assert reply is not None
+    assert reply.viewers["kv-1"] == ReplyViewer("default", 41, next_change=1763560000123, run_pending=True)
+    assert reply.viewers["kv-2"] == ReplyViewer("default~kv-2", 0, next_change=0, run_pending=False)
+
+
+def test_library_has_sync_device_reason() -> None:
+    reply = parse_reply({"version": 1, "enabled": False, "reason": "library_has_sync_device", "viewers": []})
+    assert reply is not None and not reply.enabled and reply.reason == "library_has_sync_device"

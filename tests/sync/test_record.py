@@ -21,7 +21,6 @@ from resources.lib.sync.record import (
     RecordMissing,
     RecordStore,
     Seen,
-    values_hash,
 )
 
 ROW = RowKey("lib1", "movies", 1, "smb://nas/a.mkv")
@@ -104,7 +103,7 @@ def test_entry_round_trips_every_field(tmp_path) -> None:
     store = _store(tmp_path)
     state = ItemState(history=History(watched=True, playcount=2, lastplayed="2026-01-01T10:00:00Z", event=4, src=4),
                       rating=Rating(value=8, from_cw=True, src=3))  # fmt: skip
-    full = _entry(state=state, unsent={"ratings": "2026-11-19T10:00:00Z"}, unsent_applied={"history": 7},
+    full = _entry(state=state, unsent={"ratings": "2026-11-19T10:00:00Z"}, unsent_upload={"history": 7},
                   touched=True, uploaded_at="2026-11-19T09:00:00Z", origin="seed", seed_rating=6, change_count=3)  # fmt: skip
     store.commit(Batch(entries={"kv-1": [full]}))
     assert store.entry("kv-1", full.key) == full
@@ -263,96 +262,74 @@ def test_applied_seq_never_goes_down(tmp_path) -> None:
 
 def test_reset_for_cw_clears_applied_keeps_acked_sent_and_first_full(tmp_path) -> None:
     store = _store(tmp_path)
-    carried = _entry(unsent={"ratings": "t"}, unsent_applied={"ratings": 9})
+    carried = _entry(unsent={"ratings": "t"}, unsent_upload={"ratings": 9})
     store.reserve_upload_seqs("kv-1", floor=0, count=10)
     store.commit(Batch(entries={"kv-1": [carried]}, applied_seq={"kv-1": 9}, full_library_id={"kv-1": "lib1"},
-                       first_full_done={"kv-1"}, acks_add={"kv-1": [{"seq": 9, "status": "applied"}]},
-                       acked_add={"kv-1": [Acked(9, carried.key, "ratings", "h")]}))  # fmt: skip
+                       first_full_done={"kv-1"}, acks_add={"kv-1": [{"seq": 9, "change_id": "c9", "status": "applied"}]},
+                       acked_add={"kv-1": [Acked(9, "c9", carried.key, "ratings")]}))  # fmt: skip
     store.set_settled("kv-1")
     store.reset_for_cw("kv-1", cw_seq=3)
     assert store.applied_seq("kv-1") == 0 and store.full_library_id("kv-1") == ""
     assert store.acks_pending("kv-1") == []
-    assert store.acked("kv-1", 9) == Acked(9, carried.key, "ratings", "h", before_reset=True)
+    assert store.acked("kv-1", 9, "c9") == [Acked(9, "c9", carried.key, "ratings")]
     assert store.first_full_committed("kv-1") and store.settled("kv-1")
     entry = store.entry("kv-1", carried.key)
-    assert entry is not None and entry.unsent == {"ratings": "t"} and entry.unsent_applied == {}
+    assert entry is not None and entry.unsent == {"ratings": "t"} and entry.unsent_upload == {}
 
 
-def test_acked_remembers_item_group_and_values(tmp_path) -> None:
+def test_acked_is_found_by_seq_and_change_id(tmp_path) -> None:
     store = _store(tmp_path)
-    store.commit(Batch(acked_add={"kv-1": [Acked(7, "k1", "history", values_hash("history", {"playcount": 1}))]}))
-    found = store.acked("kv-1", 7)
-    assert found is not None and (found.entry_key, found.group) == ("k1", "history")
-    assert found.values_hash == values_hash("history", {"playcount": 1})
-    assert store.acked("kv-1", 8) is None
+    store.commit(Batch(acked_add={"kv-1": [Acked(7, "c7", "k1", "history"), Acked(7, "c7", "k1", "ratings")]}))
+    assert [(a.entry_key, a.group) for a in store.acked("kv-1", 7, "c7")] == [("k1", "history"), ("k1", "ratings")]
+    assert store.acked("kv-1", 8, "c7") == []
 
 
-def test_a_seq_from_before_a_reset_is_marked(tmp_path) -> None:
-    # A restored CrossWatch reuses its block of seqs: a different item under an old seq is its
-    # new change, so the engine must not reset again on it.
+def test_same_seq_with_another_change_id_is_another_change(tmp_path) -> None:
+    # A restored CrossWatch can hand out a seq again; the change id tells the changes apart.
     store = _store(tmp_path)
-    store.commit(Batch(acked_add={"kv-1": [Acked(5, "itemY", "ratings", "h")]}))
-    found = store.acked("kv-1", 5)
-    assert found is not None and not found.before_reset
-    store.reset_for_cw("kv-1", cw_seq=0)
-    found = store.acked("kv-1", 5)
-    assert found is not None and found.before_reset and found.entry_key == "itemY"
-    store.commit(Batch(acked_add={"kv-1": [Acked(5, "itemZ", "ratings", "h2")]}))
-    found = store.acked("kv-1", 5)
-    assert found is not None and not found.before_reset and found.entry_key == "itemZ"
-
-
-def test_redelivery_after_refresh_is_not_lost_state(tmp_path) -> None:
-    # The same change comes back with the item's new Kodi id: same entry, same values hash.
-    store = _store(tmp_path)
-    params = {"movieid": 1, "userrating": 8}
-    store.commit(Batch(acked_add={"kv-1": [Acked(4, "k", "ratings", values_hash("ratings", params))]}))
-    found = store.acked("kv-1", 4)
-    assert found is not None and found.values_hash == values_hash("ratings", {**params, "movieid": 99})
-
-
-def test_hash_ignores_kodi_id() -> None:
-    a = values_hash("history", {"movieid": 1, "playcount": 1, "lastplayed": "2026-11-11T19:10:00Z"})
-    b = values_hash("history", {"movieid": 77, "lastplayed": "2026-11-11T19:10:00Z", "playcount": 1})
-    assert a == b
-    assert a != values_hash("history", {"movieid": 1, "playcount": 2, "lastplayed": "2026-11-11T19:10:00Z"})
-    assert values_hash("ratings", {"episodeid": 3, "userrating": 8}) == values_hash("ratings", {"userrating": 8})
+    store.commit(Batch(acked_add={"kv-1": [Acked(5, "old", "itemY", "ratings")]}))
+    assert store.acked("kv-1", 5, "new") == []
+    store.commit(Batch(acked_add={"kv-1": [Acked(5, "new", "itemZ", "ratings")]}))
+    assert [a.entry_key for a in store.acked("kv-1", 5, "old")] == ["itemY"]
+    assert [a.entry_key for a in store.acked("kv-1", 5, "new")] == ["itemZ"]
 
 
 def test_alias_resolves_merged_key(tmp_path) -> None:
     store = _store(tmp_path)
     store.commit(Batch(entries={"kv-1": [_entry("a", ("t1",)), _entry("b", ("t2",))]},
-                       acked_add={"kv-1": [Acked(5, "a", "ratings", "h")]}))  # fmt: skip
+                       acked_add={"kv-1": [Acked(5, "c5", "a", "ratings")]}))  # fmt: skip
     survivor = _entry("b", ("t1", "t2"))
     store.commit(Batch(entries={"kv-1": [survivor]}, merged={"kv-1": {"b": ["a", "b"]}}))
     assert store.entry("kv-1", "a") == survivor
-    found = store.acked("kv-1", 5)
-    assert found is not None and found.entry_key == "b"
+    [found] = store.acked("kv-1", 5, "c5")
+    assert found.entry_key == "b"
     # A later merge moves the old alias along.
     store.commit(Batch(entries={"kv-1": [_entry("c", ("t1", "t2", "t3"))]}, merged={"kv-1": {"c": ["b"]}}))
-    found = store.acked("kv-1", 5)
-    assert found is not None and found.entry_key == "c"
+    [found] = store.acked("kv-1", 5, "c5")
+    assert found.entry_key == "c"
     assert [e.key for e in store.entries("kv-1")] == ["c"]
     # An entry written again under an aliased key is that entry again, not the alias.
     store.commit(Batch(entries={"kv-1": [_entry("a", ("t9",))]}))
     assert store.entry("kv-1", "a") == _entry("a", ("t9",))
-    found = store.acked("kv-1", 5)
-    assert found is not None and found.entry_key == "a"
+    [found] = store.acked("kv-1", 5, "c5")
+    assert found.entry_key == "a"
 
 
 def test_acked_seqs_bounded(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(record, "ACKED_SEQS_KEPT", 3)
     store = _store(tmp_path)
-    store.commit(Batch(acked_add={"kv-1": [Acked(n, "k", "ratings", "h") for n in range(1, 6)]}))
-    assert [n for n in range(1, 6) if store.acked("kv-1", n)] == [3, 4, 5]
+    store.commit(Batch(acked_add={"kv-1": [Acked(n, f"c{n}", "k", "ratings") for n in range(1, 6)]}))
+    assert [n for n in range(1, 6) if store.acked("kv-1", n, f"c{n}")] == [3, 4, 5]
 
 
 def test_acks_added_and_done(tmp_path) -> None:
     store = _store(tmp_path)
-    store.commit(Batch(acks_add={"kv-1": [{"seq": 2, "status": "applied"}, {"seq": 3, "status": "failed"}]}))
-    assert [a["seq"] for a in store.acks_pending("kv-1")] == [2, 3]
-    store.commit(Batch(acks_done={"kv-1": [2]}))
-    assert [a["seq"] for a in store.acks_pending("kv-1")] == [3]
+    acks = [{"seq": 2, "change_id": "a", "status": "applied"}, {"seq": 3, "change_id": "b", "status": "failed"}]
+    store.commit(Batch(acks_add={"kv-1": acks}))
+    assert store.acks_pending("kv-1") == acks
+    # Done is per change: the same seq with another change id stays pending.
+    store.commit(Batch(acks_done={"kv-1": [(2, "x"), (3, "b")]}))
+    assert store.acks_pending("kv-1") == acks[:1]
 
 
 def test_change_count_guards_commit(tmp_path) -> None:
@@ -361,7 +338,7 @@ def test_change_count_guards_commit(tmp_path) -> None:
     store.commit(Batch(entries={"kv-1": [e]}))
     store.commit(Batch(unsent_carried={"kv-1": {e.key: Carried(4, {"ratings": 11})}}))
     current = store.entry("kv-1", e.key)
-    assert current is not None and current.unsent_applied == {}
+    assert current is not None and current.unsent_upload == {}
 
 
 def test_applied_change_cleared_when_its_seq_was_carried(tmp_path) -> None:
@@ -395,10 +372,10 @@ def test_unsent_carried_then_cleared(tmp_path) -> None:
     store.commit(Batch(entries={"kv-1": [e]}))
     store.commit(Batch(unsent_carried={"kv-1": {e.key: Carried(0, {"ratings": 11, "progress": 11})}}))
     carried = store.entry("kv-1", e.key)
-    assert carried is not None and carried.unsent_applied == {"ratings": 11}
+    assert carried is not None and carried.unsent_upload == {"ratings": 11}
     store.commit(Batch(unsent_cleared={"kv-1": {e.key: ["ratings"], "gone": ["history"]}}))
     cleared = store.entry("kv-1", e.key)
-    assert cleared is not None and cleared.unsent == {"history": "t2"} and cleared.unsent_applied == {}
+    assert cleared is not None and cleared.unsent == {"history": "t2"} and cleared.unsent_upload == {}
 
 
 def test_removed_entries(tmp_path) -> None:

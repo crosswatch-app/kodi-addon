@@ -39,6 +39,11 @@ def connection_id(base_url: str) -> str:
 class ReplyViewer:
     instance: str
     upload_seq: int
+    # The seq CrossWatch gives this viewer's next queued change.
+    next_change: int = 0
+    # True from a completed full upload until the pair run it started has finished; steps that
+    # depend on the services' data (sending existing ratings) wait for it to turn false.
+    run_pending: bool = False
 
 
 @dataclass(frozen=True)
@@ -79,7 +84,12 @@ def parse_reply(block: Mapping[str, Any] | None) -> SyncReply | None:
         instance = row.get("instance")
         if not isinstance(viewer_id, str) or not viewer_id or not isinstance(instance, str) or not instance:
             continue
-        viewers[viewer_id] = ReplyViewer(instance=instance, upload_seq=max(_int(row.get("upload_seq")) or 0, 0))
+        viewers[viewer_id] = ReplyViewer(
+            instance=instance,
+            upload_seq=max(_int(row.get("upload_seq")) or 0, 0),
+            next_change=max(_int(row.get("next_change")) or 0, 0),
+            run_pending=row.get("run_pending") is True,
+        )
     reason = block.get("reason")
     return SyncReply(
         enabled=block.get("enabled") is True,

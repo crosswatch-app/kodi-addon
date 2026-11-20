@@ -19,7 +19,6 @@ everything. Only Start creates the file.
 Log events: none; the engine logs what a batch did.
 """
 
-import hashlib
 import json
 import os
 import sqlite3
@@ -30,7 +29,7 @@ from typing import Any, Literal
 from resources.lib.sync.constants import ACKED_SEQS_KEPT
 from resources.lib.sync.items import ItemKind, RowKey
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 Group = Literal["history", "ratings", "progress"]
 # CrossWatch's group names (_addon_sync.py GROUPS).
 GROUPS: tuple[Group, ...] = ("history", "ratings", "progress")
@@ -57,6 +56,9 @@ class History:
     # A person unwatched it in Kodi with "Send removals" off: the record keeps the watch for
     # the household's services, but Kodi is not raised again until a newer watch arrives.
     local_unwatch: bool = False
+    # The first upload_seq after that unwatch: only a CrossWatch watch with `after` at or above
+    # it was made after the unwatch, and lifts it.
+    local_unwatch_seq: int = 0
     event: int = 0
     src: int = 0
 
@@ -112,8 +114,9 @@ class Entry:
     state: ItemState
     # Group -> UTC time of a person's change not yet settled with CrossWatch.
     unsent: dict[str, str] = field(default_factory=dict)
-    # Group -> applied_seq of the accepted upload that carried the person's change.
-    unsent_applied: dict[str, int] = field(default_factory=dict)
+    # Group -> upload_seq of the accepted upload that carried the person's change; a queued
+    # change with `after` at or above it was made after CrossWatch saw it (contract, Queue).
+    unsent_upload: dict[str, int] = field(default_factory=dict)
     touched: bool = False
     uploaded_at: str = ""
     origin: Origin = "empty"
@@ -124,6 +127,8 @@ class Entry:
     # Group -> seq of a queued CrossWatch change applied to the record and not yet carried by
     # an accepted upload; a merge ranks it above states CrossWatch already has.
     applied_change: dict[str, int] = field(default_factory=dict)
+    # Group -> that change's `after`: the upload_seq CrossWatch had seen when it was queued.
+    applied_after: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -178,21 +183,21 @@ class SeqState:
 
 @dataclass(frozen=True)
 class Acked:
+    """A queued change the add-on acked. seq and change_id together identify it, so a
+    redelivery is recognised and an old ack never confirms a newer change, even after a
+    restore of CrossWatch's state (contract, Queue)."""
+
     seq: int
+    change_id: str
     entry_key: str
     group: str
-    values_hash: str
-    # Acked before the viewer was last reset for a CrossWatch that lost state. Such a seq still
-    # recognises a redelivery of the same values, but a different item under it is CrossWatch's
-    # new change, not another collision: a restored CrossWatch reuses its block of seqs.
-    before_reset: bool = False
 
 
 @dataclass(frozen=True)
 class Carried:
     """What an accepted upload carried for one entry, as it stood when the upload was built.
 
-    groups maps each carried group to the upload's applied_seq, for a person change it held;
+    groups maps each carried group to the upload's upload_seq, for a person change it held;
     change_count guards those: a later change to the entry keeps its person change unsettled.
     applied maps each carried group to the applied CrossWatch change seq it held, cleared only
     while the entry still holds that same seq for the group.
@@ -222,28 +227,14 @@ class Batch:
     applied_seq: dict[str, int] = field(default_factory=dict)
     acked_add: dict[str, list[Acked]] = field(default_factory=dict)
     acks_add: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
-    acks_done: dict[str, list[int]] = field(default_factory=dict)
+    # viewer -> (seq, change_id) of acks CrossWatch answered.
+    acks_done: dict[str, list[tuple[int, str]]] = field(default_factory=dict)
     # viewer -> entry -> what an accepted upload carried for it, every entry it carried.
     unsent_carried: dict[str, dict[str, Carried]] = field(default_factory=dict)
     # viewer -> entry -> groups whose person change is settled.
     unsent_cleared: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     full_library_id: dict[str, str] = field(default_factory=dict)
     first_full_done: set[str] = field(default_factory=set)
-
-
-_VALUE_FIELDS = {
-    "history": ("playcount", "lastplayed"),
-    "ratings": ("userrating",),
-    "progress": ("resume",),
-}
-
-
-def values_hash(group: str, params: Mapping[str, Any]) -> str:
-    """A queued change's group values, without the Kodi id CrossWatch fills in from its live
-    inventory (which Refresh information changes), so a true redelivery hashes the same."""
-    values = {name: params.get(name) for name in _VALUE_FIELDS.get(group, ()) if name in params}
-    text = json.dumps(values, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 # -- store --------------------------------------------------------------------------------
@@ -264,10 +255,9 @@ CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, body TEXT);
 CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, body TEXT);
 CREATE TABLE IF NOT EXISTS viewers (viewer TEXT PRIMARY KEY, body TEXT);
 CREATE TABLE IF NOT EXISTS acked (
-    viewer TEXT, seq INTEGER, key TEXT, grp TEXT, hash TEXT, generation INTEGER,
-    PRIMARY KEY (viewer, seq));
+    viewer TEXT, seq INTEGER, change_id TEXT, key TEXT, grp TEXT, PRIMARY KEY (viewer, seq, change_id, grp));
 CREATE TABLE IF NOT EXISTS acks_pending (
-    viewer TEXT, seq INTEGER, body TEXT, PRIMARY KEY (viewer, seq));
+    viewer TEXT, seq INTEGER, change_id TEXT, body TEXT, PRIMARY KEY (viewer, seq, change_id));
 """
 
 
@@ -282,7 +272,6 @@ class _ViewerRow:
     full_library_id: str = ""
     first_mapped_at: str = ""
     last_delta: list[list[Any]] = field(default_factory=list)
-    generation: int = 0
 
 
 def _dump(value: Any) -> str:
@@ -303,13 +292,14 @@ def _entry_from(body: str) -> Entry:
         meta=dict(raw.get("meta") or {}),
         state=_state_from(raw.get("state") or {}),
         unsent=dict(raw.get("unsent") or {}),
-        unsent_applied={k: int(v) for k, v in (raw.get("unsent_applied") or {}).items()},
+        unsent_upload={k: int(v) for k, v in (raw.get("unsent_upload") or {}).items()},
         touched=bool(raw.get("touched")),
         uploaded_at=str(raw.get("uploaded_at") or ""),
         origin=raw.get("origin") or "empty",
         seed_rating=int(raw.get("seed_rating") or 0),
         change_count=int(raw.get("change_count") or 0),
         applied_change={k: int(v) for k, v in (raw.get("applied_change") or {}).items()},
+        applied_after={k: int(v) for k, v in (raw.get("applied_after") or {}).items()},
     )
 
 
@@ -420,7 +410,8 @@ class RecordStore:
 
     # -- reads ------------------------------------------------------------------------
 
-    def _resolve(self, viewer: str, key: str) -> str:
+    def resolve(self, viewer: str, key: str) -> str:
+        """The key an entry has now, following merges."""
         for _ in range(32):
             row = self._db.execute(
                 "SELECT new_key FROM aliases WHERE viewer = ? AND old_key = ?", (viewer, key)
@@ -432,7 +423,7 @@ class RecordStore:
 
     def entry(self, viewer: str, key: str) -> Entry | None:
         row = self._db.execute(
-            "SELECT body FROM entries WHERE viewer = ? AND key = ?", (viewer, self._resolve(viewer, key))
+            "SELECT body FROM entries WHERE viewer = ? AND key = ?", (viewer, self.resolve(viewer, key))
         ).fetchone()
         return _entry_from(row[0]) if row else None
 
@@ -503,20 +494,12 @@ class RecordStore:
         rows = self._db.execute("SELECT body FROM acks_pending WHERE viewer = ? ORDER BY seq", (viewer,)).fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    def acked(self, viewer: str, seq: int) -> Acked | None:
-        """What a queued seq was acked for, with its entry key resolved through merges."""
-        row = self._db.execute(
-            "SELECT key, grp, hash, generation FROM acked WHERE viewer = ? AND seq = ?", (viewer, seq)
-        ).fetchone()
-        if row is None:
-            return None
-        return Acked(
-            seq=seq,
-            entry_key=self._resolve(viewer, row[0]),
-            group=row[1],
-            values_hash=row[2],
-            before_reset=(row[3] or 0) < self._viewer(viewer).generation,
-        )
+    def acked(self, viewer: str, seq: int, change_id: str) -> list[Acked]:
+        """The groups this change was acked for, with entry keys resolved through merges."""
+        rows = self._db.execute(
+            "SELECT key, grp FROM acked WHERE viewer = ? AND seq = ? AND change_id = ?", (viewer, seq, change_id)
+        ).fetchall()
+        return [Acked(seq=seq, change_id=change_id, entry_key=self.resolve(viewer, r[0]), group=r[1]) for r in rows]
 
     def _viewer(self, viewer: str) -> _ViewerRow:
         row = self._db.execute("SELECT body FROM viewers WHERE viewer = ?", (viewer,)).fetchone()
@@ -604,8 +587,7 @@ class RecordStore:
 
     def reset_for_cw(self, viewer: str, cw_seq: int) -> None:
         """CrossWatch lost state: start this viewer over with it, keeping what the household
-        did. The acked seqs stay, because item, group and value hash already tell a
-        redelivery from a collision."""
+        did. The acked changes stay: a change id identifies a change even after a restore."""
         db = self._db
         db.execute("BEGIN IMMEDIATE")
         try:
@@ -620,14 +602,13 @@ class RecordStore:
                     full_library_id="",
                     last_delta=[],
                     epoch=v.epoch + 1,
-                    generation=v.generation + 1,
                 ),
             )
             db.execute("DELETE FROM acks_pending WHERE viewer = ?", (viewer,))
             for (body,) in db.execute("SELECT body FROM entries WHERE viewer = ?", (viewer,)).fetchall():
                 entry = _entry_from(body)
-                if entry.unsent_applied:
-                    self._put_entry(viewer, replace(entry, unsent_applied={}))
+                if entry.unsent_upload:
+                    self._put_entry(viewer, replace(entry, unsent_upload={}))
             db.execute("COMMIT")
         except BaseException:
             self._rollback()
@@ -717,10 +698,16 @@ class RecordStore:
                 # CrossWatch has these applied changes now, so they are ordinary uploaded
                 # states again; one applied since the upload was built stays.
                 applied = {g: s for g, s in current.applied_change.items() if carried.applied.get(g) != s}
+                after = {g: a for g, a in current.applied_after.items() if g in applied}
                 if stamped or applied != current.applied_change:
                     self._put_entry(
                         viewer,
-                        replace(current, unsent_applied={**current.unsent_applied, **stamped}, applied_change=applied),
+                        replace(
+                            current,
+                            unsent_upload={**current.unsent_upload, **stamped},
+                            applied_change=applied,
+                            applied_after=after,
+                        ),
                     )
         for viewer, by_entry in batch.unsent_cleared.items():
             for key, groups in by_entry.items():
@@ -737,7 +724,7 @@ class RecordStore:
                             current,
                             state=replace(current.state, history=history),
                             unsent={g: t for g, t in current.unsent.items() if g not in groups},
-                            unsent_applied={g: s for g, s in current.unsent_applied.items() if g not in groups},
+                            unsent_upload={g: s for g, s in current.unsent_upload.items() if g not in groups},
                         ),
                     )
         stamp = int(self._meta("seen_stamp") or 0) + 1
@@ -776,23 +763,25 @@ class RecordStore:
         for aid in batch.assignments_done:
             db.execute("DELETE FROM assignments WHERE id = ?", (aid,))
         for viewer, acked in batch.acked_add.items():
-            generation = self._viewer(viewer).generation
             db.executemany(
-                "INSERT OR REPLACE INTO acked VALUES (?, ?, ?, ?, ?, ?)",
-                [(viewer, a.seq, a.entry_key, a.group, a.values_hash, generation) for a in acked],
+                "INSERT OR REPLACE INTO acked VALUES (?, ?, ?, ?, ?)",
+                [(viewer, a.seq, a.change_id, a.entry_key, a.group) for a in acked],
             )
             db.execute(
                 "DELETE FROM acked WHERE viewer = ? AND seq NOT IN "
-                "(SELECT seq FROM acked WHERE viewer = ? ORDER BY seq DESC LIMIT ?)",
+                "(SELECT DISTINCT seq FROM acked WHERE viewer = ? ORDER BY seq DESC LIMIT ?)",
                 (viewer, viewer, ACKED_SEQS_KEPT),
             )
         for viewer, acks in batch.acks_add.items():
             db.executemany(
-                "INSERT OR REPLACE INTO acks_pending VALUES (?, ?, ?)",
-                [(viewer, int(a["seq"]), _dump(a)) for a in acks],
+                "INSERT OR REPLACE INTO acks_pending VALUES (?, ?, ?, ?)",
+                [(viewer, int(a["seq"]), str(a["change_id"]), _dump(a)) for a in acks],
             )
-        for viewer, seqs in batch.acks_done.items():
-            db.executemany("DELETE FROM acks_pending WHERE viewer = ? AND seq = ?", [(viewer, s) for s in seqs])
+        for viewer, done in batch.acks_done.items():
+            db.executemany(
+                "DELETE FROM acks_pending WHERE viewer = ? AND seq = ? AND change_id = ?",
+                [(viewer, seq, change_id) for seq, change_id in done],
+            )
         viewers = {*batch.applied_seq, *batch.full_library_id, *batch.first_full_done}
         for viewer in viewers:
             v = self._viewer(viewer)
@@ -877,9 +866,9 @@ def merge(entries: list[Entry]) -> Entry:
       lowest key, as for everything else in a merge);
     - a queued CrossWatch change applied here and not yet uploaded back: the highest seq
       wins, as CrossWatch moves pending changes onto the surviving key by seq.
-    A person change already carried by an upload whose applied_seq is below an applied
-    CrossWatch change was answered by that change, which wins, as it would on one entry
-    (Task 11's settle rule). What goes up next is then the newer decision, so CrossWatch's
+    A person change already carried by an upload that an applied CrossWatch change was made
+    after (its `after` at or above that upload's seq) was answered by that change, which
+    wins, as it would on one entry. What goes up next is then the newer decision, so CrossWatch's
     own merge agrees with it.
     """
     if not entries:
@@ -892,15 +881,17 @@ def merge(entries: list[Entry]) -> Entry:
     empty: dict[Group, Any] = {"history": History(), "ratings": Rating(), "progress": Resume()}
     states: dict[Group, Any] = {}
     unsent: dict[str, str] = {}
-    unsent_applied: dict[str, int] = {}
+    unsent_upload: dict[str, int] = {}
     applied_change: dict[str, int] = {}
+    applied_after: dict[str, int] = {}
     for group in GROUPS:
         applied = [e for e in ordered if group in e.applied_change]
-        newest_applied = max((e.applied_change[group] for e in applied), default=0)
+        newest = max(applied, key=lambda e: e.applied_change[group]) if applied else None
+        newest_after = newest.applied_after.get(group, 0) if newest is not None else -1
         person = [
             e
             for e in ordered
-            if group in e.unsent and not (group in e.unsent_applied and e.unsent_applied[group] < newest_applied)
+            if group in e.unsent and not (group in e.unsent_upload and e.unsent_upload[group] <= newest_after)
         ]
         if person:
             winner = max(person, key=lambda e: e.unsent[group])
@@ -908,18 +899,19 @@ def merge(entries: list[Entry]) -> Entry:
             unsent[group] = winner.unsent[group]
             # The winner's own carrying upload, or none: an older change's upload must not
             # settle the newer one.
-            if group in winner.unsent_applied:
-                unsent_applied[group] = winner.unsent_applied[group]
-        elif applied:
-            winner = max(applied, key=lambda e: e.applied_change[group])
-            states[group] = _group_of(winner.state, group)
+            if group in winner.unsent_upload:
+                unsent_upload[group] = winner.unsent_upload[group]
+        elif newest is not None:
+            states[group] = _group_of(newest.state, group)
         else:
             folded = _group_of(target.state, group)
             for other in ordered[1:]:
                 folded = _fold(group, folded, _group_of(other.state, group), empty[group])
             states[group] = folded
-        if applied:
-            applied_change[group] = newest_applied
+        if newest is not None:
+            applied_change[group] = newest.applied_change[group]
+            if group in newest.applied_after:
+                applied_after[group] = newest.applied_after[group]
     rating = states["ratings"]
     if any(e.state.rating.from_cw for e in ordered):
         # A rating CrossWatch removed on any copy stays removed for "Send existing ratings".
@@ -934,11 +926,12 @@ def merge(entries: list[Entry]) -> Entry:
         meta=meta,
         state=ItemState(history=states["history"], rating=rating, resume=states["progress"]),
         unsent=unsent,
-        unsent_applied=unsent_applied,
+        unsent_upload=unsent_upload,
         touched=any(e.touched for e in ordered),
         uploaded_at=max(e.uploaded_at for e in ordered),
         origin=origin,
         seed_rating=max(e.seed_rating for e in ordered) if all_seed else 0,
         change_count=max(e.change_count for e in ordered) + 1,
         applied_change=applied_change,
+        applied_after=applied_after,
     )

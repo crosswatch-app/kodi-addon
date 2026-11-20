@@ -83,11 +83,11 @@ def test_an_unsent_unwatch_survives_with_its_flag() -> None:
 def test_the_newest_unsent_change_wins_with_its_own_upload() -> None:
     a = _entry("a", ItemState(rating=Rating(value=9)), unsent={"ratings": "2026-11-19T12:00:00Z"})
     b = _entry("b", ItemState(rating=Rating(value=5)), unsent={"ratings": "2026-11-18T12:00:00Z"},
-               unsent_applied={"ratings": 7})  # fmt: skip
+               unsent_upload={"ratings": 7})  # fmt: skip
     merged = merge([a, b])
     assert merged.state.rating.value == 9
     # Upload 7 carried b's older change, not a's 9, so it must not settle the merged group.
-    assert merged.unsent_applied == {}
+    assert merged.unsent_upload == {}
 
 
 def test_an_applied_cw_change_beats_uploaded_states_by_seq() -> None:
@@ -109,12 +109,22 @@ def test_an_unsent_person_change_beats_an_applied_cw_change_on_another_copy() ->
 
 
 def test_a_carried_person_change_answered_by_a_later_cw_change_loses() -> None:
-    # Upload 7 carried the 8; the tracker then set 3, queued as seq 10 and applied on b.
+    # Upload 7 carried the 8; the tracker then set 3, queued after CrossWatch saw upload 7.
     a = _entry("a", ItemState(rating=Rating(value=8, src=7)), unsent={"ratings": "2026-11-19T10:00:00Z"},
-               unsent_applied={"ratings": 7})  # fmt: skip
-    b = _entry("b", ItemState(rating=Rating(value=3, src=1)), applied_change={"ratings": 10})
+               unsent_upload={"ratings": 7})  # fmt: skip
+    b = _entry("b", ItemState(rating=Rating(value=3, src=1)), applied_change={"ratings": 10}, applied_after={"ratings": 7})
     merged = merge([a, b])
     assert merged.state.rating.value == 3 and "ratings" not in merged.unsent
+    assert merged.applied_change == {"ratings": 10} and merged.applied_after == {"ratings": 7}
+
+
+def test_a_cw_change_queued_before_the_carrying_upload_loses() -> None:
+    # The 3 was queued when CrossWatch had seen upload 6, before the upload that carried the 8.
+    a = _entry("a", ItemState(rating=Rating(value=8, src=7)), unsent={"ratings": "2026-11-19T10:00:00Z"},
+               unsent_upload={"ratings": 7})  # fmt: skip
+    b = _entry("b", ItemState(rating=Rating(value=3, src=1)), applied_change={"ratings": 10}, applied_after={"ratings": 6})
+    merged = merge([a, b])
+    assert merged.state.rating.value == 8 and merged.unsent == {"ratings": "2026-11-19T10:00:00Z"}
 
 
 def test_equal_unsent_times_keep_the_lowest_key() -> None:
@@ -138,15 +148,15 @@ def test_meta_keys_held_only_by_another_entry_are_kept() -> None:
 
 
 def test_merge_unions_bookkeeping() -> None:
-    a = _entry("a", ItemState(), unsent={"ratings": "2026-01-01T00:00:00Z"}, unsent_applied={"ratings": 3},
+    a = _entry("a", ItemState(), unsent={"ratings": "2026-01-01T00:00:00Z"}, unsent_upload={"ratings": 3},
                uploaded_at="2026-01-02T00:00:00Z", origin="seed", seed_rating=6, change_count=4)  # fmt: skip
     b = _entry("b", ItemState(), unsent={"ratings": "2026-02-01T00:00:00Z", "history": "2026-01-05T00:00:00Z"},
-               unsent_applied={"ratings": 7}, touched=True, uploaded_at="2026-01-01T00:00:00Z",
+               unsent_upload={"ratings": 7}, touched=True, uploaded_at="2026-01-01T00:00:00Z",
                origin="seed", seed_rating=8, change_count=2)  # fmt: skip
     merged = merge([a, b])
     assert merged.unsent == {"ratings": "2026-02-01T00:00:00Z", "history": "2026-01-05T00:00:00Z"}
     # b's change is the newer one, so its own upload stays with it.
-    assert merged.unsent_applied == {"ratings": 7}
+    assert merged.unsent_upload == {"ratings": 7}
     assert merged.touched and merged.uploaded_at == "2026-01-02T00:00:00Z"
     assert (merged.origin, merged.seed_rating, merged.change_count) == ("seed", 8, 5)
 
