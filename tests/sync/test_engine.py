@@ -212,6 +212,7 @@ def test_ping_and_rebuild_are_asked_through_events(tmp_path):
     # asked after the ping backoff that reply started.
     rig.clock.now += 10
     assert rig.engine.step() is None  # the inbox check at start, empty
+    assert rig.engine.step() is None  # the rating scan due at start, while the ping waits
     wait = rig.engine.step()
     assert wait == BACKOFF_SECONDS[0] and not rig.ping.is_set()
     rig.clock.now += wait
@@ -450,13 +451,17 @@ def test_unknown_kind_dropped(tmp_path):
     assert rig.inbox.pending() == [] and rig.engine.dropped_marks == 1
 
 
-def test_rating_window_writes_kept_for_the_rating_step(tmp_path):
+def test_rating_window_write_applied_on_the_next_step(tmp_path):
+    """Not held until the next scan: a Kodi exit before it would lose the write."""
     rig = Rig(tmp_path)
     rig.ready()
+    rig.lib.row("movies", 3)["userrating"] = 8
     rig.engine.on_rating_written("movie", 3, 8, ("kv-a",))
     rig.engine.step()
-    assert rig.engine.rating_writes == [("movie", 3, 8, ("kv-a",))]
-
+    store = rig.engine._store
+    assert store is not None and rig.engine.rating_writes == []
+    [entry] = store.entries("kv-a")
+    assert entry.state.rating.value == 8 and entry.touched and rig.engine.state.viewers["kv-a"].unsent
 
 def test_status_for_a_paused_device_and_only_when_changed(tmp_path, monkeypatch):
     rig = Rig(tmp_path)

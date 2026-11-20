@@ -40,26 +40,40 @@ from resources.lib.sync import plan
 from resources.lib.sync.apply import apply_changes, settle_unsent
 from resources.lib.sync.client import SyncClient, SyncError
 from resources.lib.sync.clock import kodi_to_utc
+from resources.lib.sync.constants import RATING_SCAN_SECONDS
 from resources.lib.sync.files import (
     Inbox,
     InboxRecord,
+    Request,
     StatusFile,
     StatusState,
+    done_requests,
     read_requests,
     read_started,
+    update_started,
     write_status,
 )
 from resources.lib.sync.items import ItemKind, Library, LibraryRow, RowKey, read_library
 from resources.lib.sync.library_id import library_id, profile_has_own_database
 from resources.lib.sync.local import FileIndex
-from resources.lib.sync.manual import Recorded, ToAssign, watched_change
+from resources.lib.sync.manual import (
+    LocalOutcome,
+    Recorded,
+    ToAssign,
+    apply_assignment,
+    existing_ratings,
+    rating_change,
+    rating_window_write,
+    watched_change,
+)
 from resources.lib.sync.ownership import IndexSnapshot, owners_of
-from resources.lib.sync.record import Batch, Carried, Entry, RecordMissing, RecordStore, merge
+from resources.lib.sync.rating_scan import FoundRating, rating_scan
+from resources.lib.sync.record import Batch, Carried, Entry, PendingWrite, RecordMissing, RecordStore, merge
 from resources.lib.sync.reply import PingTicket, SyncReply, connection_id
 from resources.lib.sync.rows import ViewerRows, viewer_rows
 from resources.lib.sync.settings import SyncSettings
 from resources.lib.sync.upload import UploadBody, UploadTooLarge, deltas, full_parts
-from resources.lib.sync.writer import OwnWrites, Writer, read_row, seen_of
+from resources.lib.sync.writer import OwnWrites, Writer, in_flight_rows, read_row, seen_of
 
 _log = get_logger("sync")
 
@@ -162,6 +176,12 @@ class SyncEngine:
         self._client_cache: tuple[tuple[str, str, str], SyncClient] | None = None
         self._fulls: dict[str, _Full] = {}
         self._mapping: plan.ViewerMapping | None = None
+        self._last_rating_scan: float | None = None
+        # Ratings held back for the household's answer (the mass-rating question), with the
+        # value each row had when the question was raised.
+        self.held_ratings: list[FoundRating] = []
+        # Viewers that sent their existing ratings since Start chose it.
+        self._existing_sent: set[str] = set()
 
         self._lock = threading.Lock()
         self._wake = threading.Event()
@@ -245,11 +265,27 @@ class SyncEngine:
             self._open_store()
             if self._store is None:
                 return IDLE_SECONDS
-        wait = self._act(plan.next_action(self._state, self._clock()))
+        if (
+            self.rating_writes
+            and self._store is not None
+            and self.library is not None
+            and plan.local_active(self._state)
+        ):
+            self._rating_writes(self._store, self.library)
+        now = self._clock()
+        due = self._last_rating_scan is None or now - self._last_rating_scan >= RATING_SCAN_SECONDS
+        if due != self._state.rating_scan_due:
+            self._state = replace(self._state, rating_scan_due=due)
+        wait = self._act(plan.next_action(self._state, now))
         self._write_status()
         return wait
 
     def end(self) -> None:
+        if self._store is not None and self.library is not None and self.rating_writes:
+            try:
+                self._rating_writes(self._store, self.library)
+            except Exception as exc:
+                _log.warning("sync.engine.rating_writes_lost", count=len(self.rating_writes), error=str(exc))
         if self._store is not None:
             self._store.close()
             self._store = None
@@ -291,6 +327,9 @@ class SyncEngine:
                 unsent=any(e.touched for e in store.entries(viewer)),
                 acks_pending=bool(store.acks_pending(viewer)),
             )
+        started = read_started(self._paths.started)
+        if started is not None and started.existing_ratings and not started.existing_ratings_sent:
+            viewers = {v: replace(vs, existing_ratings_due=vs.settled) for v, vs in viewers.items()}
         self._state = replace(self._state, viewers=viewers, writes_pending=bool(store.pending_writes()))
         # Writes sent before a crash and never read back are the add-on's own.
         self._own.seed(store.pending_writes())
@@ -410,6 +449,7 @@ class SyncEngine:
                 if not store.first_mapped_at(viewer):
                     store.set_first_mapped_at(viewer, self._utc_now())
         if reply is not None and store is not None:
+            state = self._judge_settled(state, reply, store)
             mapping = plan.mapping_of(library_id(self._kodi), reply)
             full_ids = {v: store.full_library_id(v) for v in reply.viewers}
             state = plan.on_mapping(state, mapping, self._mapping, full_ids)
@@ -466,20 +506,16 @@ class SyncEngine:
                 self._send_acks(action.viewer)
             elif isinstance(action, plan.WriteKodi):
                 self._write_kodi()
-            else:
-                return self._waiting_on_action(action)
+            elif isinstance(action, plan.RatingScan):
+                self._rating_scan()
+            elif isinstance(action, plan.TakeRequests):
+                self._take_requests()
+            elif isinstance(action, plan.SendExistingRatings):
+                self._send_existing_ratings(action.viewer)
         except Exception as exc:
             _log.warning("sync.engine.action_failed", action=type(action).__name__, error=str(exc))
             return IDLE_SECONDS
         return None
-
-    def _waiting_on_action(self, action: plan.Action) -> float:
-        """Actions this worker doesn't carry out yet. Requests are left for later without
-        blocking the drain behind them; everything else waits instead of spinning."""
-        if isinstance(action, plan.TakeRequests):
-            self._state = replace(self._state, requests_waiting=False)
-        _log.debug("sync.engine.waiting_on_action", action=type(action).__name__)
-        return IDLE_SECONDS
 
     # -- the inbox ----------------------------------------------------------------------
 
@@ -561,17 +597,7 @@ class SyncEngine:
         if kind == "episodes" and show is None:
             return "wait"
         owners = owners_of_row(fresh)
-        entries: dict[str, Entry] = {}
-        for viewer in owners:
-            found = [_pending(batch, viewer, e) for e in store.match(viewer, fresh.tokens)]
-            if len(found) > 1:
-                entry = merge(found)
-                batch.merged.setdefault(viewer, {})[entry.key] = sorted({e.key for e in found})
-                # Stored whatever the mark does: the commit drops the merged-away keys.
-                _put_entry(batch, viewer, entry)
-                entries[viewer] = entry
-            elif found:
-                entries[viewer] = found[0]
+        entries = self._merged_entries(store, batch, owners, fresh)
         settings = self._settings.sync_settings if self._settings is not None else SyncSettings()
         outcomes = watched_change(
             entries,
@@ -585,11 +611,7 @@ class SyncEngine:
             next_upload_seq=self._next_upload_seq(store, owners),
             new_id=_new_id,
         )
-        for out in outcomes:
-            if isinstance(out, Recorded):
-                _put_entry(batch, out.viewer, out.entry)
-            elif isinstance(out, ToAssign):
-                batch.assignments_add.append(out.assignment)
+        self._apply_outcomes(batch, outcomes)
         # Kodi announces nothing for a rating, so the rating and date the scan compares keep
         # their stored values; the rest is what Kodi has now.
         stored = store.seen(fresh.key)
@@ -676,7 +698,20 @@ class SyncEngine:
             dropped = self._inbox.dropped() + self.dropped_marks
         except Exception:
             dropped = self.dropped_marks
-        current = StatusFile(state=status, reason=reason, per_viewer=per_viewer, dropped_marks=dropped)
+        store = self._store
+        try:
+            listed = store.assignments() if store is not None else []
+        except Exception:
+            listed = []
+        assignments = [{"id": a.id, "title": a.title, "group": a.group, "at": a.at} for a in listed]
+        current = StatusFile(
+            state=status,
+            reason=reason,
+            per_viewer=per_viewer,
+            dropped_marks=dropped,
+            mass_ratings=len(self.held_ratings),
+            assignments=assignments,
+        )
         if current == self._last_status:
             return
         if write_status(self._paths.status, replace(current, updated=self._utc_now())):
@@ -685,12 +720,12 @@ class SyncEngine:
     # -- the library and uploads ----------------------------------------------------------
 
     def _interrupted(self) -> bool:
-        """Stop reading the library when the worker stops or Kodi starts playing: an input
-        saying not quiet is waiting."""
+        """Stop a library read, a scan or a write run when the worker stops, Kodi starts
+        playing or a window opens: such an input is waiting."""
         if self._stopping.is_set():
             return True
         with self._lock:
-            return any(name == "quiet" and not value for name, value in self._inputs)
+            return any((name == "quiet" and not value) or (name == "window" and value) for name, value in self._inputs)
 
     def _read_library(self) -> Library | None:
         """A full read of the library; publishes what the service thread needs from it, drops the
@@ -1136,6 +1171,284 @@ class SyncEngine:
         # being retried in a loop.
         remaining = bool(store.pending_writes())
         self._state = replace(self._state, writes_pending=remaining and (report.written > 0 or not may_write()))
+
+    # -- ratings, requests and the first round ------------------------------------------
+
+    def _apply_outcomes(self, batch: Batch, outcomes: list[LocalOutcome]) -> bool:
+        """Into the batch; True when an owner's record took the change and it goes up."""
+        recorded = False
+        for out in outcomes:
+            if isinstance(out, Recorded):
+                _put_entry(batch, out.viewer, out.entry)
+                recorded = recorded or out.sent
+            elif isinstance(out, ToAssign):
+                batch.assignments_add.append(out.assignment)
+        return recorded
+
+    def _merged_entries(
+        self, store: RecordStore, batch: Batch, viewers: tuple[str, ...], row: LibraryRow
+    ) -> dict[str, Entry]:
+        entries: dict[str, Entry] = {}
+        for viewer in viewers:
+            found = [_pending(batch, viewer, e) for e in store.match(viewer, row.tokens)]
+            if len(found) > 1:
+                entry = merge(found)
+                batch.merged.setdefault(viewer, {})[entry.key] = sorted({e.key for e in found})
+                _put_entry(batch, viewer, entry)
+                entries[viewer] = entry
+            elif found:
+                entries[viewer] = found[0]
+        return entries
+
+    def _after_record(self, store: RecordStore, batch: Batch) -> None:
+        """Viewers whose records a batch changed: their change waits for the queue and goes up."""
+        for viewer, changed in batch.entries.items():
+            if any(e.touched for e in changed):
+                self._set_viewer(viewer, unsent=True, queue_settled=False)
+        self._state = replace(self._state, writes_pending=bool(store.pending_writes()))
+
+    def _rating_writes(self, store: RecordStore, library: Library) -> None:
+        """The rating window's writes, as soon as Kodi can be asked, playback or not (one row
+        read each): each row read back; recorded only when Kodi holds the value (the write may
+        not have landed when its answer was lost) and the viewers who rated are the item's
+        owners. The rating is stored as the row's Seen and pending rating writes for the item
+        are dropped in every case, so neither the scan nor the writer takes it for anything
+        else. A row Kodi can't answer about now stays for the next step."""
+        writes, self.rating_writes = self.rating_writes, []
+        owners_of_row = self._owners(library)
+        for write in writes:
+            kind_name, kodi_id, value, rated = write
+            kind = _KINDS.get(kind_name)
+            if kind is None:
+                continue
+            try:
+                row = self._fresh_row(library, kind, kodi_id, "")
+            except _Gone:
+                continue
+            except Exception:
+                self.rating_writes.append(write)
+                continue
+            if row is None:
+                continue
+            batch = Batch()
+            if int(row.raw.get("userrating") or 0) == value:
+                show = library.tvshows.get(row.show_kodi_id) if row.show_kodi_id is not None else None
+                owners = owners_of_row(row)
+                entries = self._merged_entries(store, batch, owners, row)
+                outcome = rating_window_write(
+                    entries, row, show, value=value, rated=rated, owners=owners, made_at=self._utc_now()
+                )
+                self._apply_outcomes(batch, outcome)
+            stored = store.seen(row.key)
+            now_seen = seen_of(row.raw)
+            if stored is not None:
+                now_seen = replace(now_seen, dateadded=stored.dateadded)
+            batch.seen[row.key] = now_seen
+            batch.seen_tokens[row.key] = row.tokens
+            batch.pending_done.extend(
+                w.id for w in store.pending_writes() if w.group == "ratings" and w.tokens & frozenset(row.tokens)
+            )
+            store.commit(batch)
+            self._after_record(store, batch)
+
+    def _rating_scan(self) -> None:
+        store, library = self._store, self.library
+        assert store is not None
+        self._state = replace(self._state, rating_scan_due=False)
+        if library is None:
+            self._last_rating_scan = self._clock()
+            return
+        self._rating_writes(store, library)
+        in_flight: dict[RowKey, dict[str, Any]] = {}
+        for write in store.pending_writes():
+            in_flight.update(in_flight_rows(write))
+        held = {k: f.value for f in self.held_ratings for k in f.rated}
+        result = rating_scan(
+            self._kodi,
+            library,
+            store.seen_for_library(library.library_id),
+            in_flight,
+            lambda key: read_row(self._kodi, key, library.tvshows),
+            held=held,
+            may_continue=lambda: not self._interrupted(),
+        )
+        if result.complete:
+            self._last_rating_scan = self._clock()
+        if result.released:
+            self.held_ratings = [f for f in self.held_ratings if not set(f.rated) & result.released]
+        if result.held:
+            # Added to what is already held: the household answers for all of them at once.
+            known = {f.row.key for f in self.held_ratings}
+            self.held_ratings += [f for f in result.held if f.row.key not in known]
+        batch = Batch(seen=dict(result.seen))
+        self._record_ratings(store, library, result.found, batch)
+        store.commit(batch)
+        self._after_record(store, batch)
+        _log.info("sync.rating_scan", found=len(result.found), held=len(self.held_ratings), complete=result.complete)
+
+    def _record_ratings(self, store: RecordStore, library: Library, found: list[FoundRating], batch: Batch) -> None:
+        """Ratings set in Kodi into the owners' records. Only a rating a record took gives the
+        item's other copies the value: one left on the assignment list or not sent (a cleared
+        rating with removals off) leaves Kodi as the person set it."""
+        owners_of_row = self._owners(library)
+        settings = self._settings.sync_settings if self._settings is not None else SyncSettings()
+        now = self._utc_now()
+        for rating in found:
+            row = rating.row
+            show = library.tvshows.get(row.show_kodi_id) if row.show_kodi_id is not None else None
+            owners = owners_of_row(row)
+            entries = self._merged_entries(store, batch, owners, row)
+            outcomes = rating_change(
+                entries, row, show, value=rating.value, owners=owners, settings=settings, made_at=now, new_id=_new_id
+            )
+            if not self._apply_outcomes(batch, outcomes):
+                continue
+            for copy in rating.copies:
+                batch.pending_add.append(
+                    PendingWrite(id=_new_id(), row=copy, tokens=frozenset(row.tokens), group="ratings", created=now)
+                )
+
+    def _take_requests(self) -> None:
+        """The household's requests from the settings scripts and the status screen. Each
+        leaves the file only after its effect is committed; one that fails, or has to wait for
+        Kodi to be quiet, stays for the next request or session, and the worker doesn't spin
+        on it."""
+        store = self._store
+        assert store is not None
+        done: set[str] = set()
+        for request in read_requests(self._paths.requests):
+            try:
+                if self._take_request(store, request):
+                    done.add(request.id)
+            except Exception as exc:
+                _log.warning("sync.request.failed", kind=request.kind, error=str(exc))
+        if done and not done_requests(self._paths.requests, done):
+            _log.warning("sync.request.not_removed", count=len(done))
+        self._state = replace(self._state, requests_waiting=False)
+
+    def _take_request(self, store: RecordStore, request: Request) -> bool:
+        """True when the request's effect is committed (or there is nothing to do)."""
+        settings = self._settings.sync_settings if self._settings is not None else SyncSettings()
+        if request.kind == "assign":
+            wanted = request.args.get("assignment")
+            raw = request.args.get("viewers")
+            viewers = [v for v in raw if isinstance(v, str)] if isinstance(raw, list) else []
+            assignment = next((a for a in store.assignments() if a.id == wanted), None)
+            if assignment is None:
+                return True
+            reply = self._state.reply
+            floor = max(
+                [store.seqs(v).sent for v in viewers]
+                + [reply.viewers[v].upload_seq for v in viewers if reply is not None and v in reply.viewers]
+                + [0]
+            )
+            batch = apply_assignment(assignment, viewers, store, settings, floor + 1)
+            store.commit(batch)
+            self._after_record(store, batch)
+            return True
+        if request.kind == "send_existing_ratings":
+            for viewer in self._known_viewers():
+                self._set_viewer(viewer, existing_ratings_due=True)
+            self._existing_sent.clear()
+            return True
+        if request.kind in ("mass_ratings_send", "mass_ratings_drop"):
+            library = self.library
+            if not self.held_ratings:
+                # Nothing held (an answer from before a restart): the next scan asks again.
+                return True
+            if library is None or plan.waiting_on(self._state) is not None:
+                return False
+            if request.kind == "mass_ratings_send":
+                self._send_held(store, library)
+            else:
+                self._drop_held(store)
+            return True
+        return True
+
+    def _send_held(self, store: RecordStore, library: Library) -> None:
+        """The household said send: each held rating is read again and recorded as a person's
+        change, except where a record took a rating from CrossWatch during the hold, which is
+        newer. Every copy's Seen takes the value either way."""
+        owners_of_row = self._owners(library)
+        batch = Batch()
+        fresh: list[FoundRating] = []
+        for held in self.held_ratings:
+            row = read_row(self._kodi, held.row.key, library.tvshows)
+            if row is None or int(row.raw.get("userrating") or 0) != held.value:
+                continue
+            owners = owners_of_row(row)
+            took_cw = any("ratings" in e.applied_change for v in owners for e in store.match(v, row.tokens))
+            if not took_cw:
+                fresh.append(held)
+        self._record_ratings(store, library, fresh, batch)
+        self._seen_for_held(store, batch)
+        store.commit(batch)
+        self.held_ratings = []
+        self._after_record(store, batch)
+
+    def _drop_held(self, store: RecordStore) -> None:
+        """The household said don't send: Kodi's values become every copy's Seen, nothing goes up."""
+        batch = Batch()
+        self._seen_for_held(store, batch)
+        store.commit(batch)
+        self.held_ratings = []
+
+    def _seen_for_held(self, store: RecordStore, batch: Batch) -> None:
+        for held in self.held_ratings:
+            for key in held.rated:
+                stored = store.seen(key)
+                if stored is not None:
+                    batch.seen[key] = replace(stored, userrating=held.value)
+
+    def _send_existing_ratings(self, viewer: str) -> None:
+        """Kodi's own ratings for the viewer's seeded single-owner items, once the first round
+        settled, from a complete read of Kodi as it is now. The started file says so once every
+        viewer CrossWatch maps has sent."""
+        store = self._store
+        assert store is not None
+        library = self._read_library()
+        if library is None or self._state.rebuild_wanted or not library.complete:
+            return
+        rows = [*library.movies, *library.episodes]
+        sent = existing_ratings(store.entries(viewer), rows, self._owners(library), viewer, self._utc_now())
+        if sent:
+            batch = Batch(entries={viewer: sent})
+            store.commit(batch)
+            self._after_record(store, batch)
+        self._set_viewer(viewer, existing_ratings_due=False)
+        self._existing_sent.add(viewer)
+        _log.info("sync.existing_ratings", viewer=viewer, count=len(sent))
+        reply = self._state.reply
+        mapped = set(reply.viewers) if reply is not None else set()
+        if mapped and mapped <= self._existing_sent:
+            started = read_started(self._paths.started)
+            if started is not None:
+                update_started(self._paths.started, started.start_id, existing_ratings_sent=True)
+
+    def _judge_settled(self, state: plan.EngineState, reply: SyncReply, store: RecordStore) -> plan.EngineState:
+        """The first round settles at a quiet ping judged for the viewer, long enough after its
+        first full, with nothing waiting either way; then, if Start chose it, the viewer's
+        existing ratings are due once."""
+        started = read_started(self._paths.started)
+        wanted = started is not None and started.existing_ratings and not started.existing_ratings_sent
+        pending = bool(store.pending_writes())
+        viewers = dict(state.viewers)
+        for viewer, seen in reply.viewers.items():
+            vs = viewers.get(viewer, plan.ViewerState())
+            if vs.settled or not vs.first_full_committed or not vs.judged or vs.run_unknown:
+                continue
+            if plan.first_round_settled(
+                first_full_at=store.first_full_at(viewer),
+                now_utc=self._utc_now(),
+                queue_pending=reply.queue_pending,
+                run_pending=seen.run_pending,
+                unsent=vs.unsent,
+                unapplied=pending or vs.acks_pending,
+            ):
+                store.set_settled(viewer)
+                viewers[viewer] = replace(vs, settled=True, existing_ratings_due=vs.existing_ratings_due or wanted)
+                _log.info("sync.first_round_settled", viewer=viewer)
+        return replace(state, viewers=viewers)
 
 
 def _carried(job_built: Mapping[str, Entry], bodies: list[UploadBody], seq: int, settled: bool) -> dict[str, Carried]:

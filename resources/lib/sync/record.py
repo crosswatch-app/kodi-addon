@@ -285,6 +285,8 @@ class _ViewerRow:
     last_delta: list[list[Any]] = field(default_factory=list)
     # The record was older than CrossWatch: the next full goes "fresh" until one is accepted.
     fresh_pending: bool = False
+    # When the first complete full was accepted (UTC), for the settled first round.
+    first_full_at: str = ""
 
 
 def _dump(value: Any) -> str:
@@ -631,6 +633,9 @@ class RecordStore:
             self._rollback()
             raise
 
+    def first_full_at(self, viewer: str) -> str:
+        return self._viewer(viewer).first_full_at
+
     def fresh_pending(self, viewer: str) -> bool:
         return self._viewer(viewer).fresh_pending
 
@@ -822,6 +827,8 @@ class RecordStore:
                     applied_seq=max(v.applied_seq, batch.applied_seq.get(viewer, 0)),
                     full_library_id=batch.full_library_id.get(viewer, v.full_library_id),
                     first_full=v.first_full or viewer in batch.first_full_done,
+                    first_full_at=v.first_full_at
+                    or (batch.uploaded_at if viewer in batch.first_full_done else ""),
                     fresh_pending=v.fresh_pending and viewer not in batch.fresh_done,
                 ),
             )
