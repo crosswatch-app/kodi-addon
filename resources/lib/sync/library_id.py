@@ -121,6 +121,20 @@ def library_id(kodi: KodiApi, *, master: bool = False) -> str:
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
+def default_sqlite_folder(kodi: KodiApi) -> str | None:
+    """The folder of the library Kodi opens when that library is SQLite under its default
+    name in special://database, else None (MySQL, another folder or name, or settings Kodi
+    would read differently)."""
+    try:
+        db = _video_database(advanced_settings_text(kodi))
+    except Unparseable:
+        return None
+    # A <host> is either MySQL's server or SQLite's folder; both are not the default folder.
+    if db.host or db.name not in ("", "MyVideos"):
+        return None
+    return kodi.translate(_PROFILE_DATABASE)
+
+
 def profile_has_own_database(kodi: KodiApi) -> bool:
     """Whether this profile's library is its own, so the profile tier may decide ownership."""
     return library_id(kodi) != library_id(kodi, master=True)

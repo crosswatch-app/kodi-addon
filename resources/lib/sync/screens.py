@@ -60,11 +60,12 @@ from resources.lib.sync.files import (
     write_started,
 )
 from resources.lib.sync.ids import ensure_sync_ids
-from resources.lib.sync.items import Library, read_library
+from resources.lib.sync.items import ItemKind, Library, read_library
 from resources.lib.sync.library_id import library_id, profile_has_own_database
 from resources.lib.sync.ownership import IndexSnapshot, owners_of
 from resources.lib.sync.record import RecordMissing, RecordStore
 from resources.lib.sync.reply import connection_id
+from resources.lib.sync.server_maps import read_server_rows
 from resources.lib.ui.list_window import ListRequest, ListRow, ListState
 from resources.lib.ui.sync_setup import SetupRequest
 from resources.lib.ui.sync_status import SEND_RATINGS, StatusRequest, StatusRow, Tone
@@ -234,13 +235,17 @@ def run(kodi: KodiApi, now_utc: Callable[[], str], clock: Callable[[], float]) -
         return
     kodi.busy(True)
     try:
-        library = _read_library(kodi)
+        maps = read_server_rows(kodi)
+        library = None if maps.unreadable else _read_library(kodi, maps.rows)
         builder = IndexBuilder(kodi, viewers, clock)
         while not builder.step():
             pass
         index = builder.result()
     finally:
         kodi.busy(False)
+    if maps.unreadable:
+        kodi.ok(kodi.localised(HEADING), kodi.localised(SERVER_MAP_UNREADABLE))
+        return
     if library is None:
         kodi.ok(kodi.localised(HEADING), kodi.localised(NO_LIBRARY))
         return
@@ -281,11 +286,12 @@ def run(kodi: KodiApi, now_utc: Callable[[], str], clock: Callable[[], float]) -
     kodi.notify(kodi.localised(HEADING), kodi.localised(STARTED))
 
 
-def _read_library(kodi: KodiApi) -> Library | None:
+def _read_library(kodi: KodiApi, server_rows: frozenset[tuple[ItemKind, int]]) -> Library | None:
     """The whole library, or None when Kodi couldn't give it in one consistent read (a scan
     changed it underneath, or JSON-RPC failed): counts from part of it would mislead."""
     try:
-        library = read_library(kodi, library_id(kodi), may_continue=lambda: True, previous_shows={}, to_utc=kodi_to_utc)
+        library = read_library(kodi, library_id(kodi), may_continue=lambda: True, previous_shows={}, to_utc=kodi_to_utc,
+                               server_rows=server_rows)  # fmt: skip
     except Exception as exc:
         _log.warning("sync.setup.library_unreadable", error_type=type(exc).__name__)
         return None
@@ -346,6 +352,8 @@ VIEWER_PROBLEM = 30237
 ASSIGN_WATCHED_HERE, ASSIGN_RATED_HERE, ASSIGN_RATING_QUESTION = 30238, 30239, 30240
 STOP_OTHER_DEVICE = 30241
 WAIT_NO_VIEWERS = 30242
+WAIT_SERVER_MAP = 30243
+SERVER_MAP_UNREADABLE = 30244
 
 _STOPPED = {
     "record_missing": STOP_RECORD,
@@ -361,6 +369,7 @@ _WAITING = {
     "index": WAIT_INDEX,
     "crosswatch": WAIT_CROSSWATCH,
     "no_viewers": WAIT_NO_VIEWERS,
+    "server_map": WAIT_SERVER_MAP,
 }
 _VIEWER_PROBLEMS = {
     "viewer_unknown": VIEWER_UNKNOWN,

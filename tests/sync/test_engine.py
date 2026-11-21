@@ -16,6 +16,7 @@ from resources.lib.sync.constants import (
     BACKOFF_SECONDS,
     DAILY_FULL_SECONDS,
     QUEUE_FALLBACK_SECONDS,
+    SERVER_MAP_RETRY_SECONDS,
     STATUS_FIGURES_SECONDS,
 )
 from resources.lib.sync.engine import IDLE_SECONDS, SyncEngine, SyncPaths
@@ -648,6 +649,69 @@ def test_status_carries_the_figures_for_the_status_screen(tmp_path):
     assert status.waiting_changes == 1 and status.last_upload == ""
     assert status.counts == {"viewers": {"kv-a": [0, 1]}, "shared": [0, 0], "unowned": [0, 0]}
     assert status.unowned_titles == [] and status.unreadable_playlists == []
+
+
+def _plex_map(database, *movies: int) -> None:
+    database.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(database / "plex.db")
+    con.execute("CREATE TABLE movie(plex_id INTEGER PRIMARY KEY, kodi_id INTEGER)")
+    con.execute("CREATE TABLE episode(plex_id INTEGER PRIMARY KEY, kodi_id INTEGER)")
+    con.executemany("INSERT INTO movie(kodi_id) VALUES (?)", [(m,) for m in movies])
+    con.commit()
+    con.close()
+
+
+def test_a_mark_on_a_row_the_server_add_on_added_since_the_last_read_is_left_out(tmp_path):
+    rig = Rig(tmp_path)
+    rig.kodi.root = str(tmp_path / "kodi")
+    rig.kodi.rpc_handlers["Addons.GetAddonDetails"] = lambda params: {"addon": {"addonid": params["addonid"]}}
+    rig.ready()  # the last read knew no server rows
+    _plex_map(tmp_path / "kodi" / "database", 3)
+    rig.lib.row("movies", 3)["playcount"] = 1
+    rig.mark()
+    rig.engine.step()
+    assert rig.inbox.pending() == [] and rig.engine.dropped_marks == 0
+    store = rig.engine._store
+    assert store is not None and store.entries("kv-a") == []
+
+
+def test_an_unreadable_server_map_holds_the_drain(tmp_path):
+    rig = Rig(tmp_path)
+    rig.kodi.root = str(tmp_path / "kodi")
+    rig.kodi.rpc_handlers["Addons.GetAddonDetails"] = lambda params: {"addon": {"addonid": params["addonid"]}}
+    rig.ready()
+    (tmp_path / "kodi" / "database").mkdir(parents=True)
+    (tmp_path / "kodi" / "database" / "plex.db").write_bytes(b"damaged" * 100)
+    rig.mark()
+    rig.engine.step()
+    assert len(rig.inbox.pending()) == 1 and rig.engine.state.server_map_unreadable
+    assert rig.engine.state.inbox_waiting
+
+
+def test_an_unreadable_server_map_holds_kodi_side_work_until_it_reads(tmp_path):
+    rig = Rig(tmp_path)
+    rig.kodi.root = str(tmp_path / "kodi")
+    database = tmp_path / "kodi" / "database"
+    database.mkdir(parents=True)
+    rig.kodi.rpc_handlers["Addons.GetAddonDetails"] = lambda params: {"addon": {"addonid": params["addonid"]}}
+    (database / "plex.db").write_bytes(b"damaged" * 100)
+    rig.ready()
+    rig.mark()
+    assert rig.engine._read_library() is None
+    rig.engine.step()
+    assert len(rig.inbox.pending()) == 1 and rig.engine.state.inbox_waiting
+    status = read_status(rig.paths.status)
+    assert status is not None and (status.state, status.reason) == ("waiting", "server_map")
+
+    (database / "plex.db").unlink()
+    _plex_map(database, 3)
+    rig.engine.step()
+    assert len(rig.inbox.pending()) == 1, "nothing before the retry is due"
+    rig.clock.now += SERVER_MAP_RETRY_SECONDS
+    rig.engine.step()
+    assert not rig.engine.state.server_map_unreadable
+    library = rig.engine.library
+    assert library is not None and library.movies == [] and rig.engine.server_backed_rows == {("movie", 3)}
 
 
 def test_status_names_unreadable_playlists_and_recounts_on_a_new_index(tmp_path):

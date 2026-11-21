@@ -18,7 +18,8 @@ service thread.
 
 Log events: sync.engine.started, sync.engine.stopped, sync.engine.action_failed (warning),
 sync.engine.input_failed (warning), sync.engine.record_busy (info), sync.engine.waiting_on_action
-(debug), sync.drain.applied (debug), sync.drain.dropped (info), sync.record.missing (warning).
+(debug), sync.drain.applied (debug), sync.drain.dropped (info), sync.drain.server_backed (debug),
+sync.record.missing (warning).
 """
 
 import os
@@ -60,7 +61,7 @@ from resources.lib.sync.files import (
     update_started,
     write_status,
 )
-from resources.lib.sync.items import ItemKind, Library, LibraryRow, RowKey, read_library
+from resources.lib.sync.items import ItemKind, Library, LibraryRow, RowKey, is_server_backed, read_library
 from resources.lib.sync.library_id import library_id, profile_has_own_database
 from resources.lib.sync.local import FileIndex
 from resources.lib.sync.manual import (
@@ -79,6 +80,7 @@ from resources.lib.sync.rating_scan import FoundRating, rating_scan
 from resources.lib.sync.record import Batch, Carried, Entry, PendingWrite, RecordMissing, RecordStore, merge
 from resources.lib.sync.reply import PingTicket, SyncReply, connection_id
 from resources.lib.sync.rows import ViewerRows, viewer_rows
+from resources.lib.sync.server_maps import read_server_rows
 from resources.lib.sync.settings import SyncSettings
 from resources.lib.sync.upload import UploadBody, UploadTooLarge, deltas, full_parts
 from resources.lib.sync.writer import OwnWrites, Writer, in_flight_rows, read_row, seen_of
@@ -97,7 +99,7 @@ _DETAILS: dict[ItemKind, tuple[str, str, str]] = {
     "episodes": ("VideoLibrary.GetEpisodeDetails", "episodeid", "episodedetails"),
 }
 
-Drained = Literal["applied", "dropped", "wait", "retry"]
+Drained = Literal["applied", "dropped", "server", "wait", "retry"]
 
 ClientFactory = Callable[[str, str, str, threading.Event], SyncClient]
 
@@ -603,6 +605,8 @@ class SyncEngine:
                 self._write_kodi()
             elif isinstance(action, plan.RatingScan):
                 self._rating_scan()
+            elif isinstance(action, plan.ReadLibrary):
+                self._read_library()
             elif isinstance(action, plan.TakeRequests):
                 self._take_requests()
             elif isinstance(action, plan.SendExistingRatings):
@@ -624,11 +628,21 @@ class SyncEngine:
         under a new id); a mark that matches neither is dropped and counted. A mark Kodi can't
         be asked about right now stays for the next drain. A mark on an episode whose show the
         last library read didn't have goes to the back of the inbox and waits for a read.
+
+        A mark on a row a media server add-on manages is left out, not counted as dropped. The
+        add-on's map is read again here: the service thread knows only the last library read's
+        server rows, so a mark from before the first read, or on a row the add-on added since,
+        would otherwise reach the record. A map that can't be read holds the drain.
         """
         store, library = self._store, self.library
         if store is None or library is None:
             self._state = replace(self._state, inbox_waiting=False)
             return
+        maps = read_server_rows(self._kodi)
+        if maps.unreadable:
+            self._state = plan.on_server_map(self._state, unreadable=True, now=self._clock())
+            return
+        server = maps.rows | library.server_backed
         records = self._inbox.pending(DRAIN_BATCH)
         applied_upto = store.inbox_applied()
         owners = self._owners(library)
@@ -643,7 +657,7 @@ class SyncEngine:
             if record.id <= applied_upto:
                 last = record.id
                 continue
-            outcome = self._drain_one(store, library, owners, record, batch)
+            outcome = self._drain_one(store, library, owners, record, batch, server)
             if outcome == "retry":
                 break
             last = record.id
@@ -674,11 +688,15 @@ class SyncEngine:
         owners_of_row: Callable[[LibraryRow], tuple[str, ...]],
         record: InboxRecord,
         batch: Batch,
+        server: frozenset[tuple[ItemKind, int]],
     ) -> Drained:
         kind = _KINDS.get(record.kind)
         if kind is None:
             _log.info("sync.drain.dropped", kind=record.kind, kodi_id=record.kodi_id, reason="kind")
             return "dropped"
+        if (kind, record.kodi_id) in server or is_server_backed(record.file):
+            _log.debug("sync.drain.server_backed", kind=record.kind, kodi_id=record.kodi_id)
+            return "server"
         made, now = parse_utc(record.at), parse_utc(self._utc_now())
         if made is not None and now is not None and (now - made).total_seconds() > INBOX_MAX_AGE_SECONDS:
             # Kodi's state may have moved on since; a month-old mark is no longer the person's
@@ -919,12 +937,19 @@ class SyncEngine:
         assert store is not None
         previous = self.library
         generation = self._files.generation()
+        maps = read_server_rows(self._kodi)
+        # A map that can't be read leaves its add-on's rows unknown: no read counts until one
+        # gets it, and the last read's rows, server-backed ones included, stay as they were.
+        self._state = plan.on_server_map(self._state, unreadable=bool(maps.unreadable), now=self._clock())
+        if maps.unreadable:
+            return None
         library = read_library(
             self._kodi,
             library_id(self._kodi),
             may_continue=lambda: not self._interrupted(),
             previous_shows=previous.tvshows if previous is not None else {},
             to_utc=kodi_to_utc,
+            server_rows=maps.rows,
         )
         if library is None:
             return None

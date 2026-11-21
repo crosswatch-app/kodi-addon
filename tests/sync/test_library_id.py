@@ -1,6 +1,12 @@
 import hashlib
 
-from resources.lib.sync.library_id import kodi_major, kodi_version, library_id, profile_has_own_database
+from resources.lib.sync.library_id import (
+    default_sqlite_folder,
+    kodi_major,
+    kodi_version,
+    library_id,
+    profile_has_own_database,
+)
 from tests.fakes import FakeKodi
 
 BUILD = {"System.BuildVersion": "21.2 (21.2.0) Git:20250105-abc"}
@@ -91,3 +97,20 @@ def test_bare_ampersand_read_as_kodi_does() -> None:
 
 def test_unparseable_settings_give_no_id() -> None:
     assert library_id(_kodi({MASTER: "<advancedsettings><videodatabase>"})) == ""
+
+
+def test_the_default_sqlite_folder_only_for_kodis_own_sqlite_library():
+    profile = "special://profile/advancedsettings.xml"
+    assert default_sqlite_folder(_kodi()) == "/kodi/database"
+    named = "<advancedsettings><videodatabase><name>MyVideos</name></videodatabase></advancedsettings>"
+    assert default_sqlite_folder(_kodi({profile: named})) == "/kodi/database"
+    other_name = "<advancedsettings><videodatabase><name>Shared</name></videodatabase></advancedsettings>"
+    assert default_sqlite_folder(_kodi({profile: other_name})) is None
+    other_folder = "<advancedsettings><videodatabase><host>/srv/kodi</host></videodatabase></advancedsettings>"
+    assert default_sqlite_folder(_kodi({profile: other_folder})) is None
+    mysql = (
+        "<advancedsettings><videodatabase><type>mysql</type><host>nas</host><user>k</user><pass>p</pass>"
+        "</videodatabase></advancedsettings>"
+    )
+    assert default_sqlite_folder(_kodi({profile: mysql})) is None
+    assert default_sqlite_folder(_kodi({profile: "<advancedsettings><unclosed>"})) is None

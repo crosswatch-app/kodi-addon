@@ -205,9 +205,13 @@ as watched. See [Settings](settings.md#library-sync) for each, with its default.
 - **Add-ons that write play counts**, such as Trakt for Kodi, look like a person's mark: what
   they write is sent as the owner's history. The setup screen warns when Trakt for Kodi is
   installed.
-- **Media server add-ons.** Library items with a `plugin://` path (PlexKodiConnect, Jellyfin for
-  Kodi, Emby for Kodi in add-on mode) are left out. Items such add-ons put in the library with
-  direct paths are not recognised and are synced like any other.
+- **Media server add-ons.** Items PlexKodiConnect or Jellyfin for Kodi put in the library are
+  left out, with add-on paths (`plugin://`) and with direct paths: for direct paths, the add-on's
+  own list of its items (`plex.db` or `jellyfin.db`, next to Kodi's library) says which they are.
+  Your server add-on keeps syncing them with your server. That list is used only with Kodi's own
+  library file; with an `advancedsettings.xml` that gives the video database another name or
+  folder, direct-path items are synced like any other. Emby for Kodi is left out in add-on mode
+  only; items it adds with direct paths are synced like any other.
 - **Shared items at the first Start** go up empty, not with what Kodi shows. A watch that exists
   only in Kodi, on no service, stays unknown to the services.
 - **Resume points** are written only for items with one owner: Kodi holds one per file.

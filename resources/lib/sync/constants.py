@@ -14,6 +14,8 @@ RATING_SCAN_SECONDS = 300
 # starting the pair run for 1800 s; the run itself has no bound, so this is a heuristic.
 SETTLE_SECONDS = 2400
 BACKOFF_SECONDS = (5, 15, 60, 300, 900)
+# A media server add-on's map that couldn't be read is tried again after this long.
+SERVER_MAP_RETRY_SECONDS = 60
 
 MAX_REQUEST_BYTES = 900_000
 MAX_ROWS_PER_LIST = 10_000

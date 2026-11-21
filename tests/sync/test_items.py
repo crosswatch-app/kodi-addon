@@ -160,10 +160,16 @@ def _library() -> FakeLibrary:
 
 
 def _read(
-    lib: FakeLibrary, *, may_continue: Any = lambda: True, page: int = 500, previous: Any = None
+    lib: FakeLibrary,
+    *,
+    may_continue: Any = lambda: True,
+    page: int = 500,
+    previous: Any = None,
+    server_rows: frozenset[tuple[items.ItemKind, int]] = frozenset(),
 ) -> Library | None:
     kodi = FakeKodi(rpc_handlers=lib.handlers())
-    return read_library(kodi, "lib1", may_continue=may_continue, previous_shows=previous or {}, to_utc=_utc, page=page)
+    return read_library(kodi, "lib1", may_continue=may_continue, previous_shows=previous or {}, to_utc=_utc, page=page,
+                        server_rows=server_rows)  # fmt: skip
 
 
 def test_read_library_rows_tokens_and_keys() -> None:
@@ -185,6 +191,19 @@ def test_read_library_skips_server_backed() -> None:
     assert library.server_backed == frozenset({("movies", 2)})
     # Filtering a server-backed row is not a change under the read.
     assert library.complete
+
+
+def test_rows_a_media_server_add_on_maps_are_server_backed_whatever_their_path() -> None:
+    library = _read(_library(), server_rows=frozenset({("movies", 1), ("episodes", 10)}))
+    assert library is not None and library.complete
+    assert library.movies == [] and library.episodes == []
+    assert library.server_backed == frozenset({("movies", 1), ("movies", 2), ("episodes", 10)})
+
+
+def test_a_mapped_id_the_library_does_not_hold_is_not_server_backed() -> None:
+    library = _read(_library(), server_rows=frozenset({("movies", 99), ("episodes", 1)}))
+    assert library is not None
+    assert library.server_backed == frozenset({("movies", 2)})
 
 
 def test_read_library_strips_files_and_sources() -> None:

@@ -140,8 +140,8 @@ def keep_show_ids(new_shows: MutableMapping[int, dict[str, Any]], old_shows: Map
 def is_server_backed(file: str) -> bool:
     """Rows a media server add-on owns and rewrites, which sync must leave alone.
 
-    Covers plugin:// paths. Rows a server add-on manages through direct paths (real smb://
-    or nfs:// files) are not detected yet.
+    Covers plugin:// paths. Rows a server add-on manages through direct paths have ordinary
+    file paths; read_library takes those from the add-on's own map (server_maps.py).
     """
     return file.startswith(PLUGIN_PREFIX)
 
@@ -235,8 +235,12 @@ def read_library(
     previous_shows: Mapping[int, Mapping[str, Any]],
     to_utc: Callable[[str], str],
     page: int = 500,
+    server_rows: frozenset[tuple[ItemKind, int]] = frozenset(),
 ) -> Library | None:
     """Read the whole video library, or None when `may_continue` turns False mid-read.
+
+    `server_rows` are the rows a media server add-on maps through direct paths
+    (server_maps.py): server-backed like plugin:// rows, whatever their path.
 
     `complete` is False when the library changed under the read. Kodi pages with LIMIT and
     no ORDER BY (VideoDatabase.cpp GetMoviesByWhere), so on a library another box writes to,
@@ -259,11 +263,17 @@ def read_library(
             id_field = _METHODS[kind][2]
             seen_ids = {int(r[id_field]) for r in raws if id_field in r}
             complete = complete and held and seen_ids == _ids(kodi, kind)
-            lists[kind] = [row for raw in raws if (row := _row(kind, raw, library_id, tvshows, to_utc)) is not None]
+            mapped = {int(r[id_field]) for r in raws if id_field in r and (kind, int(r[id_field])) in server_rows}
+            lists[kind] = [
+                row
+                for raw in raws
+                if (row := _row(kind, raw, library_id, tvshows, to_utc)) is not None and row.key.kodi_id not in mapped
+            ]
             if kind == "episodes":
                 # A show added under the read: its episodes would get title tokens instead of
                 # the show's ids, and CrossWatch refuses an episode whose show row is missing.
                 complete = complete and all(r.show_kodi_id in tvshows for r in lists[kind])
+            server_backed |= {(kind, kodi_id) for kodi_id in mapped}
             server_backed |= {
                 (kind, int(raw[id_field]))
                 for raw in raws

@@ -8,6 +8,7 @@ from resources.lib.sync.constants import (
     DAILY_FULL_SECONDS,
     MAX_ROWS_PER_LIST,
     MIN_PART_ROWS,
+    SERVER_MAP_RETRY_SECONDS,
     SETTLE_SECONDS,
 )
 from resources.lib.sync.plan import (
@@ -20,6 +21,7 @@ from resources.lib.sync.plan import (
     Idle,
     Ping,
     RatingScan,
+    ReadLibrary,
     RequestRebuild,
     Reset,
     SendAcks,
@@ -43,6 +45,7 @@ from resources.lib.sync.plan import (
     on_ping_asked,
     on_rebuild_asked,
     on_reply,
+    on_server_map,
     on_snapshot,
     on_success,
     on_token_changed,
@@ -160,6 +163,33 @@ def test_nothing_while_not_quiet_scanning_or_unusable(change, why):
     state = replace(_state(**{"kv-a": replace(READY, full_due=True)}), writes_pending=True, **change)
     assert waiting_on(state) == why
     assert next_action(state, NOW) == Idle()
+
+
+def test_an_unreadable_server_map_holds_everything_and_rereads_the_library_later():
+    ready = replace(_state(**{"kv-a": replace(READY, full_due=True)}), writes_pending=True, inbox_waiting=True)
+    held = on_server_map(ready, unreadable=True, now=NOW)
+    assert waiting_on(held) == "server_map"
+    assert next_action(held, NOW + 1) == Wait(NOW + SERVER_MAP_RETRY_SECONDS)
+    assert next_action(held, NOW + SERVER_MAP_RETRY_SECONDS) == ReadLibrary()
+    # Playback outranks it: no library read while Kodi plays.
+    assert next_action(replace(held, quiet=False), NOW + SERVER_MAP_RETRY_SECONDS) == Idle()
+    assert waiting_on(replace(held, quiet=False)) == "playback"
+    # As does a Kodi scan: a read during one comes back incomplete.
+    assert next_action(replace(held, scanning=True), NOW + SERVER_MAP_RETRY_SECONDS) == Idle()
+    # Requests are still taken.
+    assert next_action(replace(held, requests_waiting=True), NOW + 1) == TakeRequests()
+
+
+def test_a_readable_server_map_frees_the_engine_again():
+    held = on_server_map(_state(**{"kv-a": replace(READY, full_due=True)}), unreadable=True, now=NOW)
+    freed = on_server_map(held, unreadable=False, now=NOW + SERVER_MAP_RETRY_SECONDS)
+    assert waiting_on(freed) is None and isinstance(next_action(freed, NOW + SERVER_MAP_RETRY_SECONDS), FullUpload)
+
+
+def test_a_map_that_stays_unreadable_retries_from_the_last_failure():
+    held = on_server_map(_state(), unreadable=True, now=NOW)
+    again = on_server_map(held, unreadable=True, now=NOW + SERVER_MAP_RETRY_SECONDS)
+    assert next_action(again, NOW + SERVER_MAP_RETRY_SECONDS + 1) == Wait(NOW + 2 * SERVER_MAP_RETRY_SECONDS)
 
 
 def test_status_says_nothing_when_free():

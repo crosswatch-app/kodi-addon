@@ -826,3 +826,11 @@ msgstr ""
 msgctxt "#30242"
 msgid "Waiting: CrossWatch syncs none of this Kodi's viewers. Check their sync in CrossWatch."
 msgstr ""
+
+msgctxt "#30243"
+msgid "Waiting: can't read which items PlexKodiConnect or Jellyfin for Kodi manages. Sync goes on once it can."
+msgstr ""
+
+msgctxt "#30244"
+msgid "Couldn't read which items PlexKodiConnect or Jellyfin for Kodi manages, so nothing can be counted. Try again in a minute."
+msgstr ""

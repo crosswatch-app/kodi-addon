@@ -185,6 +185,24 @@ comes down. One of these:
 
 The line goes away at the next heartbeat after the fix, within five minutes.
 
+### Waiting: can't read which items PlexKodiConnect or Jellyfin for Kodi manages
+
+Library sync leaves alone the items a media server add-on manages. With direct paths, only that
+add-on's own list of its items says which they are: `plex.db` (PlexKodiConnect) or
+`jellyfin.db` (Jellyfin for Kodi), in the same `Database` folder as Kodi's library
+(`userdata/Database`, or `userdata/profiles/<profile>/Database` for a profile with its own
+library). The list is there but can't be read, so nothing is written, fetched or sent until it
+can, rather than risk changing items that belong to your server. Sync tries again every minute.
+
+- The list is damaged, or isn't one that add-on wrote (a file copied in from elsewhere). Look at
+  that add-on's own log; repairing its list is done in that add-on, not this one.
+- Kodi didn't answer whether the add-on is installed. This clears by itself; if it doesn't,
+  restart Kodi.
+
+The setup screen says the same ("Couldn't read which items PlexKodiConnect or Jellyfin for
+Kodi manages") and counts nothing until the list can be read. A list left behind after the
+add-on was uninstalled is ignored.
+
 ### Paused: library sync was turned off
 
 "Sync this library with CrossWatch" was turned off, then on again. Turning it on alone does not

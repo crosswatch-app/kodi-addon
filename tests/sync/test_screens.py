@@ -11,6 +11,7 @@ from resources.lib.sync.files import StartedFile, StatusFile, read_requests, rea
 from resources.lib.sync.items import Library, LibraryRow, RowKey
 from resources.lib.sync.record import RecordStore
 from resources.lib.sync.reply import connection_id
+from resources.lib.sync.server_maps import ServerRows
 from resources.lib.ui.sync_setup import SetupResult
 from resources.lib.ui.sync_status import SEND_RATINGS
 from tests.fakes import FakeKodi
@@ -209,6 +210,31 @@ def test_an_incomplete_library_read_says_so(tmp_path, monkeypatch):
     assert kodi.sync_setup_requests == [] and kodi.ok_calls
 
 
+def test_rows_a_media_server_add_on_maps_are_left_out_of_the_counts(tmp_path, monkeypatch):
+    kodi = _kodi(tmp_path)
+    JsonViewerStore(paths.viewers_path(kodi)).save([Viewer(name="Anna", sync_id="kv-a")])
+    mapped: frozenset[tuple[items.ItemKind, int]] = frozenset({("movies", 1)})
+    monkeypatch.setattr(screens, "read_server_rows", lambda k: ServerRows(mapped))
+    seen: dict = {}
+
+    def read(*args, **kwargs):
+        seen.update(kwargs)
+        return Library("L1", [], [], {}, [], True)
+
+    monkeypatch.setattr(screens, "read_library", read)
+    _run(kodi, None)
+    assert seen["server_rows"] == mapped and kodi.sync_setup_requests
+
+
+def test_a_media_server_map_that_cannot_be_read_says_so(tmp_path, monkeypatch):
+    kodi = _kodi(tmp_path)
+    JsonViewerStore(paths.viewers_path(kodi)).save([Viewer(name="Anna", sync_id="kv-a")])
+    monkeypatch.setattr(screens, "read_server_rows", lambda k: ServerRows(frozenset(), ("plex.db",)))
+    _run(kodi, SetupResult(start=True))
+    assert kodi.sync_setup_requests == [] and kodi.busy_calls == [True, False]
+    assert kodi.ok_calls == [(f"#{screens.HEADING}", f"#{screens.SERVER_MAP_UNREADABLE}")]
+
+
 def test_a_failed_started_file_write_is_not_reported_as_started(tmp_path, monkeypatch):
     kodi = _kodi(tmp_path)
     JsonViewerStore(paths.viewers_path(kodi)).save([Viewer(name="Anna", sync_id="kv-a")])
@@ -257,6 +283,7 @@ def test_status_lines_per_state():
         ("waiting", ""): (f"#{screens.WAIT_CROSSWATCH}", "busy"),
         ("waiting", "not_sync_device"): (f"#{screens.WAIT_CROSSWATCH}", "busy"),
         ("waiting", "no_viewers"): (f"#{screens.WAIT_NO_VIEWERS}", "busy"),
+        ("waiting", "server_map"): (f"#{screens.WAIT_SERVER_MAP}", "busy"),
         ("stopped", "record_missing"): (f"#{screens.STOP_RECORD}", "stopped"),
         ("stopped", "unauthorized"): (f"#{screens.STOP_TOKEN}", "stopped"),
         ("stopped", "no_sync"): (f"#{screens.STOP_NO_SYNC}", "stopped"),

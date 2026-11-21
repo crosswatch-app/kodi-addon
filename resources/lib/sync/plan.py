@@ -10,8 +10,9 @@ The gates, in order:
   requests are taken then, whatever else holds;
 - everything else needs sync on and this device not paused. The inbox is drained, Kodi is
   written and ratings are scanned without CrossWatch, so an outage loses none of them, but
-  only while Kodi plays nothing (and didn't just), isn't scanning, and the playlist index is
-  usable and current;
+  only while Kodi plays nothing (and didn't just), isn't scanning, the playlist index is
+  usable and current, and every media server add-on's map could be read (server_maps.py);
+  a map that couldn't be read holds everything, and the library is read again for it;
 - talking to CrossWatch also needs its last answer enabled with no reason, and no 401;
 - per viewer, only viewers CrossWatch mapped; an upload, a queue fetch or an ack waits for a
   ping reply judged for that viewer since the gate last armed (session start, a failed
@@ -44,6 +45,7 @@ from resources.lib.sync.constants import (
     MAX_ROWS_PER_LIST,
     MIN_PART_ROWS,
     SEED_WINDOW_SECONDS,
+    SERVER_MAP_RETRY_SECONDS,
     SETTLE_SECONDS,
 )
 from resources.lib.sync.record import SeqState
@@ -131,6 +133,10 @@ class EngineState:
     rebuild_wanted: bool = False
     rebuild_pending: bool = False
     library_complete: bool = False
+    # The last library read found a media server add-on's map it couldn't read, at this time:
+    # which rows that add-on manages is unknown until a read gets it.
+    server_map_unreadable: bool = False
+    server_map_failed_at: float = 0.0
     # A rating window or the who-watched question is open.
     window_open: bool = False
     inbox_waiting: bool = False
@@ -218,6 +224,11 @@ class RatingScan:
 
 
 @dataclass(frozen=True)
+class ReadLibrary:
+    pass
+
+
+@dataclass(frozen=True)
 class Wait:
     until: float
 
@@ -234,6 +245,7 @@ Action = (
     | SendAcks
     | SendExistingRatings
     | WriteKodi
+    | ReadLibrary
     | RatingScan
     | Wait
 )
@@ -265,6 +277,8 @@ def waiting_on(state: EngineState) -> str | None:
         return "scan"
     if state.rebuild_pending or not state.snapshot_usable:
         return "index"
+    if state.server_map_unreadable:
+        return "server_map"
     return None
 
 
@@ -313,6 +327,9 @@ def next_action(state: EngineState, now: float) -> Action:
         return Idle()
     if state.rebuild_wanted:
         return RequestRebuild()
+    if waiting_on(state) == "server_map":
+        due = state.server_map_failed_at + SERVER_MAP_RETRY_SECONDS
+        return ReadLibrary() if now >= due else Wait(due)
     if waiting_on(state) is not None:
         return Idle()
     if state.inbox_waiting:
@@ -343,6 +360,13 @@ def next_action(state: EngineState, now: float) -> Action:
         if state.rating_scan_due:
             return RatingScan()
     return Wait(min(deadlines)) if deadlines else Idle()
+
+
+def on_server_map(state: EngineState, *, unreadable: bool, now: float) -> EngineState:
+    """A library read's verdict on the media server add-ons' maps."""
+    if not unreadable:
+        return replace(state, server_map_unreadable=False)
+    return replace(state, server_map_unreadable=True, server_map_failed_at=now)
 
 
 def arm_gate(state: EngineState, now: float) -> EngineState:
