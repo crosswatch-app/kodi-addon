@@ -149,15 +149,14 @@ def test_meta_keys_held_only_by_another_entry_are_kept() -> None:
 
 def test_merge_unions_bookkeeping() -> None:
     a = _entry("a", ItemState(), unsent={"ratings": "2026-01-01T00:00:00Z"}, unsent_upload={"ratings": 3},
-               uploaded_at="2026-01-02T00:00:00Z", origin="seed", seed_rating=6, change_count=4)  # fmt: skip
+               origin="seed", seed_rating=6, change_count=4)  # fmt: skip
     b = _entry("b", ItemState(), unsent={"ratings": "2026-02-01T00:00:00Z", "history": "2026-01-05T00:00:00Z"},
-               unsent_upload={"ratings": 7}, touched=True, uploaded_at="2026-01-01T00:00:00Z",
-               origin="seed", seed_rating=8, change_count=2)  # fmt: skip
+               unsent_upload={"ratings": 7}, touched=True, origin="seed", seed_rating=8, change_count=2)  # fmt: skip
     merged = merge([a, b])
     assert merged.unsent == {"ratings": "2026-02-01T00:00:00Z", "history": "2026-01-05T00:00:00Z"}
     # b's change is the newer one, so its own upload stays with it.
     assert merged.unsent_upload == {"ratings": 7}
-    assert merged.touched and merged.uploaded_at == "2026-01-02T00:00:00Z"
+    assert merged.touched
     assert (merged.origin, merged.seed_rating, merged.change_count) == ("seed", 8, 5)
 
 

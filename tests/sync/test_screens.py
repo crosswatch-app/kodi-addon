@@ -256,6 +256,7 @@ def test_status_lines_per_state():
         ("waiting", "index"): (f"#{screens.WAIT_INDEX}", "busy"),
         ("waiting", ""): (f"#{screens.WAIT_CROSSWATCH}", "busy"),
         ("waiting", "not_sync_device"): (f"#{screens.WAIT_CROSSWATCH}", "busy"),
+        ("waiting", "no_viewers"): (f"#{screens.WAIT_NO_VIEWERS}", "busy"),
         ("stopped", "record_missing"): (f"#{screens.STOP_RECORD}", "stopped"),
         ("stopped", "unauthorized"): (f"#{screens.STOP_TOKEN}", "stopped"),
         ("stopped", "no_sync"): (f"#{screens.STOP_NO_SYNC}", "stopped"),

@@ -822,3 +822,7 @@ msgstr ""
 msgctxt "#30241"
 msgid "Paused: another device syncs this library. Turn library sync off there, then run Set up library sync here."
 msgstr ""
+
+msgctxt "#30242"
+msgid "Waiting: CrossWatch syncs none of this Kodi's viewers. Check their sync in CrossWatch."
+msgstr ""

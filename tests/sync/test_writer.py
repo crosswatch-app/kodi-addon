@@ -464,6 +464,34 @@ def test_older_cw_resume_does_not_overwrite_newer_local(tmp_path) -> None:
     assert rig.run().dropped == 1 and lib.row("movies", 1)["resume"]["position"] == 3000
 
 
+def test_a_service_resume_after_a_play_below_the_threshold_leaves_kodis(tmp_path) -> None:
+    lib = _movies(
+        (1, "smb://nas/a.mkv", {"lastplayed": "2026-11-19 10:58:00", "resume": {"position": 3112, "total": 6224}})
+    )
+    rig = Rig(tmp_path, lib)
+    key = items.RowKey("lib1", "movies", 1, "smb://nas/a.mkv")
+    # Seen before the play: the play itself announced no play count, so nothing updated it.
+    rig.store.commit(Batch(seen={key: Seen(lastplayed="", resume={"position": 0.0})}))
+    rig.entry(1, ItemState(resume=Resume(position=3036.0, total=6060.0)))
+    rig.intent("p1", "movies", 1, "progress", fetched_at=kodi_to_utc("2026-11-19 11:00:00"))
+    assert rig.run().dropped == 1 and lib.row("movies", 1)["resume"]["position"] == 3112
+
+
+def test_a_resume_after_the_add_ons_own_history_write_lands(tmp_path) -> None:
+    lib = _movies((1, "smb://nas/a.mkv", {"lastplayed": "2026-09-01 20:00:00"}))
+    rig = Rig(tmp_path, lib)
+    key = items.RowKey("lib1", "movies", 1, "smb://nas/a.mkv")
+    rig.store.commit(Batch(seen={key: Seen(lastplayed=kodi_to_utc("2026-09-01 20:00:00"))}))
+    owner = ItemState(history=History(watched=True, playcount=1, lastplayed="2026-11-16T20:00:00Z"),
+                      resume=Resume(position=1800.0, total=5400.0))  # fmt: skip
+    rig.entry(1, owner)
+    rig.intent("h1", "movies", 1, "history")
+    rig.run()
+    rig.intent("p1", "movies", 1, "progress", fetched_at="2026-11-18T21:00:00Z")
+    rig.run()
+    assert lib.row("movies", 1)["resume"]["position"] == 1800.0
+
+
 def test_read_back_compares_sent_strings(tmp_path) -> None:
     lib = _movies((1, "smb://nas/a.mkv", {}))
     rig = Rig(tmp_path, lib)

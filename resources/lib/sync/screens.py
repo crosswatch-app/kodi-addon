@@ -345,6 +345,7 @@ MASS_ROW_ASK = 30236
 VIEWER_PROBLEM = 30237
 ASSIGN_WATCHED_HERE, ASSIGN_RATED_HERE, ASSIGN_RATING_QUESTION = 30238, 30239, 30240
 STOP_OTHER_DEVICE = 30241
+WAIT_NO_VIEWERS = 30242
 
 _STOPPED = {
     "record_missing": STOP_RECORD,
@@ -354,7 +355,13 @@ _STOPPED = {
     "device_id_changed": STOP_DEVICE_ID,
     "not_sync_device": STOP_OTHER_DEVICE,
 }
-_WAITING = {"playback": WAIT_PLAYBACK, "scan": WAIT_SCAN, "index": WAIT_INDEX, "crosswatch": WAIT_CROSSWATCH}
+_WAITING = {
+    "playback": WAIT_PLAYBACK,
+    "scan": WAIT_SCAN,
+    "index": WAIT_INDEX,
+    "crosswatch": WAIT_CROSSWATCH,
+    "no_viewers": WAIT_NO_VIEWERS,
+}
 _VIEWER_PROBLEMS = {
     "viewer_unknown": VIEWER_UNKNOWN,
     "too_large": VIEWER_TOO_LARGE,

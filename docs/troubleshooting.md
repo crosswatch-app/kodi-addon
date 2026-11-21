@@ -173,6 +173,18 @@ Another device paired with this same connection is the sync device, so this one 
 asking. To move sync here, turn "Sync this library with CrossWatch" off on the other device,
 then run Set up library sync on this one.
 
+### Waiting: CrossWatch syncs none of this Kodi's viewers
+
+CrossWatch answers, but none of this Kodi's viewers has a sync there, so nothing goes up or
+comes down. One of these:
+
+- A viewer has no sync pair in CrossWatch, or the pair is switched off. Each viewer needs a pair
+  between their services and this Kodi, switched on.
+- CrossWatch also reaches this Kodi by its address (Kodi's web server, JSON-RPC). CrossWatch
+  then syncs that Kodi itself and leaves the add-on out. Remove that connection in CrossWatch.
+
+The line goes away at the next heartbeat after the fix, within five minutes.
+
 ### Paused: library sync was turned off
 
 "Sync this library with CrossWatch" was turned off, then on again. Turning it on alone does not

@@ -333,6 +333,17 @@ def _store(rig: Rig) -> RecordStore:
     return store
 
 
+def test_status_shows_the_last_accepted_upload(tmp_path):
+    rig = Rig(tmp_path)
+    rig.ready()
+    rig.engine.step()
+    _store(rig).commit(Batch(first_full_done={"kv-a"}, uploaded_at="2026-11-20T09:30:00Z"))
+    rig.clock.now += STATUS_FIGURES_SECONDS
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.last_upload == "2026-11-20T09:30:00Z"
+
+
 def test_merge_kept_when_the_mark_records_nothing(tmp_path):
     rig = Rig(tmp_path)
     rig.ready()
@@ -585,6 +596,30 @@ def test_enabled_false_right_after_start_does_not_pause(tmp_path):
     assert started is not None and not started.paused
 
 
+def test_crosswatch_syncing_none_of_the_viewers_shows_in_the_status(tmp_path):
+    # CrossWatch answers, but maps no viewer to a sync: no pair, a pair switched off, or a Kodi
+    # it reaches over JSON-RPC and syncs itself.
+    rig = Rig(tmp_path)
+    rig.ready()
+    nobody = SyncReply(enabled=True, reason=None, viewers={}, queue_pending=0)
+    rig.engine.on_ping_reply(nobody, PingTicket(sent_at=rig.clock.now, enabled=True))
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and (status.state, status.reason) == ("waiting", "no_viewers")
+    # CrossWatch stops answering: that is the news now, not the last answer.
+    rig.engine._state = replace(rig.engine.state, ping_failures=1)
+    rig.engine._write_status()
+    status = read_status(rig.paths.status)
+    assert status is not None and (status.state, status.reason) == ("waiting", "crosswatch")
+    rig.engine._state = replace(rig.engine.state, ping_failures=0)
+    # Mapped on a later answer: the line goes.
+    rig.clock.now += 1
+    rig.engine.on_ping_reply(_reply(True), PingTicket(sent_at=rig.clock.now, enabled=True))
+    rig.engine.step()
+    status = read_status(rig.paths.status)
+    assert status is not None and status.reason != "no_viewers"
+
+
 def test_changed_device_id_shows_in_the_status(tmp_path):
     rig = Rig(tmp_path)
     write_started(rig.paths.started, StartedFile(connection=connection_id(URL), start_id="s", bound_device="old-id"))
@@ -643,7 +678,7 @@ def _status_of(rig: "Rig", **viewer: object) -> tuple[str, str, dict]:
 
 def _cw_ready(rig: "Rig") -> None:
     rig.ready()
-    reply = SyncReply(enabled=True, reason=None, viewers={}, queue_pending=0)
+    reply = SyncReply(enabled=True, reason=None, viewers={"kv-a": ReplyViewer("default", 0)}, queue_pending=0)
     rig.engine._state = replace(rig.engine.state, reply=reply)
 
 

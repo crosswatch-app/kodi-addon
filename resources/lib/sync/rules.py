@@ -126,10 +126,16 @@ def _resume(owners: Sequence[ItemState], kodi: Seen, seen: Seen | None, fetched_
         # before it, may be one CrossWatch hasn't seen, so Kodi's own bookmark stays. The
         # intent is dropped, not kept: fetched_at is fixed and plays only move forward, so it
         # could never become writable later.
-        if _newer(played_here, fetched_at):
+        # Kodi's own date counts too: a play stopped below the watched threshold announces no
+        # play count, so what the add-on last saw can predate it. Not when that date is the
+        # owner's watch: the writer's own history write put it there, and it is no play here.
+        own_write = parse_utc(kodi.lastplayed) == parse_utc(owner.history.lastplayed)
+        local_play = _newer(kodi.lastplayed, played_here) and not own_write
+        guard_from = kodi.lastplayed if local_play else played_here
+        if _newer(guard_from, fetched_at):
             return {}
         fetched = parse_utc(fetched_at)
-        played = parse_utc(played_here)
+        played = parse_utc(guard_from)
         if fetched is not None and played is not None and fetched - played < timedelta(seconds=RESUME_GUARD_SECONDS):
             return {}
     if abs(position - kodi_position) < 1:

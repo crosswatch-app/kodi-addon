@@ -118,7 +118,6 @@ class Entry:
     # change with `after` at or above it was made after CrossWatch saw it (contract, Queue).
     unsent_upload: dict[str, int] = field(default_factory=dict)
     touched: bool = False
-    uploaded_at: str = ""
     origin: Origin = "empty"
     # Kodi's rating as the first full stored it, for "Send existing ratings".
     seed_rating: int = 0
@@ -235,7 +234,7 @@ class Batch:
     # viewer -> entry -> what an accepted upload carried for it, every entry it carried.
     unsent_carried: dict[str, dict[str, Carried]] = field(default_factory=dict)
     # When that upload was accepted (UTC); a carried entry unchanged since is no longer
-    # touched, so the next delta leaves it out.
+    # touched, so the next delta leaves it out. Also the viewer's last upload time.
     uploaded_at: str = ""
     # viewer -> entry -> groups whose person change is settled.
     unsent_cleared: dict[str, dict[str, list[str]]] = field(default_factory=dict)
@@ -287,6 +286,8 @@ class _ViewerRow:
     fresh_pending: bool = False
     # When the first complete full was accepted (UTC), for the settled first round.
     first_full_at: str = ""
+    # When CrossWatch last accepted an upload for this viewer (UTC), for the status screen.
+    last_upload_at: str = ""
 
 
 def _dump(value: Any) -> str:
@@ -309,7 +310,6 @@ def _entry_from(body: str) -> Entry:
         unsent=dict(raw.get("unsent") or {}),
         unsent_upload={k: int(v) for k, v in (raw.get("unsent_upload") or {}).items()},
         touched=bool(raw.get("touched")),
-        uploaded_at=str(raw.get("uploaded_at") or ""),
         origin=raw.get("origin") or "empty",
         seed_rating=int(raw.get("seed_rating") or 0),
         change_count=int(raw.get("change_count") or 0),
@@ -638,6 +638,9 @@ class RecordStore:
     def first_full_at(self, viewer: str) -> str:
         return self._viewer(viewer).first_full_at
 
+    def last_upload_at(self, viewer: str) -> str:
+        return self._viewer(viewer).last_upload_at
+
     def fresh_pending(self, viewer: str) -> bool:
         return self._viewer(viewer).fresh_pending
 
@@ -744,7 +747,6 @@ class RecordStore:
                             applied_change=applied,
                             applied_after=after,
                             touched=current.touched and not sent,
-                            uploaded_at=batch.uploaded_at if sent else current.uploaded_at,
                         ),
                     )
         for viewer, by_entry in batch.unsent_cleared.items():
@@ -820,7 +822,10 @@ class RecordStore:
                 "DELETE FROM acks_pending WHERE viewer = ? AND seq = ? AND change_id = ?",
                 [(viewer, seq, change_id) for seq, change_id in done],
             )
-        viewers = {*batch.applied_seq, *batch.full_library_id, *batch.first_full_done, *batch.fresh_done}
+        # An upload's commit carries uploaded_at, with its viewer in first_full_done (a full)
+        # or unsent_carried (a delta).
+        uploaded = {*batch.first_full_done, *batch.unsent_carried} if batch.uploaded_at else set()
+        viewers = {*batch.applied_seq, *batch.full_library_id, *batch.first_full_done, *batch.fresh_done, *uploaded}
         for viewer in viewers:
             v = self._viewer(viewer)
             self._put_viewer(
@@ -833,6 +838,7 @@ class RecordStore:
                     first_full_at=v.first_full_at
                     or (batch.uploaded_at if viewer in batch.first_full_done else ""),
                     fresh_pending=v.fresh_pending and viewer not in batch.fresh_done,
+                    last_upload_at=max(v.last_upload_at, batch.uploaded_at) if viewer in uploaded else v.last_upload_at,
                 ),
             )
         if batch.inbox_applied > self.inbox_applied():
@@ -983,7 +989,6 @@ def merge(entries: list[Entry]) -> Entry:
         unsent=unsent,
         unsent_upload=unsent_upload,
         touched=any(e.touched for e in ordered),
-        uploaded_at=max(e.uploaded_at for e in ordered),
         origin=origin,
         seed_rating=max(e.seed_rating for e in ordered) if all_seed else 0,
         change_count=max(e.change_count for e in ordered) + 1,

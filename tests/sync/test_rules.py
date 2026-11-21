@@ -212,6 +212,27 @@ def test_resume_guard_boundaries() -> None:
     assert _fields("progress", [owner], same_position, fetched_at="2026-11-19T10:00:00Z") == {}
 
 
+def test_a_play_the_add_on_has_not_seen_still_guards_kodis_resume() -> None:
+    # A play stopped below the watched threshold moves Kodi's date and bookmark but announces
+    # no play count, so what the add-on last saw predates it.
+    owner = ItemState(resume=Resume(position=3036.0, total=6060.0))
+    seen = Seen(lastplayed="", resume={"position": 0.0})
+    kodi = Seen(lastplayed="2026-11-19T09:58:00Z", resume={"position": 3112.0, "total": 6224.0})
+    assert _fields("progress", [owner], kodi, seen=seen, fetched_at="2026-11-19T10:00:00Z") == {}
+
+
+def test_the_add_ons_own_history_write_does_not_guard_a_later_resume() -> None:
+    # Watched elsewhere on Monday and written into Kodi, which moved Kodi's date to that watch;
+    # a rewatch elsewhere stopped half way comes in on Wednesday.
+    owner = ItemState(history=History(watched=True, playcount=1, lastplayed="2026-11-16T20:00:00Z"),
+                      resume=Resume(position=1800.0, total=5400.0))  # fmt: skip
+    seen = Seen(playcount=0, lastplayed="2026-09-01T20:00:00Z")
+    kodi = Seen(playcount=1, lastplayed="2026-11-16T20:00:00Z")
+    assert _fields("progress", [owner], kodi, seen=seen, fetched_at="2026-11-18T21:00:00Z") == {
+        "resume": {"position": 1800.0, "total": 5400.0}
+    }
+
+
 def test_kodi_has_a_date_the_owners_lack() -> None:
     kodi = Seen(playcount=0, lastplayed="2026-11-01T10:00:00Z")
     assert _fields("history", [_watched(1, "")], kodi) == {"playcount": 1, "lastplayed": "2026-11-01T10:00:00Z"}

@@ -104,7 +104,7 @@ def test_entry_round_trips_every_field(tmp_path) -> None:
     state = ItemState(history=History(watched=True, playcount=2, lastplayed="2026-01-01T10:00:00Z", event=4, src=4),
                       rating=Rating(value=8, from_cw=True, src=3))  # fmt: skip
     full = _entry(state=state, unsent={"ratings": "2026-11-19T10:00:00Z"}, unsent_upload={"history": 7},
-                  touched=True, uploaded_at="2026-11-19T09:00:00Z", origin="seed", seed_rating=6, change_count=3)  # fmt: skip
+                  touched=True, origin="seed", seed_rating=6, change_count=3)  # fmt: skip
     store.commit(Batch(entries={"kv-1": [full]}))
     assert store.entry("kv-1", full.key) == full
 
@@ -485,6 +485,20 @@ def test_accepted_upload_clears_touched_on_unchanged_entries(tmp_path) -> None:
     store.commit(Batch(unsent_carried={"v": carried}, uploaded_at="2026-11-20T10:00:00Z"))
     a, b = store.entry("v", "a"), store.entry("v", "b")
     assert a is not None and b is not None
-    assert not a.touched and a.uploaded_at == "2026-11-20T10:00:00Z"
+    assert not a.touched
     # Changed after the upload was built: still to go up.
-    assert b.touched and b.uploaded_at == ""
+    assert b.touched
+
+
+def test_an_accepted_upload_records_the_viewers_last_upload(tmp_path) -> None:
+    store = _store(tmp_path)
+    # Seeds that nothing touched: a full carries them, and nothing about them changes.
+    store.commit(Batch(entries={"v": [_entry("a"), _entry("b", tokens=("b",))]}))
+    assert store.last_upload_at("v") == ""
+    store.commit(Batch(first_full_done={"v"}, uploaded_at="2026-11-20T10:00:00Z"))
+    assert store.last_upload_at("v") == "2026-11-20T10:00:00Z"
+    store.commit(Batch(unsent_carried={"v": {}}, uploaded_at="2026-11-20T11:00:00Z"))
+    assert store.last_upload_at("v") == "2026-11-20T11:00:00Z"
+    # A commit that sent nothing leaves it, and other viewers have their own.
+    store.commit(Batch(applied_seq={"v": 3}))
+    assert store.last_upload_at("v") == "2026-11-20T11:00:00Z" and store.last_upload_at("w") == ""

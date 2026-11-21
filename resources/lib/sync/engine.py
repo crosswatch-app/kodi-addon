@@ -791,6 +791,19 @@ class SyncEngine:
             status = "stopped"
         elif state.reply is not None and state.reply.reason:
             status, reason = "waiting", state.reply.reason
+        elif (
+            state.reply is not None
+            and state.reply.enabled
+            and not state.reply.viewers
+            and not state.ping_failures
+            and self._known_viewers()
+        ):
+            # CrossWatch answers but syncs none of the viewers now: no pair, a pair switched off,
+            # or a Kodi it reaches over JSON-RPC and syncs itself. The reply, not the engine's
+            # viewers, which keep a viewer CrossWatch stopped mapping; a failing ping keeps the
+            # last reply, so this holds only while pings get answers. Only the household can
+            # fix it, so it outranks the waits that end by themselves.
+            status, reason = "waiting", "no_viewers"
         elif not plan.active(state) or plan.waiting_on(state) is not None:
             status, reason = "waiting", plan.waiting_on(state) or ""
         elif state.ping_failures or any(vs.run_unknown or vs.failures for vs in state.viewers.values()):
@@ -862,9 +875,8 @@ class SyncEngine:
         last, waiting = "", 0
         try:
             for viewer in self._known_viewers():
-                for entry in store.entries(viewer):
-                    last = max(last, entry.uploaded_at)
-                    waiting += entry.touched
+                last = max(last, store.last_upload_at(viewer))
+                waiting += sum(entry.touched for entry in store.entries(viewer))
         except Exception:
             return (known[1], known[2]) if known is not None else ("", 0)
         self._record_figures = (store.commits, last, waiting)
