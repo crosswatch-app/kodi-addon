@@ -1,7 +1,9 @@
+import re
 import time
 
 import pytest
 
+from resources.lib import log as logmod
 from resources.lib.sync import items
 from resources.lib.sync.clock import kodi_to_utc
 from resources.lib.sync.constants import OWN_WRITE_TICKS
@@ -291,6 +293,24 @@ def test_batches_of_five_with_gap(tmp_path) -> None:
     report = rig.run()
     assert report.written == 12 and rig.between == 3 and len(rig.sleeps) == 2
     assert all(gap >= 0.1 for gap in rig.sleeps)
+
+
+def test_each_batch_logs_its_size_and_duration(tmp_path) -> None:
+    logmod.configure(log_dir=str(tmp_path / "logs"), debug=True, sink=lambda msg, level: None)
+    lib = _movies(*[(n, f"smb://nas/{n}.mkv", {}) for n in range(5, 12)])
+    rig = Rig(tmp_path, lib)
+    for n in range(5, 12):
+        row = next(r for r in rig.library().movies if r.key.kodi_id == n)
+        rig.store.commit(
+            Batch(entries={"kv-1": [Entry(key=f"k{n}", tokens=frozenset(row.tokens), meta={}, state=RATED)]})
+        )
+        rig.intent(f"w{n:02d}", "movies", n, "ratings")
+    rig.run()
+    lines = [
+        line for line in (tmp_path / "logs" / "crosswatch.log").read_text().splitlines() if "sync.writer.batch" in line
+    ]
+    assert [re.search(r"writes=(\d+)", line).group(1) for line in lines] == ["5", "2"]  # type: ignore[union-attr]
+    assert all("outcome=success" in line and "duration_ms=" in line for line in lines)
 
 
 def test_stops_when_playback_starts_and_keeps_rest(tmp_path) -> None:

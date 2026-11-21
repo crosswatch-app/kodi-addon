@@ -12,7 +12,8 @@ copy of the same episode onto the row it writes, silently (VideoDatabase.cpp ~30
 episode write, a rating included, can therefore change a play count; restore_copies puts it
 back with a second write that sets it explicitly, which Kodi applies after the copy.
 
-Log events: sync.writer.restored_copy (kodi_id), sync.writer.failed (kind, kodi_id, error).
+Log events: sync.writer.restored_copy (kodi_id), sync.writer.failed (kind, kodi_id, error),
+sync.writer.batch (debug: writes, outcome, duration_ms).
 """
 
 import threading
@@ -20,7 +21,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from resources.lib.log import get_logger
+from resources.lib.log import get_logger, log_timing
 from resources.lib.media import strip_credentials
 from resources.lib.sync.clock import kodi_to_utc, utc_to_kodi
 from resources.lib.sync.constants import OWN_WRITE_TICKS
@@ -297,7 +298,8 @@ class Writer:
                 break
             batch, pending = pending[:BATCH], pending[BATCH:]
             started = self._clock()
-            outcome = self._write_batch(batch)
+            with log_timing(_log, "sync.writer.batch", writes=len(batch)):
+                outcome = self._write_batch(batch)
             # Every intent that sent anything has its in-flight fields cleared and its notes
             # committed, whether it finished, waits or failed: the read-back is done, and a
             # note never committed would hide a person's mark for ever.
