@@ -24,7 +24,8 @@ whose title is unknown is listed by its id, such as "tvdb 81189" or "Kodi librar
 - **Forget all** forgets every show in the list after you confirm. While a search or viewer
   filter is active it reads "Forget N shown" and forgets only the shows listed.
 
-Changes apply from the next playback.
+Changes apply from the next playback. With [library sync](library-sync.md) on, a change
+that moves a show to other viewers also goes to CrossWatch shortly after.
 
 ## What the details mean
 

@@ -130,6 +130,15 @@ def owners_of(
     return decide
 
 
+def moved_viewers(rows: Iterable[LibraryRow], before: OwnersOf, after: OwnersOf) -> frozenset[str]:
+    """The viewers who gained or lost an item between two ownership decisions over the same
+    rows."""
+    moved: set[str] = set()
+    for row in rows:
+        moved |= set(before(row)) ^ set(after(row))
+    return frozenset(moved)
+
+
 @dataclass(frozen=True)
 class OwnershipCounts:
     per_viewer: dict[str, int] = field(default_factory=dict)

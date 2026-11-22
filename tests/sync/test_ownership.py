@@ -4,7 +4,7 @@ from resources.lib.models import Viewer
 from resources.lib.playlist_index import PlaylistIndex
 from resources.lib.storage import RememberedAnswer
 from resources.lib.sync.items import LibraryRow, RowKey
-from resources.lib.sync.ownership import EMPTY_SNAPSHOT, IndexSnapshot, count, owners, owners_of
+from resources.lib.sync.ownership import EMPTY_SNAPSHOT, IndexSnapshot, count, moved_viewers, owners, owners_of
 
 ANNA = Viewer(name="anna", playlists=("Anna TV",), profiles=("Anna",), sync_id="kv-anna0001")
 BOB = Viewer(name="bob", profiles=("Bob",), sync_id="kv-bob00001")
@@ -118,3 +118,25 @@ def test_counts() -> None:
     result = count([_movie(n) for n in range(1, 6)], decide)
     assert result.per_viewer == {"kv-anna0001": 2, "kv-bob00001": 1}
     assert (result.shared, result.unowned) == (1, 1)
+
+
+def _decide(snapshot: IndexSnapshot, answers=None):
+    return owners_of(snapshot, {7: SHOW}, answers or {}, "", False)
+
+
+def test_moved_viewers_names_who_gained_and_who_lost() -> None:
+    rows = [_episode(), _movie()]
+    before = _decide(_snapshot({("tvshow", 7): ("anna",), ("movie", 1): ("bob",)}))
+    after = _decide(_snapshot({("tvshow", 7): ("bob",), ("movie", 1): ("bob",)}))
+    assert moved_viewers(rows, before, after) == {"kv-anna0001", "kv-bob00001"}
+
+
+def test_moved_viewers_ignores_a_new_index_that_moves_nothing() -> None:
+    rows = [_episode(), _movie()]
+    snap = {("tvshow", 7): ("anna",), ("movie", 1): ("anna", "bob")}
+    assert moved_viewers(rows, _decide(_snapshot(snap)), _decide(_snapshot(dict(snap)))) == frozenset()
+
+
+def test_a_new_remembered_answer_moves_the_show() -> None:
+    answers = {"show:tvdb:81189": RememberedAnswer(viewers=("bob",))}
+    assert moved_viewers([_episode()], _decide(_snapshot()), _decide(_snapshot(), answers)) == {"kv-bob00001"}

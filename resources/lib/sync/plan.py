@@ -436,9 +436,9 @@ def _ping_backoff(state: EngineState, now: float) -> EngineState:
 
 def request_full(state: EngineState, viewers: Iterable[str] | None = None) -> EngineState:
     """A full for these viewers, or every mapped one: after a wake (System.OnWake), after a
-    scan or clean once the index is rebuilt, daily, after Start, on a mapping change. One
-    asked for while a full is going up follows it: the running one was built before the
-    reason for asking."""
+    scan or clean once the index is rebuilt, daily, after Start, on a mapping change, when
+    items moved between viewers. One asked for while a full is going up follows it: the
+    running one was built before the reason for asking."""
     mapped = state.reply.viewers if state.reply is not None else {}
     wanted = list(viewers) if viewers is not None else list(mapped)
     out = dict(state.viewers)

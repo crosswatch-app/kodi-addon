@@ -208,7 +208,9 @@ def test_a_changed_body_counts_although_a_later_one_changed_nothing(tmp_path, mo
     rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
     rig.engine.step()
     _two_bodies(monkeypatch)
-    rig.cw.script("upload", ok(mode="delta", complete=True, changed=True), ok(mode="delta", complete=True, changed=False))
+    rig.cw.script(
+        "upload", ok(mode="delta", complete=True, changed=True), ok(mode="delta", complete=True, changed=False)
+    )
     rig.mark()
     rig.engine.step()
     _queue_settled(rig)
@@ -435,3 +437,116 @@ def test_full_writes_seen_only_for_its_own_rows(tmp_path):
     rig.judged()
     rig.run(2)
     assert rig.store().seen(RowKey(library_id(rig.kodi), "movies", 3, "/m/3.mkv")) is None
+
+
+TWO = (Viewer(name="anna", sync_id="kv-a"), Viewer(name="ben", sync_id="kv-b"))
+
+
+def _owned_by(owner: str, at: float) -> IndexSnapshot:
+    index = PlaylistIndex(by_key={("movie", 3): (owner,)}, built_at=at)
+    return IndexSnapshot(index=index, built_at=at, invalidated_at=0.0, viewers=TWO)
+
+
+def _settled_rig(tmp_path) -> CwRig:
+    rig = _after_first_full(tmp_path)
+    rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
+    rig.engine.on_snapshot(_owned_by("anna", 2.0))
+    rig.run(3)
+    rig.cw.sent.clear()
+    return rig
+
+
+def test_an_item_moving_away_sends_a_full_without_it(tmp_path):
+    rig = _settled_rig(tmp_path)
+    rig.engine.on_snapshot(_owned_by("ben", 3.0))
+    rig.run(3)
+    [body] = rig.uploads()
+    assert body["mode"] == "full" and body["viewer_id"] == "kv-a" and body["movies"] == []
+
+
+def test_a_new_index_that_moves_nothing_sends_nothing(tmp_path):
+    rig = _settled_rig(tmp_path)
+    rig.engine.on_snapshot(_owned_by("anna", 3.0))
+    rig.run(3)
+    assert rig.uploads() == []
+
+
+def test_a_changed_remembered_answer_moves_an_episode(tmp_path):
+    rig = CwRig(tmp_path)
+    rig.lib.add_show(7, title="The Show", year=2010, uniqueid={"tvdb": "77"})
+    rig.lib.add_episode(71, 7, 1, 1, title="Pilot", showtitle="The Show", uniqueid={}, file="/tv/s01e01.mkv",
+                        playcount=1, lastplayed="2026-02-01 21:00:00", userrating=0)  # fmt: skip
+    rig.cw.script("upload", ok(complete=True))
+    rig.ready()
+    rig.engine.library = None
+    rig.judged()
+    rig.engine.on_snapshot(_owned_by("anna", 2.0))
+    rig.run(4)
+    rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
+    rig.run(3)
+    assert rig.store().first_full_committed("kv-a")
+    rig.cw.sent.clear()
+    rig.engine._memory.remember("show:tvdb:77", ("anna",))
+    rig.run(3)
+    [body] = rig.uploads()
+    assert body["mode"] == "full" and [e["episodeid"] for e in body["episodes"]] == [71]
+    assert not body["episodes"][0].get("playcount"), "a new owner starts empty, not from Kodi's watch"
+
+
+def _moved(rig: CwRig) -> None:
+    rig.engine.on_snapshot(_owned_by("ben", 3.0))
+    rig.engine._take_inputs()
+    rig.engine._follow_owner_moves()
+
+
+def test_a_move_during_the_first_full_sends_another_after_it(tmp_path):
+    rig = _settled_rig(tmp_path)
+    vs = replace(rig.engine.state.viewers["kv-a"], first_full_committed=False, full_in_progress=True)
+    rig.engine._state = replace(rig.engine.state, viewers={"kv-a": vs})
+    _moved(rig)
+    assert rig.engine.state.viewers["kv-a"].full_again
+
+
+def test_a_move_while_something_plays_waits_for_quiet(tmp_path):
+    rig = _settled_rig(tmp_path)
+    rig.engine.on_quiet(False)
+    _moved(rig)
+    assert not rig.engine.state.viewers["kv-a"].full_due
+    rig.engine.on_quiet(True)
+    rig.engine._take_inputs()
+    rig.engine._follow_owner_moves()
+    assert rig.engine.state.viewers["kv-a"].full_due
+
+
+def test_a_move_across_an_unusable_index_is_still_seen(tmp_path):
+    rig = _settled_rig(tmp_path)
+    degraded = IndexSnapshot(index=None, built_at=2.5, invalidated_at=0.0, viewers=TWO)
+    rig.engine.on_snapshot(degraded)
+    rig.engine._take_inputs()
+    rig.engine._follow_owner_moves()
+    assert not rig.engine.state.viewers["kv-a"].full_due
+    _moved(rig)
+    assert rig.engine.state.viewers["kv-a"].full_due
+
+
+def test_an_unchanged_index_rebuilt_moves_nothing_and_skips_the_passes(tmp_path, monkeypatch):
+    rig = _settled_rig(tmp_path)
+    monkeypatch.setattr(engine_mod, "moved_viewers", lambda *a: (_ for _ in ()).throw(AssertionError("judged")))
+    rig.engine.on_snapshot(_owned_by("anna", 3.0))
+    rig.engine._take_inputs()
+    rig.engine._follow_owner_moves()
+    assert not rig.engine.state.viewers["kv-a"].full_due
+
+
+def test_a_failing_judgment_keeps_the_worker_and_tries_again(tmp_path, monkeypatch):
+    rig = _settled_rig(tmp_path)
+
+    def boom(*a):
+        raise ValueError("odd show data")
+
+    monkeypatch.setattr(engine_mod, "moved_viewers", boom)
+    _moved(rig)
+    assert not rig.engine.state.viewers["kv-a"].full_due
+    monkeypatch.undo()
+    rig.engine._follow_owner_moves()
+    assert rig.engine.state.viewers["kv-a"].full_due

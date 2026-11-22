@@ -122,7 +122,11 @@ sync, so the services' own ratings are in first.
 Sync runs in the background and never holds up playback.
 
 - **A full sync**, every item each viewer owns: when Kodi starts or wakes, after a library scan,
-  once a day, after the first Start, and when CrossWatch's viewers change.
+  once a day, after the first Start, and when CrossWatch's viewers change. Also for each
+  viewer who gains or loses an item: a playlist edit counts once the add-on re-reads the
+  playlists (every hour by default, see "Playlist refresh interval" in
+  [Settings](settings.md)), a new or changed remembered answer shortly after. A viewer
+  who gains an item starts with no history for it; their services fill it in.
 - **Changes made in Kodi** go up to CrossWatch shortly after they are made, and CrossWatch
   passes them on to your services about a minute later; changes made within that minute go
   together. Ratings are checked every five minutes.

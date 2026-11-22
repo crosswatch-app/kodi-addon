@@ -19,7 +19,8 @@ service thread.
 Log events: sync.engine.started, sync.engine.stopped, sync.engine.action_failed (warning),
 sync.engine.input_failed (warning), sync.engine.record_busy (info), sync.engine.waiting_on_action
 (debug), sync.drain.applied (debug), sync.drain.dropped (info), sync.drain.server_backed (debug),
-sync.record.missing (warning).
+sync.owners_moved (info),
+sync.owners_moved_failed (warning), sync.record.missing (warning).
 """
 
 import os
@@ -74,7 +75,7 @@ from resources.lib.sync.manual import (
     rating_window_write,
     watched_change,
 )
-from resources.lib.sync.ownership import IndexSnapshot, owners_of
+from resources.lib.sync.ownership import IndexSnapshot, moved_viewers, owners_of
 from resources.lib.sync.ping import device_id_changed, pause_reason
 from resources.lib.sync.rating_scan import FoundRating, rating_scan
 from resources.lib.sync.record import Batch, Carried, Entry, PendingWrite, RecordMissing, RecordStore, merge
@@ -229,6 +230,9 @@ class SyncEngine:
         self._figures_at = 0.0
         self._owned_from: tuple[Library, IndexSnapshot, Mapping[str, Any]] | None = None
         self._owned: tuple[dict[str, Any], list[str]] = ({}, [])
+        # The index and remembered answers ownership was last judged by, to tell when an
+        # item moved between viewers.
+        self._owner_inputs: tuple[IndexSnapshot, Mapping[str, Any]] | None = None
 
         # Published for the service thread; replaced whole.
         self.server_backed_rows: frozenset[tuple[str, int]] = frozenset()
@@ -307,6 +311,7 @@ class SyncEngine:
             self._rating_writes(self._store, self.library)
         now = self._clock()
         if plan.active(self._state):
+            self._follow_owner_moves()
             # A box left on for weeks still gets a full now and then, and a queue fetch even when
             # no reply asked for one; next_action holds both while Kodi is busy.
             if plan.daily_full_due(self._last_full_asked, now):
@@ -777,6 +782,46 @@ class SyncEngine:
             profile_has_own_database(self._kodi),
         )
 
+    def _follow_owner_moves(self) -> None:
+        """A full for each viewer who gained or lost an item since the index and remembered
+        answers ownership was last judged by, so a playlist edit or a new answer reaches
+        CrossWatch at the next index rather than at the daily full: a delta never removes a
+        row, so only a full takes an item from its old owner. Both decisions run over the
+        current library, so a row a scan removed never counts, while a row the new index is
+        the first to place counts as a gain. Waits while something plays: the two passes over
+        a large library take a while on a small box."""
+        library, snapshot = self.library, self._snapshot
+        if (
+            not self._state.quiet
+            or library is None
+            or not library.complete
+            or snapshot is None
+            or not self._snapshot_usable(snapshot)
+        ):
+            return
+        try:
+            answers = self._memory.entries()
+            last = self._owner_inputs
+            if last is None or _same_owner_inputs(last, (snapshot, answers)):
+                self._owner_inputs = (snapshot, answers)
+                return
+            profile, private = _profile_label(self._kodi), profile_has_own_database(self._kodi)
+            before = owners_of(last[0], library.tvshows, last[1], profile, private)
+            after = owners_of(snapshot, library.tvshows, answers, profile, private)
+            moved = moved_viewers([*library.movies, *library.episodes], before, after)
+        except Exception as exc:
+            # The last judged inputs stay, so the next step tries again.
+            _log.warning("sync.owners_moved_failed", error=str(exc))
+            return
+        self._owner_inputs = (snapshot, answers)
+        mapped = self._state.reply.viewers if self._state.reply is not None else {}
+        # A viewer whose full is going up gets another after it (request_full): the running
+        # one was built before the move.
+        wanted = sorted(v for v in moved if v in mapped)
+        if wanted:
+            _log.info("sync.owners_moved", viewers=len(wanted))
+            self._state = plan.request_full(self._state, wanted)
+
     def _next_upload_seq(self, store: RecordStore, owners: tuple[str, ...]) -> int:
         reply = self._state.reply
         highest = 0
@@ -1017,6 +1062,9 @@ class SyncEngine:
             self.late_seeds.add(viewer)
         entries = store.entries(viewer)
         owners = self._owners(library)
+        if self._owner_inputs is None and self._snapshot is not None:
+            # Moves after this full was built are judged against what it was built from.
+            self._owner_inputs = (self._snapshot, self._memory.entries())
         owned = frozenset(r.key for r in [*library.movies, *library.episodes] if viewer in owners(r))
         rows = viewer_rows(
             library,
@@ -1718,3 +1766,14 @@ def _pending(batch: Batch, viewer: str, entry: Entry) -> Entry:
 def _put_entry(batch: Batch, viewer: str, entry: Entry) -> None:
     entries = batch.entries.setdefault(viewer, [])
     entries[:] = [e for e in entries if e.key != entry.key] + [entry]
+
+
+def _same_owner_inputs(a: tuple[IndexSnapshot, Mapping[str, Any]], b: tuple[IndexSnapshot, Mapping[str, Any]]) -> bool:
+    """Whether two judgments would decide alike: the hourly rebuild of an unchanged index is a
+    new snapshot with the same membership."""
+    (snap_a, answers_a), (snap_b, answers_b) = a, b
+    if snap_a is snap_b:
+        return answers_a == answers_b
+    if snap_a.index is None or snap_b.index is None:
+        return False
+    return snap_a.index.by_key == snap_b.index.by_key and snap_a.viewers == snap_b.viewers and answers_a == answers_b
