@@ -223,7 +223,7 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 - Without a complete full upload the instance reports not ready, and its pairs are skipped for that run, not failed. An upload that is missing or partial is never treated as an empty library.
 - When a full upload completes, CW runs the managed pairs for that instance right away. If a sync is already running, CW retries until the run is accepted. A full upload that completes while that run is going gets a follow-up run afterwards. `run_pending` in the ping is true until those runs have finished.
 - A delta that changes a viewer's state (a watch, unwatch, rating or resume) starts the managed pairs about a minute later, so changes made in Kodi reach the services without waiting for the schedule. Deltas in that minute join the same run. A delta that changes nothing starts no run.
-- With sync users, the paired instance reports ready once one of its viewers has a complete full upload. Each viewer's own pairs still wait for that viewer's full upload.
+- With sync users, the paired instance reports ready once one of its viewers has a complete full upload. A pair for a viewer without its own full upload fails with `addon_sync_waiting` until that upload arrives; it never reads as an empty library.
 
 ## Errors
 
