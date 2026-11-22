@@ -80,8 +80,8 @@ class ViewerState:
     # and "Send existing ratings" was chosen at Start and hasn't run for this viewer.
     settled: bool = False
     existing_ratings_due: bool = False
-    # A full committed and no ping has been judged since: CrossWatch's pair run may be
-    # pending although the last reply said not.
+    # A full committed, or a delta changed the viewer's state, and no ping has been judged
+    # since: CrossWatch's pair run may be pending although the last reply said not.
     run_unknown: bool = False
     # Another full was asked for while one was going up: it goes up next.
     full_again: bool = False
@@ -534,6 +534,16 @@ def on_full_part(state: EngineState, viewer: str, *, complete: bool, fresh: bool
             run_unknown=True,
         )
     return replace(state, viewers={**state.viewers, viewer: vs})
+
+
+def on_delta(state: EngineState, viewer: str, *, changed: bool) -> EngineState:
+    """A delta was accepted. CrossWatch starts a pair run for one that changed the viewer's
+    state (its reply's changed), which only the first round and sending existing ratings wait
+    for; marking it after that would turn the status to waiting after every change."""
+    vs = state.viewers.get(viewer, ViewerState())
+    if not changed or (vs.settled and not vs.existing_ratings_due):
+        return state
+    return replace(state, viewers={**state.viewers, viewer: replace(vs, run_unknown=True)})
 
 
 # -- first run --------------------------------------------------------------------------

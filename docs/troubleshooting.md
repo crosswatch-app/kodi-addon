@@ -159,6 +159,8 @@ One of these:
 - Library sync is switched off for this Kodi in CrossWatch. Switch it on there.
 - Another device syncs this library: see the next entry.
 - It also shows for a while after a full sync, while CrossWatch syncs with your services.
+  Until the first sync round has settled (and, if you chose to send existing ratings, until
+  they have been sent), it also shows for up to five minutes after a change made in Kodi.
 
 ### Another device syncs this library
 

@@ -38,6 +38,7 @@ from resources.lib.sync.plan import (
     local_active,
     mapping_of,
     next_action,
+    on_delta,
     on_error,
     on_full_part,
     on_library_read,
@@ -614,6 +615,26 @@ def test_existing_ratings_wait_for_a_judged_ping_after_a_full():
     ticket = PingTicket(sent_at=NOW, epochs={"kv-a": 0})
     judged, _ = on_reply(fetched, _reply("kv-a"), ticket, {"kv-a": SeqState(sent=5, confirmed=5)}, NOW)
     assert next_action(judged, NOW) == SendExistingRatings("kv-a")
+
+
+def test_existing_ratings_wait_for_a_judged_ping_after_a_delta_that_changed_something():
+    """CrossWatch starts a pair run a minute after a delta that changed the viewer's state."""
+    due = replace(READY, existing_ratings_due=True, settled=True)
+    after = on_delta(_state(**{"kv-a": due}), "kv-a", changed=True)
+    assert next_action(after, NOW) == Idle()
+    ticket = PingTicket(sent_at=NOW, epochs={"kv-a": 0})
+    judged, _ = on_reply(after, _reply("kv-a"), ticket, {"kv-a": SeqState(sent=5, confirmed=5)}, NOW)
+    assert next_action(judged, NOW) == SendExistingRatings("kv-a")
+    # A delta that changed nothing starts no run.
+    assert next_action(on_delta(_state(**{"kv-a": due}), "kv-a", changed=False), NOW) == SendExistingRatings("kv-a")
+
+
+def test_a_delta_after_the_first_round_waits_for_nothing():
+    """Once settled with no existing ratings due, nothing waits on the run, so the status
+    doesn't turn to waiting after every change."""
+    done = replace(READY, settled=True)
+    assert not on_delta(_state(**{"kv-a": done}), "kv-a", changed=True).viewers["kv-a"].run_unknown
+    assert on_delta(_state(**{"kv-a": READY}), "kv-a", changed=True).viewers["kv-a"].run_unknown
 
 
 def test_existing_ratings_wait_for_a_due_queue_fetch():

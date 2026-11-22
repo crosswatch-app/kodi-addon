@@ -6,7 +6,7 @@ from resources.lib.models import Viewer
 from resources.lib.playlist_index import PlaylistIndex
 from resources.lib.sync import engine as engine_mod
 from resources.lib.sync.client import SyncClient
-from resources.lib.sync.files import InboxRecord
+from resources.lib.sync.files import InboxRecord, read_status
 from resources.lib.sync.items import RowKey
 from resources.lib.sync.library_id import library_id
 from resources.lib.sync.ownership import IndexSnapshot
@@ -170,6 +170,79 @@ def test_person_mark_goes_up_in_a_delta(tmp_path):
     [entry] = rig.store().entries("kv-a")
     assert not entry.touched and entry.unsent_upload == {"history": body["upload_seq"]}
     assert not rig.engine.state.viewers["kv-a"].unsent
+
+
+def test_a_delta_crosswatch_says_changed_something_waits_for_its_pair_run(tmp_path):
+    rig = _after_first_full(tmp_path)
+    rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
+    rig.engine.step()
+    assert not rig.engine.state.viewers["kv-a"].run_unknown
+    rig.cw.script("upload", ok(mode="delta", complete=True, changed=True))
+    rig.mark()
+    rig.engine.step()
+    _queue_settled(rig)
+    rig.engine.step()
+    assert rig.uploads()[0]["mode"] == "delta"
+    assert rig.engine.state.viewers["kv-a"].run_unknown
+    rig.engine._write_status()
+    status = read_status(rig.paths.status)
+    assert status is not None and (status.state, status.reason) == ("waiting", "crosswatch")
+    rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
+    rig.engine.step()
+    assert not rig.engine.state.viewers["kv-a"].run_unknown
+
+
+def _two_bodies(monkeypatch) -> None:
+    """Every delta goes up as two requests, as a large one does."""
+    real = engine_mod.deltas
+
+    def split(rows, tvshows, *, first_seq, **kw):
+        first = real(rows, tvshows, first_seq=first_seq, **kw)
+        return first + real(rows, tvshows, first_seq=first_seq + len(first), **kw)
+
+    monkeypatch.setattr(engine_mod, "deltas", split)
+
+
+def test_a_changed_body_counts_although_a_later_one_changed_nothing(tmp_path, monkeypatch):
+    rig = _after_first_full(tmp_path)
+    rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
+    rig.engine.step()
+    _two_bodies(monkeypatch)
+    rig.cw.script("upload", ok(mode="delta", complete=True, changed=True), ok(mode="delta", complete=True, changed=False))
+    rig.mark()
+    rig.engine.step()
+    _queue_settled(rig)
+    rig.engine.step()
+    assert len(rig.uploads()) == 2
+    assert rig.engine.state.viewers["kv-a"].run_unknown
+
+
+def test_a_changed_body_counts_although_a_later_one_failed(tmp_path, monkeypatch):
+    rig = _after_first_full(tmp_path)
+    rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
+    rig.engine.step()
+    _two_bodies(monkeypatch)
+    rig.cw.script("upload", ok(mode="delta", complete=True, changed=True), error(503, "temporarily_unavailable"))
+    rig.mark()
+    rig.engine.step()
+    _queue_settled(rig)
+    rig.engine.step()
+    assert len(rig.uploads()) == 2
+    assert rig.engine.state.viewers["kv-a"].run_unknown
+
+
+def test_a_delta_without_changed_starts_no_wait(tmp_path):
+    """A CrossWatch without changed in its reply starts no run after a delta."""
+    rig = _after_first_full(tmp_path)
+    rig.judged(upload_seq=rig.store().seqs("kv-a").sent)
+    rig.engine.step()
+    rig.cw.script("upload", ok(mode="delta", complete=True))
+    rig.mark()
+    rig.engine.step()
+    _queue_settled(rig)
+    rig.engine.step()
+    assert rig.uploads()[0]["mode"] == "delta"
+    assert not rig.engine.state.viewers["kv-a"].run_unknown
 
 
 def test_lost_delta_reply_resends_the_identical_body(tmp_path):

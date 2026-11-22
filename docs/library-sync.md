@@ -123,8 +123,9 @@ Sync runs in the background and never holds up playback.
 
 - **A full sync**, every item each viewer owns: when Kodi starts or wakes, after a library scan,
   once a day, after the first Start, and when CrossWatch's viewers change.
-- **Changes made in Kodi** go up shortly after they are made. Ratings are checked every five
-  minutes.
+- **Changes made in Kodi** go up to CrossWatch shortly after they are made, and CrossWatch
+  passes them on to your services about a minute later; changes made within that minute go
+  together. Ratings are checked every five minutes.
 - **Changes from your services** are fetched when CrossWatch says it has some (the add-on asks
   with every heartbeat, every five minutes), and at least every 15 minutes.
 

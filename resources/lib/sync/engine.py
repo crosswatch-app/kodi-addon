@@ -1190,12 +1190,14 @@ class SyncEngine:
         built = {e.key: e for e in entries}
         confirmed = store.seqs(viewer).confirmed
         sent: list[UploadBody] = []
+        changed = False
         try:
             for body in bodies:
                 if self._stopping.is_set():
                     break
                 if body.seq > confirmed:
-                    client.upload(body.body)
+                    answer = client.upload(body.body)
+                    changed = changed or answer.get("changed") is True
                 # A body CrossWatch already confirmed (its answer came, the commit after it
                 # didn't) settles now, so its entries don't stay touched.
                 store.confirm_upload_seq(viewer, body.seq)
@@ -1204,11 +1206,13 @@ class SyncEngine:
                 )
                 sent.append(body)
         except SyncError as err:
+            # A body CrossWatch accepted before the failure may already have started a run.
+            self._state = plan.on_delta(self._state, viewer, changed=changed)
             self._upload_failed(viewer, "delta", err, [b for b in bodies if b not in sent])
             return
         store.upload_ended(viewer)
         self._publish_epochs()
-        self._state = plan.on_success(self._state, viewer)
+        self._state = plan.on_delta(plan.on_success(self._state, viewer), viewer, changed=changed)
         self._set_viewer(viewer, unsent=any(e.touched for e in store.entries(viewer)))
 
     def _upload_failed(self, viewer: str, kind: plan.Request, err: SyncError, bodies: list[UploadBody]) -> None:
