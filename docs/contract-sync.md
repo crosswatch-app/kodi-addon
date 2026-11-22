@@ -69,7 +69,7 @@ Authenticated ping replies, including those with `ignored: true`, carry:
 - `viewers` lists the viewers CW mapped to an instance; an unmapped viewer is left out.
   - `upload_seq` is the last one CW saw for that viewer.
     - `next_change` is the lowest `seq` CW can give the next queued change for that viewer; the change may get a higher one.
-  - `run_pending` is true from a completed full upload until the pair run it started has finished, including a follow-up run for an upload that came in during that run. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
+  - `run_pending` is true while a pair run CW started for this viewer is going, after a completed full upload or a delta with a change, including a follow-up run for an upload that came in during that run. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
 - `queue_pending` tells the add-on to fetch the queue.
 
 ## Upload
@@ -95,7 +95,7 @@ Authenticated ping replies, including those with `ignored: true`, carry:
 }
 ```
 
-Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "instance": "default"}`. `complete` turns true when the last part has arrived.
+Reply: `{"ok": true, "mode": "full", "complete": false, "received_parts": [1], "instance": "default"}`. `complete` turns true when the last part has arrived. A delta reply also carries `changed`, true when the delta changed a viewer's state.
 
 **Order.**
 - Uploads for a viewer are sent one at a time, in order.
@@ -222,6 +222,8 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 - An instance is ready once it has a complete full upload. Kodi doesn't need to be on: changes queue while it's off, and the add-on applies them when it starts.
 - Without a complete full upload the instance reports not ready, and its pairs are skipped for that run, not failed. An upload that is missing or partial is never treated as an empty library.
 - When a full upload completes, CW runs the managed pairs for that instance right away. If a sync is already running, CW retries until the run is accepted. A full upload that completes while that run is going gets a follow-up run afterwards. `run_pending` in the ping is true until those runs have finished.
+- A delta that changes a viewer's state (a watch, unwatch, rating or resume) starts the managed pairs about a minute later, so changes made in Kodi reach the services without waiting for the schedule. Deltas in that minute join the same run. A delta that changes nothing starts no run.
+- With sync users, the paired instance reports ready once one of its viewers has a complete full upload. Each viewer's own pairs still wait for that viewer's full upload.
 
 ## Errors
 
