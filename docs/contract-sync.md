@@ -69,7 +69,7 @@ Authenticated ping replies, including those with `ignored: true`, carry:
 - `viewers` lists the viewers CW mapped to an instance; an unmapped viewer is left out.
   - `upload_seq` is the last one CW saw for that viewer.
     - `next_change` is the lowest `seq` CW can give the next queued change for that viewer; the change may get a higher one.
-  - `run_pending` is true while a pair run CW started for this viewer is going, after a completed full upload or a delta with a change, including a follow-up run for an upload that came in during that run. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
+  - `run_pending` is true while a pair run for this viewer is waiting or going, after a completed full upload or a delta with a change, including a follow-up run for an upload that came in during that run. Wait for it to turn false before steps that depend on the services' data, such as sending existing ratings.
 - `queue_pending` tells the add-on to fetch the queue.
 
 ## Upload
