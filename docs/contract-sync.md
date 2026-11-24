@@ -1,6 +1,6 @@
 # Kodi add-on sync contract
 
-**Working draft for v1. Not implemented or agreed yet.** Updated 2026-11-19.
+**v1.** Implemented in CrossWatch 0.15.0. Updated 2026-11-24.
 Related: [kodi-addon #72](https://github.com/crosswatch-app/kodi-addon/issues/72)
 
 ## What we're building
@@ -29,6 +29,8 @@ Each viewer becomes its own Kodi instance in CW: a sync user of the paired insta
 - Turning sync off on the sync device releases it, so another device can take over. Pairing again also resets it.
 
 **One viewer per instance.** The paired instance is bound to the first viewer that uploads to it. Another viewer is refused until the binding is released, by turning sync off on the device or pairing again. When a viewer's first full upload commits, CW starts that Kodi instance fresh. Earlier JSON-RPC or add-on history for it can then never cause deletes on the other side. While a sync is running, that first full upload gets `503 temporarily_unavailable`; send that part again.
+
+A sync user matches a viewer by its `viewer_id`. A sync user made earlier by name matches the viewer with that name, but only when exactly one viewer has that name.
 
 **Starting a viewer fresh.** When the add-on lost its record for a viewer (for example a corrupt or restored database), send its next full upload with `"fresh": true`. CW then starts that Kodi instance fresh again, the same way as on a first commit, and keeps the `viewer_id` and its mapping.
 
@@ -244,5 +246,3 @@ Reply: `{"ok": true, "applied": 1, "failed": 1}`.
 | 429 / 503 | rate_limited / temporarily_unavailable | Retry with backoff, after Retry-After when it's given. A 503 on a viewer's first or fresh full upload means a sync is running; send that part again. |
 
 Network failures and other 5xx responses also get bounded backoff. Existing webhook behaviour stays unchanged.
-
-The CW side is built behind a hidden switch (`runtime.kodi_addon_sync`) for testing; the add-on builds upload, queue and ack.
