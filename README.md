@@ -18,8 +18,7 @@ Arctic Zephyr Mod skins. Kodi on Android and other skins have not been tested ye
   Kodi 22 (Piers) release candidate.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support (marked
   experimental there). Rating needs v0.13.4 or later, and picking viewers from CrossWatch's
-  user profiles needs v0.13.5 or later. Library sync needs a CrossWatch release with library
-  sync.
+  user profiles needs v0.13.5 or later. Library sync needs v0.15.0 or later.
 - Kodi able to reach CrossWatch over the network, for example both on the same home network.
   CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority. Self-signed

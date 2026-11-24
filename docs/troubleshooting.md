@@ -156,7 +156,7 @@ One of these:
 - CrossWatch has not answered yet, or answered with an error and the add-on tries again with
   growing pauses. Check that CrossWatch runs and that Kodi can reach it; Kodi's log has the
   reason (see [Logs](#logs)).
-- Library sync is switched off for this Kodi in CrossWatch. Switch it on there.
+- CrossWatch is older than 0.15.0. Update it.
 - Another device syncs this library: see the next entry.
 - It also shows for a while after a full sync, while CrossWatch syncs with your services.
   Until the first sync round has settled (and, if you chose to send existing ratings, until
@@ -180,8 +180,9 @@ then run Set up library sync on this one.
 CrossWatch answers, but none of this Kodi's viewers has a sync there, so nothing goes up or
 comes down. One of these:
 
-- A viewer has no sync pair in CrossWatch, or the pair is switched off. Each viewer needs a pair
-  between their services and this Kodi, switched on.
+- This Kodi has several viewers, and none is linked in CrossWatch yet. Link them in
+  CrossWatch's Kodi panel (see
+  [Link each viewer in CrossWatch](library-sync.md#link-each-viewer-in-crosswatch)).
 - CrossWatch also reaches this Kodi by its address (Kodi's web server, JSON-RPC). CrossWatch
   then syncs that Kodi itself and leaves the add-on out. Remove that connection in CrossWatch.
 
@@ -243,8 +244,9 @@ once.
 
 ### `<name>` has no sync user in CrossWatch
 
-CrossWatch has no library sync set up for that viewer. Check the viewer in CrossWatch's add-on
-setup: it needs a target with library sync on.
+CrossWatch has no library sync set up for that viewer. In CrossWatch's Kodi panel, Library
+sync card, pick a service for that viewer and press Set up sync (see
+[Link each viewer in CrossWatch](library-sync.md#link-each-viewer-in-crosswatch)).
 
 ### CrossWatch refused `<name>`'s library as too large
 
@@ -265,7 +267,7 @@ again by itself. The code in brackets says what; Kodi's log has the details.
 ### `<name>`'s first sync came more than a day after setup
 
 That viewer was there at the first Start, but their first full sync began more than a day later
-(Kodi was off, or CrossWatch had not set up their sync user yet). Kodi's history was not sent
+(for example Kodi was off in between). Kodi's history was not sent
 for them, because by then it may hold other people's plays. Their services fill it in.
 
 ### Marks were dropped

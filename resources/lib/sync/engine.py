@@ -861,8 +861,8 @@ class SyncEngine:
             and not state.ping_failures
             and self._known_viewers()
         ):
-            # CrossWatch answers but syncs none of the viewers now: no pair, a pair switched off,
-            # or a Kodi it reaches over JSON-RPC and syncs itself. The reply, not the engine's
+            # CrossWatch answers but maps none of the viewers now: several viewers and none with
+            # a sync user yet, or a Kodi it reaches over JSON-RPC and syncs itself. The reply, not the engine's
             # viewers, which keep a viewer CrossWatch stopped mapping; a failing ping keeps the
             # last reply, so this holds only while pings get answers. Only the household can
             # fix it, so it outranks the waits that end by themselves.

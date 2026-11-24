@@ -10,8 +10,8 @@ going to CrossWatch as it happens, whether library sync is on or not.
 
 !!! warning "Needs a CrossWatch release with library sync"
 
-    Library sync needs CrossWatch `<version>` or newer, with library sync switched on for this
-    Kodi in CrossWatch. Without it, Set up library sync can still be run, but nothing syncs.
+    Library sync needs CrossWatch 0.15.0 or newer. With an older CrossWatch, Set up library
+    sync can still be run, but nothing syncs.
 
 ## How it works
 
@@ -32,8 +32,9 @@ library keep reporting playback as before, but do not sync.
 - **Viewers set up**, with the playlists that say whose shows are whose. See
   [Viewers](viewers.md). Library sync uses them to decide who owns what (next section), so
   check them first: an item with the wrong owner gets the wrong person's history.
-- **In CrossWatch**, for each viewer: where their history goes (for example Trakt user Anna),
-  with library sync switched on. CrossWatch's own documentation describes that screen.
+- **A service for each viewer**, connected in CrossWatch (for example Trakt, an account per
+  person). You link each viewer to it in CrossWatch after Start: see
+  [Link each viewer in CrossWatch](#link-each-viewer-in-crosswatch).
 - **One sync device** chosen. On a library shared by several Kodi devices (a MySQL or MariaDB
   library), set library sync up on one of them only.
 
@@ -79,12 +80,15 @@ What the first Start does:
 
 - What Kodi shows for items with one owner (watched, play count, last played, resume point)
   goes up as that owner's history. That happens only for the viewers there at that Start, and
-  only if their first sync begins within a day of it. A viewer whose first sync comes later
-  starts empty, and the status screen says so.
+  only if their first full sync begins within a day of Start, or of CrossWatch first syncing
+  that viewer when that is later (a viewer linked days after Start still gets it). A viewer
+  whose first full sync comes later than that starts empty, and the status screen says so.
 - Shared items start empty: their owners' services fill them in.
 - A viewer added later starts empty too. Their history comes from their services, never from
   what Kodi shows.
-- It turns on "Sync this library with CrossWatch", and the first full sync follows shortly.
+- It turns on "Sync this library with CrossWatch". A viewer's first full sync follows once
+  CrossWatch syncs that viewer: straight away in a household with one viewer, otherwise once
+  the viewer is linked (see [Link each viewer in CrossWatch](#link-each-viewer-in-crosswatch)).
 - It sends nothing to your services by itself, and changes nothing in Kodi straight away:
   changes come in through the sync that follows.
 
@@ -103,6 +107,29 @@ owns what cannot be decided without it. Fix the playlist (see
 [A playlist shows as unusable](troubleshooting.md#a-playlist-shows-as-unusable)) and open it
 again. It also stops with a message when the add-on is not paired, when there are no viewers,
 or when Kodi's library cannot be read (for example during a library scan).
+
+### Link each viewer in CrossWatch
+
+Each viewer needs a sync pair in CrossWatch between their service and this Kodi. The quickest
+way, after Start: in CrossWatch's Kodi panel, the **Library sync** card lists this Kodi's
+viewers. They show up within five minutes of Start; reload the page if the card doesn't show
+them yet. Pick the service each viewer syncs with and press **Set up sync**. CrossWatch adds
+the viewer where needed and a two-way pair between that service and this Kodi, for history and
+for ratings where the service has them. You can edit that pair later like any other, or make
+the pairs by hand instead.
+
+Until a viewer has a pair, nothing reaches their services. With one viewer, the add-on already
+uploads after Start, so the status screen can say up to date before anything has gone
+anywhere. With several, nothing syncs for a viewer until they are linked, and while none is,
+the status screen says CrossWatch syncs none of this Kodi's viewers.
+
+The pair Set up sync adds leaves out two things. Turn them on in the pair if you want them:
+
+- **Resume points**, both ways, need the pair to sync progress (where the service supports it).
+- **Removals.** With removals off in the pair, an unwatch or a cleared rating made in Kodi does
+  not stick, even with "Send removals made in Kodi" on: the service keeps the watch or the
+  rating, and the next sync puts it back into Kodi. Removals need both: removals on in the pair
+  and "Send removals made in Kodi" on in the add-on.
 
 ### Existing ratings
 
@@ -144,15 +171,16 @@ so Kodi stays responsive.
 |---|---|---|
 | Watched and play count | Yes. The play count only goes up, unless an unwatch is applied. | A watched mark made by hand on this device. |
 | Last played | Yes, the newest. | With the watched mark. |
-| Unwatched | Only with "Send removals made in Kodi" on. | Only with "Send removals made in Kodi" on. |
-| Rating | Yes; a shared item only when all owners agree. A cleared rating only with "Send removals made in Kodi" on. | A rating changed in Kodi; a cleared rating only with "Send removals made in Kodi" on. |
-| Resume point | Items with one owner only. | At the first Start; after that through playback, as before. |
+| Unwatched | Only with "Send removals made in Kodi" on, and removals on in the pair. | Only with "Send removals made in Kodi" on, and removals on in the pair. |
+| Rating | Yes; a shared item only when all owners agree. A cleared rating only with "Send removals made in Kodi" on, and removals on in the pair. | A rating changed in Kodi; a cleared rating only with "Send removals made in Kodi" on, and removals on in the pair. |
+| Resume point | Items with one owner only, when the pair syncs progress. | At the first Start, when the pair syncs progress; after that through playback, as before. |
 
 A resume point from a service never overwrites one from playback on this Kodi in the week
 before: that play may be newer than what the service knows.
 
 Nothing sync does removes a watch or a rating, from Kodi or from a service, except an unwatch
-or a cleared rating, made in Kodi or on a service, with "Send removals made in Kodi" on.
+or a cleared rating, made in Kodi or on a service, with "Send removals made in Kodi" on and
+removals on in the sync pair in CrossWatch.
 
 ### Changes on shared items
 
