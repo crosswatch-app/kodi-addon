@@ -3,6 +3,7 @@ from typing import Any
 
 from resources.lib.constants import (
     PROMPT_EVERYONE,
+    WHO_WATCHED_DONE,
     WHO_WATCHED_QUESTION,
     WINDOW_CANCEL,
     WINDOW_CLOSE,
@@ -16,6 +17,8 @@ from resources.lib.constants import (
 from resources.lib.ui.list_window import ListFilter, ListRequest, ListRow, ListState
 from resources.lib.ui.panel import PanelLine
 from resources.lib.ui.rating import RateRequest
+from resources.lib.ui.sync_setup import SetupRequest, SetupResult
+from resources.lib.ui.sync_status import SEND_RATINGS, StatusRequest, StatusRow
 from resources.lib.ui.viewers_window import ViewerRow, ViewersRequest, ViewersResult
 from resources.lib.ui.who_watched import WhoWatchedRequest
 from resources.lib.ui.window import (
@@ -33,7 +36,12 @@ from resources.lib.ui.window import (
     BUTTON_REMOVE,
     BUTTON_REMOVE_RATING,
     BUTTON_RENAME,
+    BUTTON_SEND_RATINGS,
+    BUTTON_SETUP_CANCEL,
+    BUTTON_SETUP_CLOSE,
     BUTTON_SKIP,
+    BUTTON_START,
+    BUTTON_STATUS_CLOSE,
     BUTTON_VIEWERS_CLOSE,
     BUTTON_YES,
     LIST_FILTER,
@@ -41,12 +49,18 @@ from resources.lib.ui.window import (
     LIST_SCORES,
     LIST_SEARCH,
     LIST_VIEWERS,
+    STATUS_ROWS,
+    SYNC_SETUP_XML,
+    SYNC_STATUS_XML,
+    TOGGLE_RATINGS,
     VIEWERS_ROWS,
     ConfirmDialog,
     ListDialog,
     PickListDialog,
     RatingDialog,
     RememberedDialog,
+    SyncSetupDialog,
+    SyncStatusDialog,
     ViewersDialog,
     WhoWatchedDialog,
 )
@@ -86,8 +100,13 @@ def _dialog(
     aborts scripts wait_for_abort's answers; once used up it sleeps briefly and says no,
     so a started watch thread ticks fast without spinning."""
     request = WhoWatchedRequest(
-        title="Example", subtitle="Season 2, episode 5", poster="image://p/", names=names,
-        preselect=preselect, autoclose_seconds=autoclose, close_on_playback=on_playback,
+        title="Example",
+        subtitle="Season 2, episode 5",
+        poster="image://p/",
+        names=names,
+        preselect=preselect,
+        autoclose_seconds=autoclose,
+        close_on_playback=on_playback,
     )
     abort_answers = list(aborts)
 
@@ -278,7 +297,9 @@ def test_a_window_that_fails_to_fill_closes_as_a_logged_cancel():
 
 def _confirm() -> Any:
     dialog: Any = ConfirmDialog("crosswatch-confirm.xml", "/addon", "Default", "1080i")
-    dialog.prepare("Remembered answers", "Forget who watched 3 shows?", lambda i: {WINDOW_YES: "Yes", WINDOW_NO: "No"}.get(i, ""))
+    dialog.prepare(
+        "Remembered answers", "Forget who watched 3 shows?", lambda i: {WINDOW_YES: "Yes", WINDOW_NO: "No"}.get(i, "")
+    )
     return dialog
 
 
@@ -288,6 +309,14 @@ def test_confirm_shows_its_heading_and_message_and_starts_on_no():
     assert dialog.getProperty("CW.Heading") == "Remembered answers"
     assert dialog.getProperty("CW.Message") == "Forget who watched 3 shows?"
     assert dialog.focused == BUTTON_NO
+
+
+def test_confirm_buttons_say_yes_and_no_unless_named():
+    dialog = _confirm()
+    assert (dialog.getProperty("CW.YesLabel"), dialog.getProperty("CW.NoLabel")) == ("Yes", "No")
+    named: Any = ConfirmDialog("crosswatch-confirm.xml", "/addon", "Default", "1080i")
+    named.prepare("142 ratings changed at once", "Send them?", lambda i: "", "Send", "Don't send")
+    assert (named.getProperty("CW.YesLabel"), named.getProperty("CW.NoLabel")) == ("Send", "Don't send")
 
 
 def test_confirm_yes_is_true_and_no_or_back_is_not():
@@ -305,10 +334,21 @@ def test_confirm_yes_is_true_and_no_or_back_is_not():
     assert back.result is None
     assert back._thread is None  # no countdown, no playback watch
 
-LIST_TEXTS = {WINDOW_COUNT_SOME: "%s of %s", WINDOW_VIEWER: "Viewer: %s", WINDOW_SEARCH: "Search", WINDOW_CLOSE: "Close"}
+
+LIST_TEXTS = {
+    WINDOW_COUNT_SOME: "%s of %s",
+    WINDOW_VIEWER: "Viewer: %s",
+    WINDOW_SEARCH: "Search",
+    WINDOW_CLOSE: "Close",
+}
 SHOWS = tuple(
     ListRow(key=k, title=t, detail=", ".join(n) or "will ask again", thumb=f"image://{k}/", names=n)
-    for k, t, n in [("a", "Alpha", ("anna",)), ("b", "Beta", ("bob",)), ("c", "Gamma", ("anna", "bob")), ("d", "Delta", ())]
+    for k, t, n in [
+        ("a", "Alpha", ("anna",)),
+        ("b", "Beta", ("bob",)),
+        ("c", "Gamma", ("anna", "bob")),
+        ("d", "Delta", ()),
+    ]
 )
 FILTERS = (
     ListFilter("All", lambda row: True),
@@ -645,8 +685,12 @@ VIEWER_ROWS = (
 
 def _viewers(rows=VIEWER_ROWS, key="") -> tuple[Any, FakeRows]:
     request = ViewersRequest(
-        heading="Viewers", count="2 viewers", rows=rows, more="and %s more",
-        route_ok="CrossWatch route", route_missing="No CrossWatch route",
+        heading="Viewers",
+        count="2 viewers",
+        rows=rows,
+        more="and %s more",
+        route_ok="CrossWatch route",
+        route_missing="No CrossWatch route",
     )
     dialog: Any = ViewersDialog("crosswatch-viewers.xml", "/addon", "Default", "1080i")
     dialog.prepare(request, key, lambda i: "")
@@ -682,9 +726,12 @@ def test_ok_on_a_viewer_moves_to_the_actions():
 
 def test_each_action_returns_the_highlighted_viewer():
     for button, action in [
-        (BUTTON_PLAYLISTS, "playlists"), (BUTTON_PROFILES, "profiles"),
-        (BUTTON_RENAME, "rename"), (BUTTON_REMOVE, "remove"),
-        (BUTTON_ADD, "add"), (BUTTON_VIEWERS_CLOSE, "close"),
+        (BUTTON_PLAYLISTS, "playlists"),
+        (BUTTON_PROFILES, "profiles"),
+        (BUTTON_RENAME, "rename"),
+        (BUTTON_REMOVE, "remove"),
+        (BUTTON_ADD, "add"),
+        (BUTTON_VIEWERS_CLOSE, "close"),
     ]:
         dialog, rows = _viewers()
         dialog.onInit()
@@ -739,8 +786,13 @@ SPLIT_ROWS = (
 
 def _remembered(state=START) -> tuple[Any, FakeRows]:
     request = ListRequest(
-        heading="Remembered answers", rows=SPLIT_ROWS, count_one="1 show", count_all="%s shows",
-        filters=FILTERS, bulk_all="Forget all", bulk_shown="Forget %s shown",
+        heading="Remembered answers",
+        rows=SPLIT_ROWS,
+        count_one="1 show",
+        count_all="%s shows",
+        filters=FILTERS,
+        bulk_all="Forget all",
+        bulk_shown="Forget %s shown",
     )
     dialog: Any = RememberedDialog("crosswatch-remembered.xml", "/addon", "Default", "1080i")
     dialog.prepare(request, state, lambda i: LIST_TEXTS.get(i, ""))
@@ -804,11 +856,18 @@ def test_nothing_shown_gives_forget_nothing_to_act_on():
 
 def _rating(counter="", autoclose=0) -> tuple[Any, FakeList]:
     request = RateRequest(
-        title="Example", subtitle="Season 2, episode 5", poster="image://p/", question="Anna, how was it?",
-        counter=counter, autoclose_seconds=autoclose, close_on_playback=False,
+        title="Example",
+        subtitle="Season 2, episode 5",
+        poster="image://p/",
+        question="Anna, how was it?",
+        counter=counter,
+        autoclose_seconds=autoclose,
+        close_on_playback=False,
     )
     dialog: Any = RatingDialog("crosswatch-rate.xml", "/addon", "Default", "1080i")
-    dialog.prepare(request, localised=lambda string_id: f"w{string_id}", is_playing=lambda: False, wait_for_abort=lambda _: False)
+    dialog.prepare(
+        request, localised=lambda string_id: f"w{string_id}", is_playing=lambda: False, wait_for_abort=lambda _: False
+    )
     scores = FakeList()
     dialog.set_control(LIST_SCORES, scores)
     return dialog, scores
@@ -875,3 +934,126 @@ def test_rename_on_a_linked_viewer_does_nothing_and_other_actions_still_act():
     unlinked.onInit()
     unlinked.onClick(BUTTON_RENAME)
     assert unlinked.result == ViewersResult("rename", "anna")
+
+
+class _Radio:
+    def __init__(self, selected: bool) -> None:
+        self._selected = selected
+
+    def isSelected(self) -> bool:
+        return self._selected
+
+
+def _setup(can_start: bool = True) -> Any:
+    request = SetupRequest(heading="Start library sync", intro="intro", counts=("Anna: 1 films",), note="",
+                           warnings=(), ratings_label="ratings", can_start=can_start)  # fmt: skip
+    dialog: Any = SyncSetupDialog(SYNC_SETUP_XML, "/addon", "Default", "1080i")
+    dialog.prepare(request, lambda i: {WINDOW_CANCEL: "Cancel", WINDOW_CLOSE: "Close"}.get(i, ""))
+    return dialog
+
+
+def test_setup_properties_are_set_before_kodi_opens_the_window():
+    # Kodi decides which control can take the first focus from these, before onInit.
+    dialog = _setup()
+    assert dialog.getProperty("CW.CanStart") == "1" and dialog.getProperty("CW.CancelLabel") == "Cancel"
+
+
+def test_setup_start_returns_the_ratings_choice():
+    dialog = _setup()
+    dialog.set_control(TOGGLE_RATINGS, _Radio(True))
+    dialog.onInit()
+    assert dialog.focused == BUTTON_SETUP_CANCEL
+    dialog.onClick(BUTTON_START)
+    assert dialog.result == SetupResult(start=True, existing_ratings=True)
+
+
+def test_setup_without_start_offers_close_only():
+    dialog = _setup(can_start=False)
+    dialog.onInit()
+    assert dialog.focused == BUTTON_SETUP_CLOSE and dialog.getProperty("CW.CancelLabel") == "Close"
+    dialog.onClick(BUTTON_START)
+    assert dialog.closed == 0
+    dialog.onClick(BUTTON_SETUP_CLOSE)
+    assert dialog.result == SetupResult(start=False)
+
+
+class _Rows:
+    def __init__(self) -> None:
+        self.items: list[Any] = []
+        self.position = 0
+
+    def addItem(self, item: Any) -> None:
+        self.items.append(item)
+
+    def getSelectedPosition(self) -> int:
+        return self.position
+
+
+def _status(rows: tuple[StatusRow, ...], send: str = "Send existing ratings") -> Any:
+    request = StatusRequest(heading="Library sync status", state="Up to date", tone="good", summary="",
+                            counts=(), needs_you="Needs you", rows=rows, empty="Nothing needs you.", note="",
+                            send_ratings=send)  # fmt: skip
+    dialog: Any = SyncStatusDialog(SYNC_STATUS_XML, "/addon", "Default", "1080i")
+    dialog.prepare(request, lambda i: "")
+    dialog.set_control(STATUS_ROWS, _Rows())
+    return dialog
+
+
+def test_status_lists_the_rows_and_returns_the_chosen_key():
+    dialog = _status((StatusRow("problem:0", "Another device syncs this library.", problem=True),
+                      StatusRow("assign:a1", "Whose was this?")))  # fmt: skip
+    dialog.onInit()
+    rows = dialog.getControl(STATUS_ROWS)
+    assert [i.getProperty("problem") for i in rows.items] == ["true", ""]
+    assert dialog.focused == STATUS_ROWS and dialog.getProperty("CW.Empty") == ""
+    rows.position = 1
+    dialog.onClick(STATUS_ROWS)
+    assert dialog.result == "assign:a1"
+
+
+def test_status_with_nothing_to_do_focuses_close():
+    dialog = _status(())
+    dialog.onInit()
+    assert dialog.focused == BUTTON_STATUS_CLOSE and dialog.getProperty("CW.Empty") == "Nothing needs you."
+    dialog.onClick(BUTTON_SEND_RATINGS)
+    assert dialog.result == SEND_RATINGS
+
+
+def test_status_without_send_ratings_ignores_the_hidden_button():
+    dialog = _status((), send="")
+    dialog.onInit()
+    dialog.onClick(BUTTON_SEND_RATINGS)
+    assert dialog.closed == 0
+    dialog.onClick(BUTTON_STATUS_CLOSE)
+    assert dialog.result == ""
+
+
+def test_a_read_only_list_has_one_close_button_where_done_would_be():
+    request = ListRequest(heading="Shows and films with no owner", rows=SHOWS, count_one="1 title",
+                          count_all="%s titles", read_only=True)  # fmt: skip
+    dialog: Any = ListDialog("crosswatch-list.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, START, lambda i: {WINDOW_CLOSE: "Close"}.get(i, ""))
+    rows, edit = FakeRows(), FakeEdit()
+    dialog.set_control(LIST_ROWS, rows)
+    dialog.set_control(LIST_SEARCH, edit)
+    dialog.onInit()
+    assert dialog.getProperty("CW.ReadOnly") == "1" and dialog.getProperty("CW.DoneLabel") == "Close"
+    dialog.onClick(LIST_ROWS)
+    assert dialog.closed == 0
+    dialog.onClick(BUTTON_PICK_DONE)
+    assert dialog.result.action == "close"
+
+
+def test_a_pick_list_keeps_its_done_button():
+    dialog, _, _ = _pick()
+    assert dialog.getProperty("CW.ReadOnly") == "" and dialog.getProperty("CW.DoneLabel") == PICK_TEXTS.get(
+        WHO_WATCHED_DONE, ""
+    )
+
+
+def test_who_watched_asks_a_question_of_its_own():
+    request = WhoWatchedRequest(title="Dune (2021)", subtitle="Rated on this device", poster="", names=("Anna",),
+                                question="Whose rating was this?")  # fmt: skip
+    dialog: Any = WhoWatchedDialog("crosswatch-who.xml", "/addon", "Default", "1080i")
+    dialog.prepare(request, lambda i: "Who watched it?", lambda: False, lambda s: False)
+    assert dialog.getProperty("CW.Question") == "Whose rating was this?"

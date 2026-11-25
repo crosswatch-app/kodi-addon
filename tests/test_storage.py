@@ -472,3 +472,49 @@ def test_every_prompt_memory_change_writes_under_the_file_lock(tmp_path, monkeyp
     change(memory)
     assert writes == [path]
     assert unlocked == []
+
+
+def test_a_viewer_keeps_its_sync_id(tmp_path):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    viewers = [Viewer(name="anna", sync_id="kv-0000aaaa"), Viewer(name="bob")]
+    store.save(viewers)
+    assert store.viewers() == viewers
+
+
+def test_viewers_json_stays_a_list_without_empty_sync_ids(tmp_path):
+    path = tmp_path / "viewers.json"
+    JsonViewerStore(str(path)).save([Viewer(name="anna", sync_id="kv-0000aaaa"), Viewer(name="bob")])
+    rows = json.loads(path.read_text())
+    assert isinstance(rows, list)
+    assert rows[0]["sync_id"] == "kv-0000aaaa"
+    assert "sync_id" not in rows[1]
+
+
+def test_a_removed_viewer_s_sync_id_is_retired_by_name(tmp_path):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="Anna", sync_id="kv-0000aaaa"), Viewer(name="bob", sync_id="kv-0000bbbb")])
+    store.save([Viewer(name="bob", sync_id="kv-0000bbbb")])
+    assert store.retired_id("anna") == "kv-0000aaaa"
+    assert store.retired_id("bob") is None
+    assert json.loads((tmp_path / "sync_ids.json").read_text()) == {"Anna": "kv-0000aaaa"}
+
+
+def test_a_rename_retires_nothing(tmp_path):
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="anna", sync_id="kv-0000aaaa")])
+    store.save([Viewer(name="Anna Lee", sync_id="kv-0000aaaa")])
+    assert not (tmp_path / "sync_ids.json").exists()
+
+
+def test_a_broken_retired_file_reads_as_none(tmp_path):
+    (tmp_path / "sync_ids.json").write_text("[1]")
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    assert store.retired_id("anna") is None
+
+
+def test_an_unreadable_retired_file_is_not_overwritten(tmp_path):
+    (tmp_path / "sync_ids.json").write_text("{broken")
+    store = JsonViewerStore(str(tmp_path / "viewers.json"))
+    store.save([Viewer(name="anna", sync_id="kv-0000aaaa")])
+    store.save([])
+    assert (tmp_path / "sync_ids.json").read_text() == "{broken"

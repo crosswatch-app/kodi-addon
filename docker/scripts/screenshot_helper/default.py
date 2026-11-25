@@ -273,7 +273,90 @@ def _remembered(scene: dict, path: str) -> None:
         dialog.stop()
 
 
+def _sync_setup(scene: dict, path: str) -> None:
+    from resources.lib.models import Viewer
+    from resources.lib.sync import screens
+    from resources.lib.sync.counts import Counts
+
+    text = TARGET.getLocalizedString
+    viewers = [Viewer(name="Anna", sync_id="kv-a"), Viewer(name="Tom", sync_id="kv-t")]
+    counts = Counts(
+        shows={"kv-a": set(range(48)), "kv-t": set(range(31))},
+        films={"kv-a": 12},
+        shared_shows=set(range(22)),
+        shared_films=340,
+        unowned_shows=set(range(9)),
+    )
+    request = screens.setup_request(
+        text,
+        viewers,
+        counts,
+        again=scene.get("again", False),
+        trakt=scene.get("trakt", False),
+        insecure=scene.get("insecure", False),
+        unreadable=tuple(scene.get("unreadable", ())),
+    )
+    dialog = window.SyncSetupDialog(window.SYNC_SETUP_XML, path, "Default", "1080i")
+    dialog.prepare(request, text)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
+def _sync_status(scene: dict, path: str) -> None:
+    from resources.lib.models import Viewer
+    from resources.lib.sync import screens
+    from resources.lib.sync.files import StatusFile
+
+    text = TARGET.getLocalizedString
+    viewers = [Viewer(name="Anna", sync_id="kv-a"), Viewer(name="Tom", sync_id="kv-t")]
+    counts = {"viewers": {"kv-a": [48, 12], "kv-t": [31, 0]}, "shared": [22, 340], "unowned": [9, 0]}
+    assignments = [
+        {"id": "a1", "title": "The Office S02E03", "group": "history"},
+        {"id": "a2", "title": "Dune (2021)", "group": "ratings"},
+    ]
+    if scene["status"] == "problems":
+        status = StatusFile(
+            state="waiting",
+            reason="library_has_sync_device",
+            last_upload="2026-11-19T21:14:00Z",
+            waiting_changes=37,
+            counts=counts,
+            unowned_titles=["Some Show"],
+            unreadable_playlists=["Anna's shows"],
+            per_viewer={"kv-t": "viewer_unknown"},
+            dropped_marks=3,
+            assignments=assignments[:1],
+        )
+    else:
+        status = StatusFile(
+            state="settled",
+            last_upload="2026-11-20T09:58:00Z",
+            counts=counts,
+            unowned_titles=["Some Show"],
+            mass_ratings=142,
+            assignments=assignments,
+        )
+    request = screens.status_request(
+        text,
+        status,
+        viewers,
+        now_utc="2026-11-20T10:00:00Z",
+        insecure=scene["status"] == "problems",
+        address_changed=False,
+    )
+    dialog = window.SyncStatusDialog(window.SYNC_STATUS_XML, path, "Default", "1080i")
+    dialog.prepare(request, text)
+    try:
+        dialog.doModal()
+    finally:
+        dialog.stop()
+
+
 WINDOWS = {
+    window.SYNC_STATUS_XML: _sync_status,
+    window.SYNC_SETUP_XML: _sync_setup,
     window.WHO_WATCHED_XML: _who_watched,
     window.LIST_XML: _list,
     window.CONFIRM_XML: _confirm,

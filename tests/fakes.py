@@ -22,6 +22,7 @@ class FakeKodi:
         confirm_answer: bool = False,
         dialog_id: int = WINDOW_INVALID,
         playing: bool = True,
+        playing_video: bool | None = None,
         position_ms: int | None = None,
         duration_ms: int | None = None,
         position_raises: bool = False,
@@ -53,6 +54,15 @@ class FakeKodi:
         self.confirm_answer = confirm_answer
         self.dialog_id = dialog_id
         self.playing = playing
+        self.sync_setup_requests: list[Any] = []
+        self.sync_setup_answer: Any = None
+        self.busy_calls: list[bool] = []
+        self.sync_status_requests: list[Any] = []
+        self.sync_status_answers: list[Any] = []
+        self.choices: list[tuple[str, str, str]] = []
+        self.choice_answer: bool | None = None
+        # None: a video whenever something plays.
+        self.playing_video = playing_video
         self.position_ms = position_ms
         self.duration_ms = duration_ms
         self.position_raises = position_raises
@@ -101,6 +111,24 @@ class FakeKodi:
 
     def is_playing(self) -> bool:
         return self.playing
+
+    def sync_setup_window(self, request: Any) -> Any:
+        self.sync_setup_requests.append(request)
+        return self.sync_setup_answer
+
+    def busy(self, on: bool) -> None:
+        self.busy_calls.append(on)
+
+    def sync_status_window(self, request: Any) -> Any:
+        self.sync_status_requests.append(request)
+        return self.sync_status_answers.pop(0) if self.sync_status_answers else ""
+
+    def choice_window(self, heading: str, message: str, yes: str, no: str) -> bool | None:
+        self.choices.append((heading, yes, no))
+        return self.choice_answer
+
+    def is_playing_video(self) -> bool:
+        return self.playing if self.playing_video is None else self.playing_video
 
     def player_times(self) -> tuple[int | None, int | None]:
         position = None if self.position_raises else self.position_ms

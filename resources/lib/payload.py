@@ -17,8 +17,6 @@ A rate carries the stop's media block without the playback fields (contract, Rat
 score is about the item, not about where playback was.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from resources.lib.models import Device, MediaItem, PingEvent, PlaybackEvent
@@ -44,6 +42,8 @@ def build_payload(event: PlaybackEvent | PingEvent, device: Device) -> dict[str,
         body["event"] = "ping"
         if event.pkc_skipped:
             body["pkc_skipped"] = event.pkc_skipped
+        if event.library_sync is not None:
+            body["library_sync"] = event.library_sync
         return body
 
     body["event"] = event.kind

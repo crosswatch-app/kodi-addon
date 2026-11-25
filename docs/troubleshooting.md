@@ -125,6 +125,167 @@ Look in Kodi's log for:
 | `reporter.rejected` with `reason=no_matching_route` | No route accepts the viewer; see [No CrossWatch route](#a-viewer-shows-no-crosswatch-route). |
 | `reporter.rated` with `failed=` above 0 | A service refused the rating. CrossWatch's log has the reason. |
 
+## Library sync
+
+Open **Library sync status** in the add-on settings (Library sync category) and find what it
+shows below. See [Library sync](library-sync.md) for how sync works.
+
+### Library sync is off
+
+"Sync this library with CrossWatch" is off, or Set up library sync was not run since pairing
+with this CrossWatch. Run Set up library sync.
+
+### Waiting: something is playing
+
+Sync waits while something plays and for a minute after. Nothing to do.
+
+### Waiting: Kodi is updating the library
+
+Sync waits during a library scan or clean, and runs a full sync afterwards. Nothing to do.
+
+### Waiting: reading the viewers' playlists
+
+The add-on is working out who owns what. If it stays, a playlist cannot be read: the "Needs you"
+list names it. Fix that playlist in Kodi or in the viewer's playlists (see
+[A playlist shows as unusable](#a-playlist-shows-as-unusable)).
+
+### Waiting for CrossWatch
+
+One of these:
+
+- CrossWatch has not answered yet, or answered with an error and the add-on tries again with
+  growing pauses. Check that CrossWatch runs and that Kodi can reach it; Kodi's log has the
+  reason (see [Logs](#logs)).
+- CrossWatch is older than 0.15.0. Update it.
+- Another device syncs this library: see the next entry.
+- It also shows for a while after a full sync, while CrossWatch syncs with your services.
+  Until the first sync round has settled (and, if you chose to send existing ratings, until
+  they have been sent), it also shows for up to five minutes after a change made in Kodi.
+
+### Another device syncs this library
+
+Only one Kodi device per library syncs, and another one was first. Either leave it that way
+(this device keeps reporting playback), or turn "Sync this library with CrossWatch" off on the
+other device. If the other device is paired with a different CrossWatch connection, this one
+then takes over by itself.
+
+### Paused: another device syncs this library
+
+Another device paired with this same connection is the sync device, so this one stopped
+asking. To move sync here, turn "Sync this library with CrossWatch" off on the other device,
+then run Set up library sync on this one.
+
+### Waiting: CrossWatch syncs none of this Kodi's viewers
+
+CrossWatch answers, but none of this Kodi's viewers has a sync there, so nothing goes up or
+comes down. One of these:
+
+- This Kodi has several viewers, and none is linked in CrossWatch yet. Link them in
+  CrossWatch's Kodi panel (see
+  [Link each viewer in CrossWatch](library-sync.md#link-each-viewer-in-crosswatch)).
+- CrossWatch also reaches this Kodi by its address (Kodi's web server, JSON-RPC). CrossWatch
+  then syncs that Kodi itself and leaves the add-on out. Remove that connection in CrossWatch.
+
+The line goes away at the next heartbeat after the fix, within five minutes.
+
+### Waiting: can't read which items PlexKodiConnect or Jellyfin for Kodi manages
+
+Library sync leaves alone the items a media server add-on manages. With direct paths, only that
+add-on's own list of its items says which they are: `plex.db` (PlexKodiConnect) or
+`jellyfin.db` (Jellyfin for Kodi), in the same `Database` folder as Kodi's library
+(`userdata/Database`, or `userdata/profiles/<profile>/Database` for a profile with its own
+library). The list is there but can't be read, so nothing is written, fetched or sent until it
+can, rather than risk changing items that belong to your server. Sync tries again every minute.
+
+- The list is damaged, or isn't one that add-on wrote (a file copied in from elsewhere). Look at
+  that add-on's own log; repairing its list is done in that add-on, not this one.
+- Kodi didn't answer whether the add-on is installed. This clears by itself; if it doesn't,
+  restart Kodi.
+
+The setup screen says the same ("Couldn't read which items PlexKodiConnect or Jellyfin for
+Kodi manages") and counts nothing until the list can be read. A list left behind after the
+add-on was uninstalled is ignored.
+
+### Paused: library sync was turned off
+
+"Sync this library with CrossWatch" was turned off, then on again. Turning it on alone does not
+restart sync; run Set up library sync.
+
+### Paused: this device's id changed
+
+The add-on's device id changed (Settings, CrossWatch category, "Device id"), and CrossWatch still
+has the old one as the sync device. Set the old id back, then run Set up library sync. To keep
+the new id, pair again (that frees the sync device in CrossWatch), then run Set up library
+sync.
+
+### Stopped: CrossWatch refused this device's token
+
+CrossWatch no longer accepts this Kodi, for example because the Kodi add-on was switched off for
+it in CrossWatch. Pair again (see [Pairing](connect.md#pairing)), then run Set up library sync.
+
+### Stopped: the paired CrossWatch has no library sync
+
+CrossWatch answered that it has no library sync: it is older than library sync, or the paired
+address has the wrong path (it must end in `/webhook/kodiwatcher`). Update CrossWatch or pair
+again, then restart Kodi.
+
+### Stopped: the sync record is missing or unreadable
+
+The add-on's own record of what it synced (`sync.db` in the add-on's data folder) is gone,
+damaged, or from another version of the add-on. Run Set up library sync. A damaged record is
+kept as `sync.db.bad` and replaced by a new one; each viewer starts over at CrossWatch, which
+removes nothing from your services. The new record is filled from Kodi's history, as at the
+first Start.
+
+### This device has no id
+
+Leave "Device id" blank in the add-on settings to have one made, or set one. It takes effect at
+once.
+
+### `<name>` has no sync user in CrossWatch
+
+CrossWatch has no library sync set up for that viewer. In CrossWatch's Kodi panel, Library
+sync card, pick a service for that viewer and press Set up sync (see
+[Link each viewer in CrossWatch](library-sync.md#link-each-viewer-in-crosswatch)).
+
+### CrossWatch refused `<name>`'s library as too large
+
+Uploads for that viewer stopped: even split into small parts, CrossWatch or a reverse proxy in
+front of it refused them, or the library has more than 250,000 items for one viewer. Raise the
+proxy's request size limit, then restart Kodi; Kodi's log shows the refusal.
+
+### CrossWatch refused `<name>`'s changes, or was busy with them
+
+A refusal is logged by CrossWatch, with the reason. A busy CrossWatch is tried again later by
+itself.
+
+### Syncing `<name>` hit a problem
+
+Something failed on the way, for example the network or a certificate, and the add-on tries
+again by itself. The code in brackets says what; Kodi's log has the details.
+
+### `<name>`'s first sync came more than a day after setup
+
+That viewer was there at the first Start, but their first full sync began more than a day later
+(for example Kodi was off in between). Kodi's history was not sent
+for them, because by then it may hold other people's plays. Their services fill it in.
+
+### Marks were dropped
+
+Watched marks waiting to go up were dropped: more than 10,000 were waiting, they were older
+than 30 days, or the item had since been replaced in Kodi. Make them again if they matter.
+
+### The paired address changed
+
+The add-on was paired with another address or CrossWatch since Set up library sync last ran.
+Run it again to sync with the new one.
+
+### The counts look wrong
+
+They come from the playlists, the profiles, the remembered answers and the viewers, as of the
+last full sync. Check the viewers' playlists first. An item with the wrong owner gets the wrong
+person's history, so correct it before running Set up library sync.
+
 ## The add-on stopped reporting after an update
 
 If Kodi updated or stopped the add-on while a "Who watched it?" or rating question was on

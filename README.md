@@ -18,7 +18,7 @@ Arctic Zephyr Mod skins. Kodi on Android and other skins have not been tested ye
   Kodi 22 (Piers) release candidate.
 - CrossWatch v0.13.3 or later, the first release with Kodi add-on support (marked
   experimental there). Rating needs v0.13.4 or later, and picking viewers from CrossWatch's
-  user profiles needs v0.13.5 or later.
+  user profiles needs v0.13.5 or later. Library sync needs v0.15.0 or later.
 - Kodi able to reach CrossWatch over the network, for example both on the same home network.
   CrossWatch does not need to reach Kodi, except for Link.
 - For an `https://` address: a certificate from a public certificate authority. Self-signed
@@ -44,6 +44,7 @@ The full documentation is at <https://crosswatch-app.github.io/kodi-addon/>.
 - [Viewers](https://crosswatch-app.github.io/kodi-addon/viewers/): one viewer per person, with playlists or profiles.
 - [Remembered answers](https://crosswatch-app.github.io/kodi-addon/remembered-answers/): the answers remembered per show.
 - [Rating](https://crosswatch-app.github.io/kodi-addon/rating/): asking how it was after a watch.
+- [Library sync](https://crosswatch-app.github.io/kodi-addon/library-sync/): keeping Kodi's library and each viewer's services in step.
 - [Settings](https://crosswatch-app.github.io/kodi-addon/settings/): every setting and its default.
 - [Troubleshooting](https://crosswatch-app.github.io/kodi-addon/troubleshooting/): problems by what you see.
 - [What the add-on sends](https://crosswatch-app.github.io/kodi-addon/what-is-sent/): what goes to CrossWatch, and what happens in an outage.

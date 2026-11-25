@@ -38,6 +38,27 @@ The webhook token is sent in a request header, never in a URL.
 Developers: the exact payload is the
 [contract](https://github.com/crosswatch-app/kodi-addon/blob/main/docs/contract.md).
 
+## With library sync
+
+With [library sync](library-sync.md) set up, the add-on also sends, for each viewer, the items
+that viewer owns:
+
+- the item: title, year, season, episode and show, the ids Kodi has (and Kodi's own database
+  id), the file path (cleaned as above) and when it was added to the library.
+- that viewer's state: watched, play count and last played, rating, and resume point.
+- items that left Kodi's library, marked as gone, so the services keep their history.
+- the library's video sources: their folders (cleaned the same way) and names.
+
+Items with no owner, and library items with a `plugin://` path, are never sent.
+
+The heartbeat then also carries, per viewer, a random id and the viewer's name, whether sync
+is on, Kodi's version and JSON-RPC version, and a fingerprint of Kodi's library: a hash of the database's location,
+so devices sharing a library can be recognised. The location itself is not sent.
+
+The add-on keeps its own record of what it synced in `sync.db` in the add-on's data folder, with
+a few small files beside it (`sync_status.json` for the status screen among them). Titles are in
+there, so it is as private as Kodi's own library.
+
 ## When CrossWatch cannot be reached
 
 The add-on keeps trying each event for two minutes, then drops it. An old progress or pause

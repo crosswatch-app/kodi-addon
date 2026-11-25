@@ -84,3 +84,13 @@ def test_a_raising_controller_does_not_escape_the_seek_callback():
             raise RuntimeError("boom")
 
     PlaybackMonitor(Exploder()).onPlayBackSeek(1, 1)  # must not raise
+
+
+def test_service_monitor_forwards_notifications():
+    seen = []
+    monitor = ServiceMonitor(
+        Recorder(), on_settings_changed=lambda: None, on_notification=lambda m, d: seen.append((m, d))
+    )
+    monitor.onNotification("xbmc", "VideoLibrary.OnUpdate", "{}")
+    assert seen == [("VideoLibrary.OnUpdate", "{}")]
+    ServiceMonitor(Recorder(), on_settings_changed=lambda: None).onNotification("xbmc", "VideoLibrary.OnUpdate", "{}")

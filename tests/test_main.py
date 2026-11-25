@@ -1,9 +1,10 @@
 import threading
 
 import resources.lib.service.main as main_mod
-from resources.lib.config import KEY_BASE_URL, KEY_TOKEN, Settings
+from resources.lib.config import KEY_BASE_URL, KEY_DEVICE_ID, KEY_TOKEN, Settings, read_settings
 from resources.lib.constants import SHUTDOWN_DRAIN_SECONDS, SHUTDOWN_HTTP_TIMEOUT_SECONDS
 from resources.lib.log import get_logger
+from resources.lib.models import Device
 from resources.lib.reporter import HttpReporter, LogReporter
 from resources.lib.service.delivery import Delivery
 from tests.fakes import FakeKodi
@@ -30,15 +31,20 @@ class Controller:
 
 
 class Queue:
-    def __init__(self) -> None:
+    def __init__(self, device: Device) -> None:
         self.routes: list[tuple] = []
+        self.device = device
+
+    def set_device(self, device: Device) -> None:
+        self.device = device
 
     def replace(self, sink, outbox) -> None:
         self.routes.append((sink, outbox))
 
 
-def _apply(tmp_path, kodi, delivery=None):
-    controller, queue = Controller(), Queue()
+def _apply(tmp_path, kodi, delivery=None, queue=None):
+    # The device the settings already give, so only a change to it counts.
+    controller, queue = Controller(), queue or Queue(main_mod._device(kodi, read_settings(kodi)))
     delivery = delivery or Delivery(kodi, str(tmp_path / "outbox.json"), threading.Event())
     main_mod.apply_settings(kodi, controller, queue, delivery, get_logger("test"))  # type: ignore[arg-type]
     return controller, queue, delivery
@@ -83,8 +89,8 @@ def test_a_pasted_url_is_written_back_split_and_used_at_once(tmp_path):
 class _Monitor:
     """Stands in for ServiceMonitor with Kodi already shutting down, so main() returns."""
 
-    def __init__(self, controller, on_settings_changed) -> None:
-        del controller, on_settings_changed
+    def __init__(self, controller, on_settings_changed, on_notification=None) -> None:
+        del controller, on_settings_changed, on_notification
 
     def abortRequested(self) -> bool:
         return True
@@ -98,3 +104,36 @@ def test_the_service_starts_with_a_stored_address_it_cannot_use(tmp_path, monkey
     logged = [message for message, _ in kodi.logged]
     assert any("service.webhook_url_rejected" in message for message in logged)
     assert any("service.stopping" in message for message in logged)
+    # The sync worker started and stopped with the service.
+    assert any("sync.engine.started" in message for message in logged)
+    assert any("sync.engine.stopped" in message for message in logged)
+
+
+def test_device_id_reread_on_settings_change(tmp_path):
+    kodi = FakeKodi(settings={KEY_DEVICE_ID: "htpc-1"}, info_labels={"System.FriendlyName": "Lounge"}, root=str(tmp_path))
+    delivery = Delivery(kodi, str(tmp_path / "outbox.json"), threading.Event())
+    delivery.build(Settings())
+    queue = Queue(Device(id="htpc-1", name="Lounge", addon_version="0.1.0"))
+    controller, _, _ = _apply(tmp_path, kodi, delivery, queue)
+    assert controller.pings == 0
+    kodi.settings[KEY_DEVICE_ID] = "htpc-2"
+    controller, _, _ = _apply(tmp_path, kodi, delivery, queue)
+    assert queue.device == Device(id="htpc-2", name="Lounge", addon_version="0.1.0")
+    assert controller.pings == 1
+
+
+def test_a_failing_device_lookup_still_applies_the_new_connection(tmp_path, monkeypatch):
+    kodi = FakeKodi(settings={KEY_BASE_URL: URL, KEY_TOKEN: "tok"})
+    queue = Queue(Device(id="", name=""))
+
+    def broken(kodi, settings):
+        raise RuntimeError("device lookup failed")
+
+    monkeypatch.setattr(main_mod, "_device", broken)
+    controller = Controller()
+    delivery = Delivery(kodi, str(tmp_path / "outbox.json"), threading.Event())
+    try:
+        main_mod.apply_settings(kodi, controller, queue, delivery, get_logger("test"))  # type: ignore[arg-type]
+    except RuntimeError:
+        pass
+    assert [type(sink) for sink, _ in queue.routes] == [HttpReporter]

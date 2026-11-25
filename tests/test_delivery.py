@@ -11,6 +11,7 @@ from resources.lib.reporter import HttpReporter, LogReporter
 from resources.lib.routes import Person, RouteFacts
 from resources.lib.service.delivery import Delivery
 from resources.lib.storage import JsonViewerStore, PromptMemory, RouteStore
+from resources.lib.sync.reply import PingTicket
 from resources.lib.viewer_config import _update, apply_edit
 from tests.fakes import FakeKodi
 
@@ -316,3 +317,72 @@ def test_a_service_rename_during_a_screen_edit_keeps_both(tmp_path):
     delivery.publish_status()
     edit.join()
     assert store.viewers() == [Viewer(name="Anna B.", playlists=("Anna TV",), person_id="p1")]
+
+
+# -- library sync's ping reply ------------------------------------------------------------
+
+
+def _sync_delivery(tmp_path):
+    seen: list[tuple] = []
+    delivery = Delivery(
+        FakeKodi(), str(tmp_path / "outbox.json"), threading.Event(), on_library_sync=lambda b, t: seen.append((b, t))
+    )
+    return delivery, seen
+
+
+def test_sync_reply_handed_on_at_publish(tmp_path):
+    delivery, seen = _sync_delivery(tmp_path)
+    sink, _ = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter) and sink._on_library_sync is not None
+    ticket = PingTicket(sent_at=1.0)
+    sink._on_library_sync({"version": 1}, ticket)  # what the worker does with a ping reply
+    assert seen == []
+    delivery.publish_status()
+    assert seen == [({"version": 1}, ticket)]
+    delivery.publish_status()
+    assert len(seen) == 1
+
+
+def test_reply_for_old_endpoint_dropped(tmp_path):
+    delivery, seen = _sync_delivery(tmp_path)
+    old, _ = delivery.build(_settings())
+    delivery.build(_settings(url="http://other:8787/webhook/kodiwatcher"))
+    assert isinstance(old, HttpReporter) and old._on_library_sync is not None
+    old._on_library_sync({"version": 1}, None)
+    delivery.publish_status()
+    assert seen == []
+
+
+def test_reply_under_old_token_dropped(tmp_path):
+    delivery, seen = _sync_delivery(tmp_path)
+    old, _ = delivery.build(_settings())
+    delivery.build(_settings(token="new"))
+    assert isinstance(old, HttpReporter) and old._on_library_sync is not None
+    old._on_library_sync({"version": 1}, None)
+    delivery.publish_status()
+    assert seen == []
+
+
+def test_the_newest_sync_reply_wins(tmp_path):
+    delivery, seen = _sync_delivery(tmp_path)
+    sink, _ = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter) and sink._on_library_sync is not None
+    sink._on_library_sync({"version": 1, "n": 1}, None)
+    sink._on_library_sync(None, None)
+    delivery.publish_status()
+    assert seen == [(None, None)]
+
+
+def test_a_failing_sync_hand_over_still_writes_the_status(tmp_path):
+    kodi = FakeKodi()
+
+    def broken(block, ticket) -> None:
+        raise RuntimeError("engine gone")
+
+    delivery = Delivery(kodi, str(tmp_path / "outbox.json"), threading.Event(), on_library_sync=broken)
+    sink, _ = delivery.build(_settings())
+    assert isinstance(sink, HttpReporter) and sink._on_instance is not None and sink._on_library_sync is not None
+    sink._on_library_sync(None, None)
+    sink._on_instance("Living room")
+    delivery.publish_status()
+    assert kodi.settings[KEY_STATUS] == f"#{STATUS_PAIRED}"

@@ -36,6 +36,8 @@ RETRY_BACKOFF_SECONDS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0)
 # (xbmc/interfaces/python/PythonInvoker.cpp:62), so the shutdown path must finish well inside it.
 SHUTDOWN_HTTP_TIMEOUT_SECONDS = 1.0
 SHUTDOWN_DRAIN_SECONDS = 2.5
+# The service loop's wait between ticks, and so the spacing of playback samples.
+TICK_SECONDS = 1.0
 
 DEFAULT_QUEUE_SIZE = 100
 

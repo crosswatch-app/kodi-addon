@@ -167,6 +167,16 @@ def test_every_window_has_a_default_control(window):
     assert default is not None and (default.text or "").strip()
 
 
+def test_the_default_control_is_never_a_list(window):
+    # Kodi focuses the default control at Window Init, before onInit fills any list; an
+    # empty list can't take focus, and Kodi logs that as an error. fill() moves focus to a
+    # list once it has rows.
+    root = _root(window)
+    default = (root.findtext("defaultcontrol") or "").strip()
+    kinds = {c.get("type") for c in root.iter("control") if c.get("id") == default}
+    assert kinds and not kinds & {"list", "panel", "fixedlist", "wraplist"}, (default, kinds)
+
+
 def test_every_button_can_be_reached(window):
     root = _root(window)
     targets = {(root.findtext("defaultcontrol") or "").strip()}

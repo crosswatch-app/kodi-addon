@@ -26,6 +26,7 @@ def install_kodi_stubs() -> None:
     class _Player:
         def __init__(self, *args, **kwargs) -> None: ...
         def isPlaying(self) -> bool: return False
+        def isPlayingVideo(self) -> bool: return False
         def getTime(self) -> float: raise RuntimeError("not playing")
         def getTotalTime(self) -> float: raise RuntimeError("not playing")
 
@@ -83,6 +84,7 @@ def install_kodi_stubs() -> None:
 
     xbmcgui.ListItem = _ListItem
     xbmcgui.WindowXMLDialog = _WindowXMLDialog
+    xbmcgui.ControlRadioButton = type("ControlRadioButton", (), {})
 
     xbmcvfs: Any = types.ModuleType("xbmcvfs")
     xbmcvfs.translatePath = lambda path: path

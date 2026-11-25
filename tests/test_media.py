@@ -167,13 +167,13 @@ def test_leaves_an_archive_path_without_credentials_unchanged(path):
 
 def test_a_query_string_credential_never_reaches_the_model():
     item = {"item": {**EPISODE_ITEM["item"], "file": "https://cdn/tv/S01E01.mkv?token=s3cret"}}
-    media = MediaResolver(_kodi(item=item)).resolve()
+    media = MediaResolver(_kodi(item=item)).resolve().media
     assert media is not None
     assert "s3cret" not in (media.file or "")
 
 
 def test_resolves_an_episode_with_show_ids_from_the_parent():
-    media = MediaResolver(_kodi()).resolve()
+    media = MediaResolver(_kodi()).resolve().media
     assert media is not None
     assert media.media_type == "episode"
     assert media.show_library_id == 42
@@ -191,7 +191,7 @@ def test_placeholder_id_values_are_dropped_rather_than_sent_as_ids():
     no-usable-id gate passes it and the receiver tries to route on it.
     """
     show = {"tvshowdetails": {"uniqueid": {"imdb": "None", "tvdb": "none", "tvmaze": "43665", "tvrage": "NULL"}}}
-    media = MediaResolver(_kodi(show=show)).resolve()
+    media = MediaResolver(_kodi(show=show)).resolve().media
     assert media is not None
     assert media.show_ids == {"tvmaze": "43665"}
 
@@ -200,21 +200,21 @@ def test_an_item_whose_every_id_is_a_placeholder_has_no_ids_at_all():
     """So the no-usable-id gate can see it for what it is, rather than sending junk."""
     show = {"tvshowdetails": {"uniqueid": {"imdb": "None", "tvdb": "", "tvrage": "0"}}}
     item = {"item": {**EPISODE_ITEM["item"], "uniqueid": {"tvdb": "-1"}}}
-    media = MediaResolver(_kodi(item=item, show=show)).resolve()
+    media = MediaResolver(_kodi(item=item, show=show)).resolve().media
     assert media is not None
     assert media.show_ids == {}
     assert media.episode_ids == {}
 
 
 def test_unknown_uniqueid_keys_are_skipped_not_guessed():
-    media = MediaResolver(_kodi()).resolve()
+    media = MediaResolver(_kodi()).resolve().media
     assert media is not None
     assert media.episode_ids == {}
 
 
 def test_real_episode_ids_are_carried():
     item = {"item": {**EPISODE_ITEM["item"], "uniqueid": {"tvdb": "3110601", "unknown": "x"}}}
-    media = MediaResolver(_kodi(item=item)).resolve()
+    media = MediaResolver(_kodi(item=item)).resolve().media
     assert media is not None
     assert media.episode_ids == {"tvdb": "3110601"}
 
@@ -223,7 +223,7 @@ def test_an_episode_id_equal_to_its_shows_is_dropped():
     """A scraper can store the series' id on its episode. Sent bare, it would be read as the
     episode's own id, so the receiver would look up a show as an episode."""
     item = {"item": {**EPISODE_ITEM["item"], "uniqueid": {"imdb": "tt1219024", "tvdb": "3110601"}}}
-    media = MediaResolver(_kodi(item=item)).resolve()
+    media = MediaResolver(_kodi(item=item)).resolve().media
     assert media is not None
     assert media.episode_ids == {"tvdb": "3110601"}
     assert media.show_ids["imdb"] == "tt1219024"
@@ -231,14 +231,14 @@ def test_an_episode_id_equal_to_its_shows_is_dropped():
 
 def test_only_an_id_of_the_same_type_counts_as_a_duplicate():
     item = {"item": {**EPISODE_ITEM["item"], "uniqueid": {"tmdb": "83462"}}}
-    media = MediaResolver(_kodi(item=item)).resolve()
+    media = MediaResolver(_kodi(item=item)).resolve().media
     assert media is not None
     assert media.episode_ids == {"tmdb": "83462"}
 
 
 def test_credentials_in_the_playing_path_never_reach_the_model():
     item = {"item": {**EPISODE_ITEM["item"], "file": "smb://user:hunter2@nas/tv/S01E01.mkv"}}
-    media = MediaResolver(_kodi(item=item)).resolve()
+    media = MediaResolver(_kodi(item=item)).resolve().media
     assert media is not None
     assert media.file == "smb://nas/tv/S01E01.mkv"
     assert "hunter2" not in (media.file or "")
@@ -247,13 +247,13 @@ def test_credentials_in_the_playing_path_never_reach_the_model():
 def test_the_shows_own_year_is_read_with_its_ids():
     """Not the episode's year, which Kodi reports per episode and which changes per season."""
     show = {"tvshowdetails": {"uniqueid": {"tvdb": "83462"}, "year": 2008}}
-    media = MediaResolver(_kodi(show=show)).resolve()
+    media = MediaResolver(_kodi(show=show)).resolve().media
     assert media is not None
     assert (media.year, media.show_year) == (2026, 2008)
 
 
 def test_a_show_without_a_year_has_none():
-    media = MediaResolver(_kodi()).resolve()
+    media = MediaResolver(_kodi()).resolve().media
     assert media is not None and media.show_year is None
 
 
@@ -293,7 +293,7 @@ def test_resolves_a_movie_with_its_own_ids():
             "uniqueid": {"tmdb": "999"},
         }
     }
-    media = MediaResolver(_kodi(item=item)).resolve()
+    media = MediaResolver(_kodi(item=item)).resolve().media
     assert media is not None
     assert (media.media_type, media.library_id, media.season) == ("movie", 7, None)
     assert media.show_ids == {"tmdb": "999"}
@@ -313,7 +313,7 @@ def test_plexkodiconnect_playback_is_labelled_and_carries_the_rating_key():
             "uniqueid": {},
         }
     }
-    media = MediaResolver(_kodi(item=item, show={"tvshowdetails": {}})).resolve()
+    media = MediaResolver(_kodi(item=item, show={"tvshowdetails": {}})).resolve().media
     assert media is not None
     assert media.source == "plexkodiconnect"
     assert media.is_pkc is True
@@ -321,7 +321,7 @@ def test_plexkodiconnect_playback_is_labelled_and_carries_the_rating_key():
 
 
 def test_local_playback_is_labelled_library():
-    media = MediaResolver(_kodi()).resolve()
+    media = MediaResolver(_kodi()).resolve().media
     assert media is not None
     assert media.source == "library"
     assert media.is_pkc is False
@@ -329,19 +329,53 @@ def test_local_playback_is_labelled_library():
 
 def test_returns_none_when_nothing_is_playing():
     kodi = FakeKodi(rpc_handlers={"Player.GetActivePlayers": lambda params: {"result": []}})
-    assert MediaResolver(kodi).resolve() is None
+    assert MediaResolver(kodi).resolve().media is None
 
 
 def test_returns_none_for_a_media_type_we_do_not_report():
     item = {"item": {"id": 1, "type": "musicvideo", "title": "x", "file": "x"}}
-    assert MediaResolver(_kodi(item=item)).resolve() is None
+    assert MediaResolver(_kodi(item=item)).resolve().media is None
 
 
 def test_a_failing_show_lookup_still_yields_the_episode():
     def boom(params):
         raise RuntimeError("no show")
 
-    media = MediaResolver(_kodi(extra={"VideoLibrary.GetTVShowDetails": boom})).resolve()
+    media = MediaResolver(_kodi(extra={"VideoLibrary.GetTVShowDetails": boom})).resolve().media
     assert media is not None
     assert media.show_ids == {}
     assert media.season == 1
+
+
+def _boom(params):
+    raise RuntimeError("rpc down")
+
+
+@pytest.mark.parametrize(
+    ("extra", "reason"),
+    [
+        ({}, "ok"),
+        ({"Player.GetActivePlayers": lambda params: {"result": []}}, "not_listed"),
+        ({"Player.GetActivePlayers": lambda params: {"result": [{"playerid": 0, "type": "audio"}]}}, "not_listed"),
+        ({"Player.GetItem": lambda params: {}}, "not_listed"),
+        ({"Player.GetItem": _boom}, "error"),
+        ({"Player.GetActivePlayers": _boom}, "error"),
+        ({"Player.GetItem": lambda params: {"item": {"id": 3, "type": "channel"}}}, "not_library"),
+        ({"Player.GetItem": lambda params: {"item": {"type": "unknown", "file": "/x.mkv"}}}, "not_library"),
+        ({"Player.GetItem": lambda params: {"item": {"id": 1, "type": "musicvideo"}}}, "not_library"),
+    ],
+)
+def test_resolution_reasons(extra, reason):
+    resolution = MediaResolver(_kodi(extra=extra)).resolve()
+    assert resolution.reason == reason
+    assert (resolution.media is not None) is (reason == "ok")
+
+
+def test_resolved_item_carries_its_play_count():
+    item = {"item": {**EPISODE_ITEM["item"], "playcount": 3}}
+    media = MediaResolver(_kodi(item=item)).resolve().media
+    assert media is not None and media.playcount == 3
+    kodi = _kodi()
+    MediaResolver(kodi).resolve()
+    asked = [params["properties"] for method, params in kodi.calls if method == "Player.GetItem"]
+    assert asked and "playcount" in asked[0]

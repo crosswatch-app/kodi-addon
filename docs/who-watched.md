@@ -22,7 +22,9 @@ whose playlist contains the film.
   not change when you watch.
 - Avoid playlists that change because of playback, such as "Continue Watching" or "In
   Progress" (rules on in progress, play count or last played). Whoever owns that playlist gets
-  credited for the next episode of anything that was just played, whoever watched it.
+  credited for the next episode of anything that was just played, whoever watched it. With
+  [library sync](library-sync.md) on, items also keep moving between viewers, and each move
+  sends those viewers a full sync.
 
 The add-on reads playlist membership in advance: every hour by default ("Playlist refresh
 interval", see [Settings](settings.md#advanced)), after a library scan or clean, and when you

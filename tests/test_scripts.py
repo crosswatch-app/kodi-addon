@@ -1,4 +1,5 @@
 from resources.lib import connect, remembered, scripts, viewer_config
+from resources.lib.sync import screens
 
 
 def _spy(monkeypatch):
@@ -8,6 +9,8 @@ def _spy(monkeypatch):
     monkeypatch.setattr(connect, "pair_main", lambda: opened.append("pair"))
     monkeypatch.setattr(connect, "unpair_main", lambda: opened.append("unpair"))
     monkeypatch.setattr(connect, "link_main", lambda arguments: opened.append(("link", arguments)))
+    monkeypatch.setattr(screens, "main", lambda: opened.append("sync_setup"))
+    monkeypatch.setattr(screens, "status_main", lambda: opened.append("sync_status"))
     return opened
 
 
@@ -28,6 +31,13 @@ def test_pair_and_unpair_open_their_screens(monkeypatch):
     scripts.dispatch(["configure.py", "pair"])
     scripts.dispatch(["configure.py", "unpair"])
     assert opened == ["pair", "unpair"]
+
+
+def test_the_sync_setup_argument_opens_the_setup_screen(monkeypatch):
+    opened = _spy(monkeypatch)
+    scripts.dispatch(["configure.py", "sync_setup"])
+    scripts.dispatch(["configure.py", "sync_status"])
+    assert opened == ["sync_setup", "sync_status"]
 
 
 def test_a_link_from_execute_addon_is_handed_its_arguments(monkeypatch):

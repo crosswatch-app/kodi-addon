@@ -22,6 +22,7 @@ nav = [
     { "Viewers" = "viewers.md" },
     { "Remembered answers" = "remembered-answers.md" },
     { "Rating" = "rating.md" },
+    { "Library sync" = "library-sync.md" },
   ] },
   { "Reference" = [
     { "Settings" = "settings.md" },

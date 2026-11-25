@@ -61,6 +61,8 @@ class ListRequest:
     ticked: tuple[str, ...] = ()
     # Empty hides the extra button, which a pick list offers beside Done.
     extra: str = ""
+    # Only to look at: no ticking, and one Close button where Done would be.
+    read_only: bool = False
 
 
 @dataclass(frozen=True)
