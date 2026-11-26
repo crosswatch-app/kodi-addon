@@ -7,8 +7,13 @@ Plex, Emby or Jellyfin account, so a household sharing one Kodi profile does not
 sharing one watch history. See the [CrossWatch wiki](https://wiki.crosswatch.app) for how
 CrossWatch itself is set up.
 
+Optionally, [library sync](https://crosswatch-app.github.io/kodi-addon/library-sync/) also keeps
+Kodi's library and each viewer's services in step, both ways: watched state, ratings and resume
+points.
+
 Tested on Kodi 21.3 (Omega) and the Kodi 22 (Piers) release candidate, with the Estuary and
-Arctic Zephyr Mod skins. Kodi on Android and other skins have not been tested yet.
+Arctic Zephyr Mod skins. Kodi on Android and other skins have not been tested yet. Library sync
+has been tested on Kodi 21.3 so far.
 
 ![The Viewers window](docs/screenshots/viewers/viewers-split.png)
 

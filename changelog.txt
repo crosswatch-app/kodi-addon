@@ -1,6 +1,53 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.1.0 (2026-11-26)
+-------------------
+New Features:
+  - Library sync (#72): each viewer's watched state, play count, last
+    played date, rating and resume point from their services is
+    written into Kodi's library for the items that viewer owns, and a
+    watched mark or rating made by hand in Kodi goes up to that
+    viewer's services. Follows docs/contract-sync.md (v1, CrossWatch
+    0.15.0): the add-on uploads each viewer's state (a full, then
+    deltas), fetches the changes CrossWatch queues, writes them into
+    the library in small batches and acks them, so CrossWatch never
+    connects to Kodi. Playback reporting is unchanged and works with
+    library sync off.
+  - Ownership follows the viewer rules (smart playlists, profiles,
+    remembered answers, the only viewer). An item with several owners
+    syncs for each of them; a hand change on one waits on the status
+    screen ("Whose was this?") until someone answers.
+  - Removals (an unwatch, a cleared rating) are sent and written only
+    with "Send removals made in Kodi" on; otherwise the viewer's record
+    keeps the watch and the rating.
+  - Sync waits during playback, library scans, open questions and
+    unreadable playlists. One device per library, the sync device,
+    syncs; other devices sharing the library keep reporting playback.
+  - New windows: Set up library sync (owners per viewer, Start, the
+    existing ratings option) and Library sync status (state, last
+    upload, problems and questions). New settings category Library
+    sync: sync this library, send removals, when a shared item counts
+    as watched.
+  - Ratings already in Kodi can be sent at the first Start. More than
+    50 rating changes in one check (as after restoring a database
+    backup) are held until confirmed on the status screen.
+  - Items PlexKodiConnect and Jellyfin for Kodi add to the library are
+    left out, with add-on paths and with direct paths (read from the
+    add-on's plex.db or jellyfin.db); Emby for Kodi in add-on mode
+    only.
+
+Internal:
+  - The library is read page by page up to the reported total: Kodi
+    applies LIMIT before it drops rows in locked sources, so a page can
+    come back short or empty with more rows after it.
+  - Each library sync write batch is logged with its duration.
+  - Tested on Kodi 21.3: playback reporting against CrossWatch
+    v0.13.6; library sync against CrossWatch main at 73c53ff7 with its
+    local tracker and a Trakt test account, and at 40d421ce, the code
+    of 0.15.0, with the local tracker. Library sync was not run on
+    Kodi 22 or with PlexKodiConnect.
+
 v1.0.1 (2026-10-20)
 -------------------
 Bug Fixes:
