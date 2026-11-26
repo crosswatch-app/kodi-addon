@@ -1,6 +1,30 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.1.2 (2026-11-26)
+-------------------
+Bug Fixes:
+  - Fixed: library sync went round forever when 100 or more hand marks
+    waited for a show the last library read didn't have (a show with
+    many episodes scanned in and marked watched straight away). A full
+    batch asked for another drain at once, and DrainInbox outranks the
+    ReadLibrary those marks wait for. A pass now drains again only when
+    it consumed something other than waiting marks.
+  - Fixed: marks waiting for a show could be lost when the inbox file
+    was busy: they went back in the inbox after the commit that moved
+    inbox_applied past them, and the remove after it deleted them. They
+    now go back first; when that fails, _InboxBusy is raised before the
+    commit and the worker retries the batch after its pause.
+  - Fixed: with CrossWatch unreachable, Kodi's exit could wait the full
+    10 s HTTP timeout, since SyncClient.cancel() can't end a connect in
+    progress. The connect now has its own 2 s timeout
+    (CONNECT_TIMEOUT_SECONDS); the request and reply keep 10 s, and an
+    abort during the connect gets the shutdown timeout.
+
+Internal:
+  - All three were found by the kodi-review bot on
+    xbmc/repo-scripts#2996.
+
 v1.1.1 (2026-11-26)
 -------------------
 Bug Fixes:
