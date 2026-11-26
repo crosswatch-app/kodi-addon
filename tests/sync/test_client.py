@@ -9,6 +9,7 @@ import pytest
 from resources.lib.constants import HTTP_TIMEOUT_SECONDS, SHUTDOWN_HTTP_TIMEOUT_SECONDS
 from resources.lib.sync import client as client_mod
 from resources.lib.sync.client import SyncClient, SyncError
+from resources.lib.sync.constants import CONNECT_TIMEOUT_SECONDS
 
 PAIRED = "https://h.example/cw/webhook/kodiwatcher?x=1"
 
@@ -26,10 +27,27 @@ class FakeResponse:
         return self._headers.get(name)
 
 
+class FakeSocket:
+    def __init__(self, server: "FakeServer") -> None:
+        self.server = server
+
+    def settimeout(self, value: float) -> None:
+        self.server.read_timeouts.append(value)
+
+    def shutdown(self, how: int) -> None:
+        pass
+
+
 class FakeConnection:
     def __init__(self, server: "FakeServer", timeout: float) -> None:
         self.server = server
         self.timeout = timeout
+        self.sock: FakeSocket | None = None
+
+    def connect(self) -> None:
+        if self.server.fail_connect_late:
+            raise TimeoutError("timed out")
+        self.sock = FakeSocket(self.server)
 
     def request(self, method: str, path: str, body: bytes | None = None, headers: dict[str, str] | None = None) -> None:
         if self.server.fail_request:
@@ -51,6 +69,8 @@ class FakeServer:
         self.closed = 0
         self.fail_request = False
         self.fail_connect = False
+        self.fail_connect_late = False
+        self.read_timeouts: list[float] = []
 
     def factory(self, scheme: str, host: str, port: int | None, timeout: float) -> FakeConnection:
         if self.fail_connect:
@@ -250,12 +270,13 @@ def test_a_header_that_cant_be_sent_is_not_a_network_error() -> None:
 def test_cancel_shuts_the_live_socket() -> None:
     shut: list[int] = []
 
-    class Sock:
+    class Sock(FakeSocket):
         def shutdown(self, how: int) -> None:
             shut.append(how)
 
     class Live(FakeConnection):
-        sock = Sock()
+        def connect(self) -> None:
+            self.sock = Sock(server)
 
         def getresponse(self) -> FakeResponse:
             client.cancel()
@@ -306,4 +327,39 @@ def test_short_timeout_after_abort() -> None:
     client.queue("kv-1", after=0)
     abort.set()
     client.queue("kv-1", after=0)
-    assert server.opened[0][3] == HTTP_TIMEOUT_SECONDS and server.opened[1][3] == SHUTDOWN_HTTP_TIMEOUT_SECONDS
+    assert [o[3] for o in server.opened] == [CONNECT_TIMEOUT_SECONDS, SHUTDOWN_HTTP_TIMEOUT_SECONDS]
+    assert server.read_timeouts == [HTTP_TIMEOUT_SECONDS, SHUTDOWN_HTTP_TIMEOUT_SECONDS]
+
+
+def test_connect_is_bounded_shorter_than_the_request() -> None:
+    # cancel() can't reach a connect in progress (there is no socket yet), so the connect
+    # alone gets the short timeout; the request and reply keep the full one.
+    server = FakeServer(_ok())
+    _client(server).queue("kv-1", after=0)
+    assert server.opened[0][3] == CONNECT_TIMEOUT_SECONDS < HTTP_TIMEOUT_SECONDS
+    assert server.read_timeouts == [HTTP_TIMEOUT_SECONDS]
+    assert len(server.requests) == 1
+
+
+def test_connect_timing_out_is_a_retryable_network_error() -> None:
+    server = FakeServer()
+    server.fail_connect_late = True
+    with pytest.raises(SyncError) as caught:
+        _client(server).upload(b"{}")
+    assert (caught.value.code, caught.value.retryable) == ("network", True)
+    assert server.requests == [] and server.closed == 1
+
+
+def test_abort_during_the_connect_gives_the_request_the_short_timeout() -> None:
+    abort = threading.Event()
+    server = FakeServer(_ok())
+
+    class Slow(FakeConnection):
+        def connect(self) -> None:
+            abort.set()
+            super().connect()
+
+    client = SyncClient(PAIRED, token="t", device_id="d", abort=abort,
+                        connection_factory=lambda *a: Slow(server, a[3]))  # fmt: skip
+    client.queue("kv-1", after=0)
+    assert server.read_timeouts == [SHUTDOWN_HTTP_TIMEOUT_SECONDS]

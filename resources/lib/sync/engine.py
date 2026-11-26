@@ -151,6 +151,10 @@ class _Gone(Exception):
     """Kodi has no row at that id."""
 
 
+class _InboxBusy(Exception):
+    """The inbox couldn't take the waiting marks back; the drain is retried after a pause."""
+
+
 class SyncEngine:
     def __init__(
         self,
@@ -672,6 +676,13 @@ class SyncEngine:
             progress = True
             dropped += outcome == "dropped"
         if last:
+            # Back of the queue, so the marks behind them aren't held up. Before the commit:
+            # once inbox_applied is past them, the remove below takes them too, so a file
+            # that won't take them leaves the whole batch for a later drain (step pauses
+            # after the raise). A crash between the two leaves a waiting mark in the inbox
+            # twice, which applies to the same result.
+            if waiting and not self._inbox.add_many([replace(r, id=0) for r in waiting]):
+                raise _InboxBusy("waiting marks not re-queued")
             batch.inbox_applied = last
             store.commit(batch)
             self.dropped_marks += dropped
@@ -679,11 +690,11 @@ class SyncEngine:
                 if any(e.touched for e in changed):
                     # A person change waits: the queue is fetched before it goes up.
                     self._set_viewer(viewer, unsent=True, queue_settled=False)
-            if waiting:
-                # Back of the queue, so the marks behind them aren't held up.
-                self._inbox.add_many([replace(r, id=0) for r in waiting])
             self._inbox.remove(last)
-        more = len(records) == DRAIN_BATCH or (bool(waiting) and progress)
+        # A full batch of nothing but waiting marks is not a reason to drain again: those wait
+        # for a library read, which the drain outranks, so going round again would never end.
+        # _read_library drains them once it has read.
+        more = (len(records) == DRAIN_BATCH and len(waiting) < len(records)) or (bool(waiting) and progress)
         self._state = replace(self._state, inbox_waiting=more and last > 0)
 
     def _drain_one(

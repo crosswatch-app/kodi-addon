@@ -86,12 +86,24 @@ class _Response:
         return self._headers.get(name)
 
 
+class _Socket:
+    def settimeout(self, value: float) -> None:
+        pass
+
+    def shutdown(self, how: int) -> None:
+        pass
+
+
 class _Connection:
     """http.client's surface, as SyncClient uses it."""
 
     def __init__(self, cw: ScriptedCrossWatch) -> None:
         self._cw = cw
         self._reply: Reply | None = None
+        self.sock: _Socket | None = None
+
+    def connect(self) -> None:
+        self.sock = _Socket()
 
     def request(
         self, method: str, path: str, body: bytes | None = None, headers: Mapping[str, str] | None = None
