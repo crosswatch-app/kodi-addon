@@ -16,6 +16,9 @@ SETTLE_SECONDS = 2400
 BACKOFF_SECONDS = (5, 15, 60, 300, 900)
 # A media server add-on's map that couldn't be read is tried again after this long.
 SERVER_MAP_RETRY_SECONDS = 60
+# A connect in progress has no socket for SyncClient.cancel() to shut down, so it alone gets
+# a timeout short enough to fit Kodi's exit window; the request and reply keep the full one.
+CONNECT_TIMEOUT_SECONDS = 2.0
 
 MAX_REQUEST_BYTES = 900_000
 MAX_ROWS_PER_LIST = 10_000

@@ -30,7 +30,7 @@ from urllib.parse import urlencode
 
 from resources.lib.constants import HTTP_TIMEOUT_SECONDS, SHUTDOWN_HTTP_TIMEOUT_SECONDS
 from resources.lib.reporter import open_connection, target_of
-from resources.lib.sync.constants import BACKOFF_SECONDS, MAX_REQUEST_BYTES
+from resources.lib.sync.constants import BACKOFF_SECONDS, CONNECT_TIMEOUT_SECONDS, MAX_REQUEST_BYTES
 
 # A queue page of 1000 changes is well under this; a bigger answer is not CrossWatch's.
 MAX_REPLY_BYTES = 8 * 1024 * 1024
@@ -154,12 +154,20 @@ class SyncClient:
         # short timeout the reporter uses too.
         timeout = SHUTDOWN_HTTP_TIMEOUT_SECONDS if self._abort.is_set() else self._timeout
         try:
-            connection = self._factory(self._scheme, self._host, self._port, timeout)
+            connection = self._factory(self._scheme, self._host, self._port, min(timeout, CONNECT_TIMEOUT_SECONDS))
         except Exception as exc:
             raise SyncError(0, "network", True) from exc
         with self._lock:
             self._live = connection
         try:
+            try:
+                connection.connect()
+            except ssl.SSLCertVerificationError as exc:
+                raise SyncError(0, "certificate", True) from exc
+            except Exception as exc:
+                raise SyncError(0, "network", True) from exc
+            # An abort during the connect missed cancel(), which had no socket to shut.
+            connection.sock.settimeout(SHUTDOWN_HTTP_TIMEOUT_SECONDS if self._abort.is_set() else timeout)
             try:
                 connection.request(method, self._base + endpoint, body=body, headers=headers)
             except UnicodeEncodeError as exc:

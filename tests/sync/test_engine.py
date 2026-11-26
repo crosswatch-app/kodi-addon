@@ -19,7 +19,7 @@ from resources.lib.sync.constants import (
     SERVER_MAP_RETRY_SECONDS,
     STATUS_FIGURES_SECONDS,
 )
-from resources.lib.sync.engine import IDLE_SECONDS, SyncEngine, SyncPaths
+from resources.lib.sync.engine import DRAIN_BATCH, IDLE_SECONDS, SyncEngine, SyncPaths
 from resources.lib.sync.files import (
     Inbox,
     InboxRecord,
@@ -463,6 +463,42 @@ def test_waiting_mark_does_not_block_the_others(tmp_path):
     # Nothing more to do until a library read has the show.
     rig.engine.step()
     assert not rig.engine.state.inbox_waiting
+
+
+def test_a_full_batch_of_waiting_marks_does_not_drain_again(tmp_path):
+    rig = Rig(tmp_path)
+    rig.lib.add_show(7, title="Show")
+    count = DRAIN_BATCH + 20
+    for n in range(1, count + 1):
+        rig.lib.add_episode(100 + n, 7, 1, n, file=f"/e/{n}.mkv", playcount=1)
+    rig.ready()
+    marks = [InboxRecord(at=NOW, kind="episode", kodi_id=100 + n, file=f"/e/{n}.mkv", playcount=1)
+             for n in range(1, count + 1)]  # fmt: skip
+    assert rig.inbox.add_many(marks)
+    rig.engine.on_inbox()
+    rig.engine.step()
+    # Every mark waits for a library read that has the show, which the drain must not outrank.
+    assert len(rig.inbox.pending(1000)) == count
+    assert not rig.engine.state.inbox_waiting
+
+
+def test_waiting_marks_stay_when_putting_them_back_fails(tmp_path, monkeypatch):
+    rig = Rig(tmp_path)
+    rig.lib.add_show(7, title="Show")
+    rig.lib.add_episode(41, 7, 1, 1, file="/e/1.mkv", playcount=1)
+    rig.ready()
+    assert rig.inbox.add_many([InboxRecord(at=NOW, kind="episode", kodi_id=41, file="/e/1.mkv", playcount=1)])
+    rig.mark()
+    monkeypatch.setattr(rig.inbox, "add_many", lambda records: False)
+    assert rig.engine.step() == IDLE_SECONDS
+    # Nothing is committed or removed, so the next drain takes the whole batch again.
+    assert [r.kind for r in rig.inbox.pending()] == ["episode", "movie"]
+    assert _store(rig).entries("kv-a") == []
+    monkeypatch.undo()
+    rig.engine.on_inbox()
+    rig.engine.step()
+    assert [r.kind for r in rig.inbox.pending()] == ["episode"]
+    assert _store(rig).entries("kv-a")[0].state.history.watched
 
 
 def test_marks_already_applied_are_not_applied_again(tmp_path, monkeypatch):
