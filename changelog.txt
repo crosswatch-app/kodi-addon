@@ -1,6 +1,24 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.1.1 (2026-11-26)
+-------------------
+Bug Fixes:
+  - Fixed: the add-on did not load on a Kodi 21 built with Python 3.10
+    (Kodi's own builds ship 3.11): typing.Self (playlist_index.py,
+    since 1.0.0) and datetime.UTC (sync/clock.py, sync/screens.py,
+    since 1.1.0) exist only from 3.11. Replaced with the class name and
+    timezone.utc.
+  - Fixed: library sync parsed Kodi's timestamps with
+    datetime.strptime, which in Kodi can raise TypeError after its
+    first use in a session. kodi_to_utc now uses time.strptime, and
+    the status screen's "ago" text the shared parse_utc.
+
+Internal:
+  - pyright checks against Python 3.10 and ruff targets py310, so a
+    name that needs 3.11 fails the gates. The test suite also passed
+    under Python 3.10.21.
+
 v1.1.0 (2026-11-26)
 -------------------
 New Features:
