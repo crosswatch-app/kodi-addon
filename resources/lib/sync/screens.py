@@ -34,7 +34,6 @@ import os
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 from resources.lib import log as logmod
@@ -45,7 +44,7 @@ from resources.lib.log import get_logger
 from resources.lib.models import Viewer
 from resources.lib.playlist_index import IndexBuilder, PlaylistIndex
 from resources.lib.storage import JsonViewerStore, PromptMemory
-from resources.lib.sync.clock import kodi_to_utc
+from resources.lib.sync.clock import kodi_to_utc, parse_utc
 from resources.lib.sync.counts import Counts, count_owners, pair
 from resources.lib.sync.files import (
     Request,
@@ -383,10 +382,10 @@ _VIEWER_PROBLEMS = {
 
 
 def _ago(localised: Callable[[int], str], then: str, now: str) -> str:
-    try:
-        seconds = (_parse_utc(now) - _parse_utc(then)).total_seconds()
-    except ValueError:
+    now_at, then_at = parse_utc(now), parse_utc(then)
+    if now_at is None or then_at is None:
         return localised(NEVER)
+    seconds = (now_at - then_at).total_seconds()
     if seconds < 60:
         return localised(JUST_NOW)
     if seconds < 3600:
@@ -394,10 +393,6 @@ def _ago(localised: Callable[[int], str], then: str, now: str) -> str:
     if seconds < 86400:
         return localised(HOURS_AGO).format(count=int(seconds // 3600))
     return localised(DAYS_AGO).format(count=int(seconds // 86400))
-
-
-def _parse_utc(text: str) -> datetime:
-    return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
 
 
 def _state_line(localised: Callable[[int], str], status: StatusFile) -> tuple[str, Tone]:

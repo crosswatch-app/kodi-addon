@@ -16,8 +16,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          # The Kodi Omega floor, not the newest interpreter. Passing here has to mean
-          # passing on the version the addon actually runs under.
+          # Kodi's own Omega builds ship 3.11; a distro-built Kodi can run 3.10, which
+          # pyrightconfig.json's pythonVersion holds the code to. The dev tools need 3.11.
           python-version: "3.11"
       # The lock carries the full transitive closure with hashes, so a republished or
       # swapped artifact fails the build instead of running inside it.
