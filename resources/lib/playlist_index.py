@@ -23,7 +23,6 @@ rather than as a failure.
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Self
 
 from resources.lib.kodi import KodiApi
 from resources.lib.log import get_logger, log_timing
@@ -71,7 +70,7 @@ class PlaylistIndex:
     def is_empty(self) -> bool:
         return not self.by_key
 
-    def renamed(self, old: str, new: str) -> Self:
+    def renamed(self, old: str, new: str) -> "PlaylistIndex":
         """The same membership under a viewer's new name.
 
         A rename in CrossWatch changes no playlist, so the index stays valid; without this

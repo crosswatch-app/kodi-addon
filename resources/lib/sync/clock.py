@@ -14,7 +14,8 @@ and comes back an hour later; Kodi only stores such a time if the system clock w
 Log events: none.
 """
 
-from datetime import UTC, datetime
+import time
+from datetime import datetime, timezone
 
 KODI_FORMAT = "%Y-%m-%d %H:%M:%S"
 UTC_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -25,8 +26,10 @@ def kodi_to_utc(local: str) -> str:
     if not text or text.startswith("0000"):
         return ""
     try:
-        naive = datetime.strptime(text[:19], KODI_FORMAT)
-        return naive.astimezone().astimezone(UTC).strftime(UTC_FORMAT)
+        # Not datetime.strptime: in Kodi it can raise TypeError after its first use in a
+        # session, as its lazy import of _strptime fails in a later interpreter.
+        naive = datetime(*time.strptime(text[:19], KODI_FORMAT)[:6])
+        return naive.astimezone().astimezone(timezone.utc).strftime(UTC_FORMAT)
     except (ValueError, OverflowError, OSError):
         return ""
 
@@ -51,5 +54,5 @@ def parse_utc(text: str) -> datetime | None:
     except ValueError:
         return None
     if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return moment.astimezone(UTC)
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
