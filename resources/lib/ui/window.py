@@ -6,10 +6,10 @@ its countdown, when Kodi shuts down, and, when asked, when playback starts. Ever
 logged with its reason, so a question that closed itself can be told apart from one the
 household skipped.
 """
+from __future__ import annotations
 
 import threading
-from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import xbmcgui
 

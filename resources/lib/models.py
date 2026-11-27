@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Domain objects. These are what the addon reasons about; payload.py turns them into JSON."""
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Literal

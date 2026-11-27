@@ -17,6 +17,7 @@ proxy's 413 is the one status worth acting on, because only a smaller request ge
 
 Log events: none; the engine logs outcomes with the endpoint and status.
 """
+from __future__ import annotations
 
 import gzip
 import json

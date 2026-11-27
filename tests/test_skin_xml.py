@@ -1,4 +1,5 @@
-import itertools
+from __future__ import annotations
+
 import re
 import struct
 import xml.etree.ElementTree as ET
@@ -233,7 +234,7 @@ def test_pick_row_columns_leave_room_for_long_playlist_names_without_overlapping
         assert title[1] - title[0] >= 600
         ordered = sorted(spans.values())
         assert len(ordered) == 4  # title, detail, tag, tick
-        assert all(a[1] <= b[0] for a, b in itertools.pairwise(ordered)), ordered
+        assert all(a[1] <= b[0] for a, b in zip(ordered, ordered[1:])), ordered
 
 
 def test_the_icons_are_64_pixel_rgba_pngs():

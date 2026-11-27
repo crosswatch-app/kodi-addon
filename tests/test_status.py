@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib import status
 from resources.lib.config import KEY_STATUS
 from resources.lib.constants import STATUS_NOT_PAIRED, STATUS_PAIRED

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 
 from resources.lib.media import MediaResolver, strip_credentials

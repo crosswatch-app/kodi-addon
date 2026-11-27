@@ -17,10 +17,11 @@ item it is.
 
 Log events: none; callers log counts.
 """
+from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Tuple
 
 from resources.lib.media import clean_ids
 from resources.lib.models import Viewer
@@ -29,7 +30,7 @@ from resources.lib.prompt import LIBRARY_KEY_PREFIX, key_for_show
 from resources.lib.storage import RememberedAnswer
 from resources.lib.sync.items import LibraryRow
 
-OwnersOf = Callable[[LibraryRow], tuple[str, ...]]
+OwnersOf = Callable[[LibraryRow], Tuple[str, ...]]
 
 
 @dataclass(frozen=True)

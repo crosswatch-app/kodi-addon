@@ -27,6 +27,7 @@ which puts that row back in the normal path.
 
 Log events: sync.rating_scan.done (debug), sync.rating_scan.held (info).
 """
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace

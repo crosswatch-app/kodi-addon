@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import socket
 import threading
@@ -28,7 +30,7 @@ class FakeResponse:
 
 
 class FakeSocket:
-    def __init__(self, server: "FakeServer") -> None:
+    def __init__(self, server: FakeServer) -> None:
         self.server = server
 
     def settimeout(self, value: float) -> None:
@@ -39,7 +41,7 @@ class FakeSocket:
 
 
 class FakeConnection:
-    def __init__(self, server: "FakeServer", timeout: float) -> None:
+    def __init__(self, server: FakeServer, timeout: float) -> None:
         self.server = server
         self.timeout = timeout
         self.sock: FakeSocket | None = None

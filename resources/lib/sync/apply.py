@@ -20,6 +20,7 @@ own change was pending) and is settled only once a later upload carried it.
 
 Log events: none; the engine logs counts.
 """
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace

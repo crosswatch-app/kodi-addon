@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 from resources.lib.routes import Person, RouteFacts, parse_people, parse_routes

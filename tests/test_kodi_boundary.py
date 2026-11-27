@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.kodi import WINDOW_INVALID, KodiApi
 from tests.fakes import FakeKodi
 

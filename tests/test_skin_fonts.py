@@ -1,4 +1,6 @@
 """Tests for skin-adaptive font mapping."""
+from __future__ import annotations
+
 import os
 import time
 

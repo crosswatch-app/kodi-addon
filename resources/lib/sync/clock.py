@@ -13,6 +13,7 @@ and comes back an hour later; Kodi only stores such a time if the system clock w
 
 Log events: none.
 """
+from __future__ import annotations
 
 import time
 from datetime import datetime, timezone

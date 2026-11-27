@@ -18,6 +18,7 @@ everything. Only Start creates the file.
 
 Log events: none; the engine logs what a batch did.
 """
+from __future__ import annotations
 
 import json
 import os

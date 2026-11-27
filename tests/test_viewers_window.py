@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.ui.panel import PanelLine
 from resources.lib.ui.viewers_window import (
     PANEL_SLOTS,

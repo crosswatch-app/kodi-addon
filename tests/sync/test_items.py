@@ -3,6 +3,7 @@
 The expected values below were produced by running CrossWatch's own normalize_uniqueids,
 _tokens, _identity and _keep_show_ids (dev build sha256:59d8cfbb...) on these inputs.
 """
+from __future__ import annotations
 
 from typing import Any
 

@@ -7,6 +7,7 @@ hand-written copy of those rules drifted from the real ones on most scenarios an
 again with every CrossWatch change. Tests here script the replies they need, as CrossWatch
 would send them, and assert on what the add-on sent.
 """
+from __future__ import annotations
 
 import json
 import zlib
@@ -58,7 +59,7 @@ class ScriptedCrossWatch:
     def sent_to(self, endpoint: str) -> list[Sent]:
         return [s for s in self.sent if s.endpoint == endpoint]
 
-    def connection_factory(self, scheme: str, host: str, port: int | None, timeout: float) -> "_Connection":
+    def connection_factory(self, scheme: str, host: str, port: int | None, timeout: float) -> _Connection:
         return _Connection(self)
 
     def answer(self, method: str, path: str, body: bytes | None, headers: Mapping[str, str]) -> Reply:

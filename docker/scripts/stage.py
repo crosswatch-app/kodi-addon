@@ -8,6 +8,7 @@ cannot reach a user by being forgotten.
     stage.py folder DEST   replace DEST with the add-on's files
     stage.py zip OUTDIR    write OUTDIR/<id>-v<version>.zip and print its path
 """
+from __future__ import annotations
 
 import os
 import shutil

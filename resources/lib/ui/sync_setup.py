@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """What the library sync setup window shows and what it returns; no Kodi objects here."""
+from __future__ import annotations
 
 from dataclasses import dataclass
 

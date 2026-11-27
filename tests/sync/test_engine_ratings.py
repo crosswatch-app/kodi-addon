@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import replace
 
 from resources.lib.sync.constants import MASS_RATING_CHANGE, RATING_SCAN_SECONDS, SETTLE_SECONDS
@@ -37,6 +39,19 @@ def test_rating_set_in_kodi_goes_into_the_record(tmp_path):
     seen = rig.store().seen(_key(rig))
     assert seen is not None and seen.userrating == 8
     assert rig.engine.state.viewers["kv-a"].unsent
+
+
+def test_a_scan_over_an_incomplete_read_waits_and_asks_for_a_new_read(tmp_path):
+    rig = _after_first_full(tmp_path)
+    assert rig.engine.library is not None
+    rig.engine.library = replace(rig.engine.library, complete=False)
+    rig.engine._state = replace(
+        rig.engine.state, viewers={"kv-a": replace(rig.engine.state.viewers["kv-a"], full_due=False)}
+    )
+    _scan(rig)
+    # Not due again at once: the scan can't come out complete until the library is read again.
+    assert rig.engine._last_rating_scan == rig.clock.now
+    assert rig.engine.state.viewers["kv-a"].full_due
 
 
 def test_rating_on_one_copy_gives_the_other_copy_the_value(tmp_path):

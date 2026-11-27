@@ -3,6 +3,7 @@
 data/cw_merge_wins.json holds CrossWatch's own _merge_wins answer (dev build
 sha256:59d8cfbb...) for every combination of watched, explicit and event or src it was run on.
 """
+from __future__ import annotations
 
 import json
 from pathlib import Path

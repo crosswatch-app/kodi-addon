@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import threading
 
 import resources.lib.service.main as main_mod

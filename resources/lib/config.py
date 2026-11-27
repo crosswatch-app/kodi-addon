@@ -5,6 +5,7 @@ The token is stored separately from the webhook URL and travels only in the
 X-CrossWatch-Token header, so the credential never exists inside a URL that a logging path,
 a proxy log or an error message could reach.
 """
+from __future__ import annotations
 
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit

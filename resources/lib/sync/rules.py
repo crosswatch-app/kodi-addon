@@ -14,6 +14,7 @@ Everything is UTC; the writer converts dates to Kodi's local time.
 
 Log events: none.
 """
+from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import timedelta

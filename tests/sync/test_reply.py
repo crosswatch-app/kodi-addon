@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.sync.reply import PingTicket, ReplyViewer, connection_id, parse_reply
 
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.service.playback_monitor import PlaybackMonitor
 from resources.lib.service.service_monitor import ServiceMonitor
 

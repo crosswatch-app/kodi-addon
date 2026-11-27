@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import sys
+
 import pytest
 
 from resources.lib.constants import WINDOW_COUNT_SOME
@@ -93,6 +97,7 @@ def test_a_request_without_bulk_labels_has_no_bulk_button():
     assert bulk_label(plain, 3) == "" and bulk_label(plain, 1) == ""
 
 
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="dataclass kw_only needs Python 3.10")
 def test_a_request_takes_keywords_only():
     """The fields' order changed: a positional call would put 'Forget all' in the count."""
     with pytest.raises(TypeError):

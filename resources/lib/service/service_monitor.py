@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Lifecycle callbacks: settings changes, video library scans and, for library sync, Kodi's
 library notifications (classified at once, on this thread, by the sync hooks)."""
+from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any

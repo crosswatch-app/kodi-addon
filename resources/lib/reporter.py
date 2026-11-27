@@ -9,16 +9,16 @@ disabled webhook source and for a route with no sink configured.
 Each event is delivered only within two minutes of being handed over, which is the
 contract's retry window measured from the event rather than from the attempt.
 """
+from __future__ import annotations
 
 import http.client
 import json
 import queue
 import threading
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
-from typing import Any, Literal, Protocol
+from typing import Any, Callable, Dict, Literal, Optional, Protocol, Union
 from urllib.parse import urlsplit
 
 from resources.lib.constants import (
@@ -40,7 +40,7 @@ _log = get_logger("reporter")
 
 ALLOWED_SCHEMES = ("http", "https")
 
-Event = PlaybackEvent | PingEvent
+Event = Union[PlaybackEvent, PingEvent]
 
 # accepted: delivered. refused: a decision, not a hiccup, so never worth sending again.
 # unreachable: nothing decided, so a later attempt may still succeed.
@@ -48,7 +48,7 @@ Verdict = Literal["accepted", "refused", "unreachable"]
 
 # A ping reply's library_sync block (None when it had none, or was a 4xx) and the ticket the
 # ping carried.
-LibrarySyncReply = Callable[[dict[str, Any] | None, PingTicket | None], None]
+LibrarySyncReply = Callable[[Optional[Dict[str, Any]], Optional[PingTicket]], None]
 
 # One attempt's result. foreign: a 3xx or 4xx without CrossWatch's reply shape, such as a
 # reverse proxy's login page. Not retried live, like any 4xx, but it says nothing about the

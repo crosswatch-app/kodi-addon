@@ -20,12 +20,13 @@ those rules; this list only says which rows went up.
 
 Log events: none.
 """
+from __future__ import annotations
 
 import gzip
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict, List
 
 from resources.lib.sync.constants import MAX_FULL_ROWS, MAX_PARTS, MAX_REQUEST_BYTES, MAX_ROWS_PER_LIST
 from resources.lib.sync.items import ItemKind
@@ -141,7 +142,7 @@ def _fits(raw: bytes, max_bytes: int) -> bool:
     return len(gzip.compress(raw)) <= max_bytes
 
 
-Lists = dict[str, list[dict[str, Any]]]
+Lists = Dict[str, List[Dict[str, Any]]]
 
 
 def _split_to_fit(

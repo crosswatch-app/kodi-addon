@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib import connect, remembered, scripts, viewer_config
 from resources.lib.sync import screens
 

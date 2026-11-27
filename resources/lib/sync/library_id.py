@@ -21,6 +21,7 @@ advanced_settings.py (no PyPI dependency; ElementTree expands no external entiti
 
 Log events: sync.library_id.unparseable (master).
 """
+from __future__ import annotations
 
 import hashlib
 import re

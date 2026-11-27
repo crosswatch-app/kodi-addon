@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.constants import WHO_WATCHED_EPISODE
 from resources.lib.kodi import KodiRpcError
 from resources.lib.ui.who_watched import (

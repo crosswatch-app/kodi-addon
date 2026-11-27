@@ -5,6 +5,7 @@ The setup screen counts from its own library read; the engine counts after each 
 and keeps the result in the status file, so the status screen opens without reading the
 library. Both count with the same owners function the engine syncs with.
 """
+from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
