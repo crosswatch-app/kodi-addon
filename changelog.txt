@@ -1,6 +1,18 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.1.4 (2026-11-27)
+-------------------
+Bug Fixes:
+  - Fixed: a rating from the rating window on a direct-path
+    PlexKodiConnect or Jellyfin for Kodi item added since the last
+    library read was recorded and sent. _rating_writes now reads the
+    server add-ons' maps again, as _drain_inbox does, and keeps the
+    writes when a map can't be read.
+
+Internal:
+  - Found by the kodi-review bot on xbmc/repo-scripts#2996.
+
 v1.1.3 (2026-11-27)
 -------------------
 Bug Fixes:
