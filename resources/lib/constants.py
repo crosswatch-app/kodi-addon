@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Addon-wide constants. No behaviour lives here."""
+from __future__ import annotations
 
 ADDON_ID = "service.crosswatch"
 LOG_NAME = "crosswatch"

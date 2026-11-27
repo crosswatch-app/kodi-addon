@@ -6,6 +6,8 @@ checks; the intervals are the add-on's choices, each explained where it is used.
 """
 
 # Nothing is read, uploaded, fetched or written while something plays or for this long after.
+from __future__ import annotations
+
 PLAYBACK_QUIET_SECONDS = 60
 DAILY_FULL_SECONDS = 86_400
 QUEUE_FALLBACK_SECONDS = 900

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Print one piece of addon metadata. Paths arrive as argv, never spliced into source."""
+from __future__ import annotations
 
 import re
 import sys

@@ -4,6 +4,7 @@
 Development only, never shipped. It imports the installed add-on's own window classes, so a
 screenshot shows exactly what the household sees, with the same font mapping.
 """
+from __future__ import annotations
 
 import json
 import os

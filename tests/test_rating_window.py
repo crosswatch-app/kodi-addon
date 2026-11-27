@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.constants import RATING_QUESTION_HOUSEHOLD, RATING_QUESTION_NAMED, WINDOW_COUNT_SOME
 from resources.lib.ui.rating import RATE_FAILED, SCORE_WORDS, counter_text, question_text
 

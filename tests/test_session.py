@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.constants import SEEK_MIN_GAP_SECONDS as SEEK_GAP
 from resources.lib.identity import UNRESOLVED
 from resources.lib.models import MediaItem

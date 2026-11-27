@@ -4,6 +4,7 @@
 The loop is the only pump for Kodi's Python callback queue, so it must survive anything the
 tick throws: a returned main() means no further callback is ever delivered.
 """
+from __future__ import annotations
 
 import threading
 import time

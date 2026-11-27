@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """What the library sync status window shows, and what the household chose on it."""
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal

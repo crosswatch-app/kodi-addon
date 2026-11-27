@@ -14,6 +14,7 @@ neither rewrites the other's data, which a JSON file replaced whole would.
 Log events: sync.inbox.full (dropped), sync.inbox.busy, sync.inbox.write_failed,
 sync.inbox.corrupt.
 """
+from __future__ import annotations
 
 import contextlib
 import os

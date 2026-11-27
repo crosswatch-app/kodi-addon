@@ -11,6 +11,7 @@ middle of _flush_pending, which is written for that, and so do the rating window
 follow a stop. The reporter worker touches only its own queue. Library sync's worker reads
 `snapshot`, which is replaced whole on this thread and never changed in place.
 """
+from __future__ import annotations
 
 import threading
 from collections.abc import Callable

@@ -13,6 +13,7 @@ still comes from the capture is every value inside it. Task 16 recaptures the wh
 from a live Kodi once the wire format is finished, which is what restores this file to a
 verbatim record.
 """
+from __future__ import annotations
 
 import json
 from pathlib import Path

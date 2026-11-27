@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 
 from resources.lib.sync.library_id import (

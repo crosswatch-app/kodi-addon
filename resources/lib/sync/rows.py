@@ -18,6 +18,7 @@ state, not Kodi state"):
 
 Log events: none; the engine logs counts.
 """
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace

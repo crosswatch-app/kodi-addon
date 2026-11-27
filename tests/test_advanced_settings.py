@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 
 from resources.lib.advanced_settings import DEFAULTS, read_thresholds

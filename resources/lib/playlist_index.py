@@ -19,6 +19,7 @@ is dropped entirely rather than indexed from the half that worked: a partial set
 the shows it happens to contain and silently misses the rest, which reads as an answer
 rather than as a failure.
 """
+from __future__ import annotations
 
 import re
 from collections.abc import Callable
@@ -70,7 +71,7 @@ class PlaylistIndex:
     def is_empty(self) -> bool:
         return not self.by_key
 
-    def renamed(self, old: str, new: str) -> "PlaylistIndex":
+    def renamed(self, old: str, new: str) -> PlaylistIndex:
         """The same membership under a viewer's new name.
 
         A rename in CrossWatch changes no playlist, so the index stays valid; without this

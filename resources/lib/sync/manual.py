@@ -21,10 +21,11 @@ until CrossWatch brings a watch made after it.
 
 Log events: none; the engine logs counts.
 """
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Union
 
 from resources.lib.sync.items import LibraryRow, identity
 from resources.lib.sync.record import (
@@ -63,7 +64,7 @@ class Ignored:
     reason: str
 
 
-LocalOutcome = Recorded | ToAssign | Ignored
+LocalOutcome = Union[Recorded, ToAssign, Ignored]
 
 
 def _watched_history(old: History, playcount: int, lastplayed: str) -> History:

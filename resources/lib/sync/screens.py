@@ -29,6 +29,7 @@ showing the engine's state as of then.
 Log events: sync.setup.started, sync.setup.unreadable (info); sync.setup.library_unreadable,
 sync.setup.not_saved, sync.setup.record_set_aside (warning).
 """
+from __future__ import annotations
 
 import os
 import time
@@ -538,7 +539,7 @@ def run_status(kodi: KodiApi, now_utc: Callable[[], str]) -> None:
             if answer is not None:
                 _ask(kodi, requests_path, _new_request("mass_ratings_send" if answer else "mass_ratings_drop"))
         elif chosen.startswith("assign:") and status is not None:
-            _assign(kodi, requests_path, chosen.removeprefix("assign:"), status, viewers)
+            _assign(kodi, requests_path, chosen[len("assign:") :], status, viewers)
         elif chosen == "unowned" and status is not None:
             _show_unowned(kodi, status.unowned_titles)
 

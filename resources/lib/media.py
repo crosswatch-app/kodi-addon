@@ -12,6 +12,7 @@ library here returned {"imdb": "None", "tvdb": "None", "tvrage": "None"} for a s
 reach the wire looking like ids, so the receiver routes on them and the no-usable-id gate
 sees an item that is in fact unidentifiable.
 """
+from __future__ import annotations
 
 import re
 from dataclasses import dataclass

@@ -4,6 +4,7 @@ Kodi gives a script window no includes or named colours of its own, so the windo
 share a style file at runtime. These tokens are that file: a new window passes them, and a
 window that has to differ changes the token here, with its reason.
 """
+from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET

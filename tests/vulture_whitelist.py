@@ -14,6 +14,7 @@ excludes `tests/` wholesale.
 Add a name here only when an external caller owns the signature. Anything else is dead code
 and should be deleted instead.
 """
+from __future__ import annotations
 
 
 class _PlayerCallbacks:

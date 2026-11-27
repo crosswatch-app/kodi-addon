@@ -13,6 +13,7 @@ Kodi now and then because a scan's end notification can be missed.
 
 Log events: sync.hooks.bad_notification (debug), sync.hooks.person_mark (debug).
 """
+from __future__ import annotations
 
 import json
 from collections.abc import Callable

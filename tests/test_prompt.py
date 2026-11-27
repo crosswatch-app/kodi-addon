@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import replace
 
 from resources.lib.advanced_settings import Thresholds

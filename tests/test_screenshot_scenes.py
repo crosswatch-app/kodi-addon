@@ -3,6 +3,7 @@
 The capture itself needs a running Kodi (docker/scripts/screenshots.py); these checks keep
 a new window or a new scene from landing without one.
 """
+from __future__ import annotations
 
 import json
 from pathlib import Path

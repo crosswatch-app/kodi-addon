@@ -1,4 +1,5 @@
 """What ships: the staging script decides what a test install and a release zip contain."""
+from __future__ import annotations
 
 import stat
 import subprocess

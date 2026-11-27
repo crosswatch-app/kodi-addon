@@ -20,6 +20,7 @@ announces the current count (VideoDatabase.cpp:6672-6673). Refresh information r
 row (a new id unless it was the highest, so SQLite reuses it) and announces it with "added".
 Clean and rescan loses the play count and bookmark, kept per file row.
 """
+from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any

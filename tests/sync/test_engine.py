@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sqlite3
 import threading
@@ -711,6 +713,31 @@ def test_a_mark_on_a_row_the_server_add_on_added_since_the_last_read_is_left_out
     assert store is not None and store.entries("kv-a") == []
 
 
+PLUGIN_FILE = "plugin://plugin.video.jellyfin/?mode=play&id=abc"
+
+
+def test_a_mark_on_a_plugin_row_added_since_the_last_read_is_left_out(tmp_path):
+    rig = Rig(tmp_path)
+    rig.lib.add_movie(5, title="Server film", year=2001, uniqueid={"tmdb": "5"}, file=PLUGIN_FILE, playcount=1)
+    rig.ready()  # the last read had no row 5, so the service thread knew no file for it
+    assert rig.inbox.add_many([InboxRecord(at=NOW, kind="movie", kodi_id=5, file="", playcount=1)])
+    rig.engine.on_inbox()
+    rig.engine.step()
+    assert rig.inbox.pending() == [] and rig.engine.dropped_marks == 0
+    store = rig.engine._store
+    assert store is not None and store.entries("kv-a") == []
+
+
+def test_a_rating_window_write_on_a_plugin_row_is_left_out(tmp_path):
+    rig = Rig(tmp_path)
+    rig.lib.add_movie(5, title="Server film", year=2001, uniqueid={"tmdb": "5"}, file=PLUGIN_FILE, userrating=8)
+    rig.ready()
+    rig.engine.on_rating_written("movie", 5, 8, ("kv-a",))
+    rig.engine.step()
+    store = rig.engine._store
+    assert store is not None and rig.engine.rating_writes == [] and store.entries("kv-a") == []
+
+
 def test_an_unreadable_server_map_holds_the_drain(tmp_path):
     rig = Rig(tmp_path)
     rig.kodi.root = str(tmp_path / "kodi")
@@ -766,7 +793,7 @@ def test_status_names_unreadable_playlists_and_recounts_on_a_new_index(tmp_path)
     assert status.counts["unowned"] == [0, 1] and status.unowned_titles == ["Film (2001)"]
 
 
-def _status_of(rig: "Rig", **viewer: object) -> tuple[str, str, dict]:
+def _status_of(rig: Rig, **viewer: object) -> tuple[str, str, dict]:
     state = rig.engine.state
     vs = replace(plan.ViewerState(), settled=True, **viewer)  # type: ignore[arg-type]
     rig.engine._state = replace(state, viewers={"kv-a": vs})
@@ -776,7 +803,7 @@ def _status_of(rig: "Rig", **viewer: object) -> tuple[str, str, dict]:
     return status.state, status.reason, status.per_viewer
 
 
-def _cw_ready(rig: "Rig") -> None:
+def _cw_ready(rig: Rig) -> None:
     rig.ready()
     reply = SyncReply(enabled=True, reason=None, viewers={"kv-a": ReplyViewer("default", 0)}, queue_pending=0)
     rig.engine._state = replace(rig.engine.state, reply=reply)
@@ -850,7 +877,7 @@ def test_upload_figures_recounted_at_most_every_so_often(tmp_path):
     assert status is not None and status.waiting_changes == 1
 
 
-def _mapped(rig: "Rig", **viewer: object) -> None:
+def _mapped(rig: Rig, **viewer: object) -> None:
     reply = SyncReply(enabled=True, reason=None, viewers={"kv-a": ReplyViewer("default", 0)}, queue_pending=0)
     vs = replace(plan.ViewerState(), first_full_committed=True, **viewer)  # type: ignore[arg-type]
     rig.engine._state = replace(rig.engine.state, reply=reply, viewers={"kv-a": vs}, start_full_pending=False)

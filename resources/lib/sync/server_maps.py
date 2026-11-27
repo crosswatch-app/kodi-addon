@@ -22,6 +22,7 @@ so a read sees the last committed state while that add-on writes, and leaves the
 
 Log events: sync.server_map.unreadable (map, error_type).
 """
+from __future__ import annotations
 
 import os
 import sqlite3

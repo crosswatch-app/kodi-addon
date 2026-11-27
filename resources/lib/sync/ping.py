@@ -11,6 +11,7 @@ sync sends the ping it always sent.
 
 Log events: none.
 """
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from typing import Any, Literal

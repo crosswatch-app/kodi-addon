@@ -22,15 +22,16 @@ sync.engine.input_failed (warning), sync.engine.record_busy (info), sync.engine.
 sync.owners_moved (info),
 sync.owners_moved_failed (warning), sync.record.missing (warning).
 """
+from __future__ import annotations
 
 import os
 import sqlite3
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from resources.lib import paths
 from resources.lib.config import Settings
@@ -137,7 +138,7 @@ class SyncPaths:
     status: str
 
     @classmethod
-    def of(cls, kodi: KodiApi) -> "SyncPaths":
+    def of(cls, kodi: KodiApi) -> SyncPaths:
         return cls(
             db=paths.sync_db_path(kodi),
             inbox=paths.sync_inbox_path(kodi),
@@ -728,6 +729,11 @@ class SyncEngine:
         if fresh is None:
             _log.info("sync.drain.dropped", kind=record.kind, kodi_id=record.kodi_id, reason="other_item")
             return "dropped"
+        if is_server_backed(fresh.key.file):
+            # Added by the server add-on since the last read: the service thread had no file
+            # for the row, so only the fresh read tells.
+            _log.debug("sync.drain.server_backed", kind=record.kind, kodi_id=record.kodi_id)
+            return "server"
         show = library.tvshows.get(fresh.show_kodi_id) if fresh.show_kodi_id is not None else None
         if kind == "episodes" and show is None:
             return "wait"
@@ -1502,7 +1508,8 @@ class SyncEngine:
             except Exception:
                 self.rating_writes.append(write)
                 continue
-            if row is None:
+            if row is None or (kind, kodi_id) in library.server_backed or is_server_backed(row.key.file):
+                # A media server add-on's item: it syncs that item with its server itself.
                 continue
             batch = Batch()
             if int(row.raw.get("userrating") or 0) == value:
@@ -1546,8 +1553,14 @@ class SyncEngine:
             held=held,
             may_continue=lambda: not self._interrupted(),
         )
-        if result.complete:
+        if result.complete or not self._interrupted():
+            # A scan over an incomplete read is never complete, so waiting for a complete one
+            # would scan again at once until the next full; it waits its interval instead.
             self._last_rating_scan = self._clock()
+        if not library.complete and not self._interrupted():
+            # The read is what keeps the scan (and fetches and deltas) short of complete, and
+            # nothing else reads again before the daily full.
+            self._state = plan.request_full(self._state)
         if result.released:
             self.held_ratings = [f for f in self.held_ratings if not set(f.rated) & result.released]
         if result.held:

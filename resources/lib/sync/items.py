@@ -12,6 +12,7 @@ identity: Refresh information gives a row a new id, and SQLite reuses the highes
 
 Log events: none; callers log what a read produced.
 """
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass

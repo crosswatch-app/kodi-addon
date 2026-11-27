@@ -10,6 +10,7 @@ missing block or an unsupported version means sync is off (contract, Ping).
 
 Log events: none.
 """
+from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field

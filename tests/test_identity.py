@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.identity import UNRESOLVED, Identity, resolve
 from resources.lib.models import MediaItem, Viewer
 from resources.lib.playlist_index import PlaylistIndex

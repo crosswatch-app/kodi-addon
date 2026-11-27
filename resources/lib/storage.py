@@ -7,6 +7,7 @@ lists, so they cannot drift from its route usernames, is people.py's job.
 Neither reads nor writes raise. A write sits on the stop path, so a full disk must cost an
 attribution rather than a watch.
 """
+from __future__ import annotations
 
 import contextlib
 import json

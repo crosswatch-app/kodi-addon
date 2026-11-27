@@ -4,6 +4,7 @@ CI installs from the locks, not from the requirements files. Dependabot bumps a 
 file but cannot regenerate a hash lock, so a bump without a fresh lock would change nothing
 CI runs; this fails it until the lock is regenerated with the command in the file's header.
 """
+from __future__ import annotations
 
 import re
 from pathlib import Path

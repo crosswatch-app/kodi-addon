@@ -16,6 +16,7 @@ A new window needs a scene (tests/test_screenshot_scenes.py fails without one), 
 of this script recaptures every window, new or changed. Needs ImageMagick (import, convert)
 and Estuary as the active skin, so the committed images share one look.
 """
+from __future__ import annotations
 
 import argparse
 import json

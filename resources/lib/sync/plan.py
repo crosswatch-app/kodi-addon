@@ -32,10 +32,11 @@ since its ping was built and none is in flight: one that crossed an upload says 
 
 Log events: none; the engine logs what it does.
 """
+from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Literal
+from typing import Literal, Tuple, Union
 
 from resources.lib.sync.client import SyncError
 from resources.lib.sync.clock import parse_utc
@@ -233,22 +234,22 @@ class Wait:
     until: float
 
 
-Action = (
-    Idle
-    | Ping
-    | RequestRebuild
-    | DrainInbox
-    | TakeRequests
-    | FullUpload
-    | Delta
-    | FetchQueue
-    | SendAcks
-    | SendExistingRatings
-    | WriteKodi
-    | ReadLibrary
-    | RatingScan
-    | Wait
-)
+Action = Union[
+    Idle,
+    Ping,
+    RequestRebuild,
+    DrainInbox,
+    TakeRequests,
+    FullUpload,
+    Delta,
+    FetchQueue,
+    SendAcks,
+    SendExistingRatings,
+    WriteKodi,
+    ReadLibrary,
+    RatingScan,
+    Wait,
+]
 
 
 def local_active(state: EngineState) -> bool:
@@ -472,7 +473,7 @@ def queue_fallback(state: EngineState) -> EngineState:
     return replace(state, viewers=viewers)
 
 
-ViewerMapping = tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]]
+ViewerMapping = Tuple[str, Tuple[str, ...], Tuple[Tuple[str, str], ...]]
 
 
 def mapping_of(library_id: str, reply: SyncReply) -> ViewerMapping:

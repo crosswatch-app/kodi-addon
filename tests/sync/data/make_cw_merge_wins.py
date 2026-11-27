@@ -3,6 +3,7 @@
 Run with CrossWatch's root as the first argument, so its own _merge_wins answers every case:
     python3 -I tests/sync/data/make_cw_merge_wins.py /path/to/CrossWatch
 """
+from __future__ import annotations
 
 import itertools
 import json

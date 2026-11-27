@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import json
 import os
@@ -381,7 +383,7 @@ def _retaken_before_the_rename(tmp_path, monkeypatch) -> tuple[str, list[int]]:
 
 def test_a_stale_lock_broken_and_retaken_by_another_waiter_is_not_taken_from_it(tmp_path, monkeypatch):
     lock, other = _retaken_before_the_rename(tmp_path, monkeypatch)
-    with file_lock(lock.removesuffix(".lock"), timeout=0.1):
+    with file_lock(lock[: -len(".lock")], timeout=0.1):
         assert os.path.samestat(os.fstat(other[0]), os.stat(lock))
     # Still the other holder's, for it to release.
     assert os.path.samestat(os.fstat(other[0]), os.stat(lock))
@@ -396,7 +398,7 @@ def test_a_retaken_lock_is_renamed_back_where_links_are_not_supported(tmp_path, 
         raise PermissionError
 
     monkeypatch.setattr(os, "link", unsupported)
-    with file_lock(lock.removesuffix(".lock"), timeout=0.1):
+    with file_lock(lock[: -len(".lock")], timeout=0.1):
         assert os.path.samestat(os.fstat(other[0]), os.stat(lock))
     assert [name for name in os.listdir(tmp_path) if ".stale." in name] == []
     os.close(other[0])
@@ -413,7 +415,7 @@ def test_a_lock_taken_while_the_name_was_free_is_not_overwritten(tmp_path, monke
         real_link(src, dst)
 
     monkeypatch.setattr(os, "link", taken_meanwhile)
-    with file_lock(lock.removesuffix(".lock"), timeout=0.1):
+    with file_lock(lock[: -len(".lock")], timeout=0.1):
         assert os.path.samestat(os.fstat(third[0]), os.stat(lock))
     assert os.path.samestat(os.fstat(third[0]), os.stat(lock))
     assert [name for name in os.listdir(tmp_path) if ".stale." in name] == []

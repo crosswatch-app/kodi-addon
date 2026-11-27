@@ -1,11 +1,16 @@
 # Dev tooling configuration only. Excluded from the packaged Kodi addon zip.
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py38"
 line-length = 120
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# Kodi 21 for Windows and Xbox bundles Python 3.8, where builtin generics and X | Y in an
+# annotation raise TypeError when the module loads; postponed evaluation makes them strings.
+required-imports = ["from __future__ import annotations"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

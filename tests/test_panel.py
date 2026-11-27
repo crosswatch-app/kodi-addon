@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from resources.lib.ui.panel import PanelLine, fit, slot_properties
 
 SLOTS = 8

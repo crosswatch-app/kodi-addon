@@ -8,6 +8,7 @@ through Addons.ExecuteAddon as key=value arguments, action=link first.
 Each screen is imported only when chosen: a settings script runs in a fresh interpreter, and
 the viewer dialog should not pay for the pairing code's imports.
 """
+from __future__ import annotations
 
 REMEMBERED = "remembered"
 PAIR = "pair"

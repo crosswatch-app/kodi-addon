@@ -9,6 +9,7 @@ under the same name gets its old id from the store's retired list. The contract 
 
 Log events: sync.ids.assigned (count).
 """
+from __future__ import annotations
 
 import re
 import secrets

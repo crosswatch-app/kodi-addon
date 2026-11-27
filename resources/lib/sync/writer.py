@@ -15,6 +15,7 @@ back with a second write that sets it explicitly, which Kodi applies after the c
 Log events: sync.writer.restored_copy (kodi_id), sync.writer.failed (kind, kodi_id, error),
 sync.writer.batch (debug: writes, outcome, duration_ms).
 """
+from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Iterable, Mapping
@@ -345,7 +346,7 @@ class Writer:
             raise _Stop
         return read_row(self._kodi, key, self._library.tvshows)
 
-    def _write_batch(self, batch: list[PendingWrite]) -> "_BatchOutcome":
+    def _write_batch(self, batch: list[PendingWrite]) -> _BatchOutcome:
         out = _BatchOutcome()
         for write in batch:
             try:
@@ -354,7 +355,7 @@ class Writer:
                 out.deferred += 1
         return out
 
-    def _write_one(self, write: PendingWrite, out: "_BatchOutcome") -> None:
+    def _write_one(self, write: PendingWrite, out: _BatchOutcome) -> None:
         if not self._may_write():
             raise _Stop
         fresh = [r for r in (self._read(c.key) for c in self._copies(write)) if r is not None]
@@ -430,7 +431,7 @@ class Writer:
         row: LibraryRow,
         fields: dict[str, Any],
         flights: list[dict[str, Any]],
-        out: "_BatchOutcome",
+        out: _BatchOutcome,
     ) -> bool | None:
         """True when the write landed, False when Kodi holds something else, None when the
         request failed or the writer had to stop."""

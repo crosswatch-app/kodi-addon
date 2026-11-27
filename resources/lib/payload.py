@@ -16,6 +16,7 @@ no usable episode id.
 A rate carries the stop's media block without the playback fields (contract, Ratings): its
 score is about the item, not about where playback was.
 """
+from __future__ import annotations
 
 from typing import Any
 

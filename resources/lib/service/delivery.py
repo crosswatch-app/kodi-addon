@@ -4,10 +4,11 @@
 Pairing, a Link, a pasted URL and Unpair all end as a settings change, and this is what
 turns one into a new delivery path without a Kodi restart.
 """
+from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Optional, Tuple
 
 from resources.lib import status
 from resources.lib.config import Settings
@@ -25,7 +26,7 @@ _log = get_logger("service")
 
 # The URL the reporter posts to and the token in its header. None for the URL means
 # unconfigured, whatever the token says.
-Endpoint = tuple[str | None, str]
+Endpoint = Tuple[Optional[str], str]
 
 
 def _endpoint(settings: Settings) -> Endpoint:

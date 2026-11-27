@@ -4,6 +4,7 @@
 A leaf module, so the rules, the writer and the scripts can all take it without importing
 config.py and the Kodi settings behind it.
 """
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal

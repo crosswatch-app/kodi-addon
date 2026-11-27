@@ -5,6 +5,7 @@ The id is generated once and persisted. Defaulting it to the addon id would give
 install in a household the same value, which defeats the per-device routing the whole
 integration exists for.
 """
+from __future__ import annotations
 
 import json
 import os

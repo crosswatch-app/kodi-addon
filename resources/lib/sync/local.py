@@ -28,13 +28,14 @@ person's mark (VideoLibrary.cpp:632-638) and are treated as one.
 Log events: sync.inbox.flushed (debug), sync.inbox.buffer_full (warning),
 sync.files.removed (debug).
 """
+from __future__ import annotations
 
 import os
 import re
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, Tuple
 from xml.etree import ElementTree
 
 from resources.lib.kodi import KodiApi
@@ -47,7 +48,7 @@ _log = get_logger("sync")
 
 KodiKind = Literal["movie", "episode"]
 Verdict = Literal["own", "playback", "scan", "added", "no_playcount", "not_video", "server", "person"]
-_PlayKey = tuple[str, int]
+_PlayKey = Tuple[str, int]
 
 # How long Kodi plays nothing before a play whose stop callback never came counts as ended.
 # The callback trails isPlaying() turning false by about 0.1 s (verification.md, Task 13a

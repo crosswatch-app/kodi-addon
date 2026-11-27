@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """The addon against a socket, checked against docs/contract.md."""
+from __future__ import annotations
 
 import threading
 from dataclasses import replace
