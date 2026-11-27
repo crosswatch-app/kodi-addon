@@ -1493,7 +1493,17 @@ class SyncEngine:
         not have landed when its answer was lost) and the viewers who rated are the item's
         owners. The rating is stored as the row's Seen and pending rating writes for the item
         are dropped in every case, so neither the scan nor the writer takes it for anything
-        else. A row Kodi can't answer about now stays for the next step."""
+        else. A row Kodi can't answer about now stays for the next step. As in the drain, the
+        media server add-ons' maps are read again, so a row an add-on added since the last
+        read (direct paths look like any file) is left to it; a map that can't be read keeps
+        the writes."""
+        if not self.rating_writes:
+            return
+        maps = read_server_rows(self._kodi)
+        if maps.unreadable:
+            self._state = plan.on_server_map(self._state, unreadable=True, now=self._clock())
+            return
+        server = maps.rows | library.server_backed
         writes, self.rating_writes = self.rating_writes, []
         owners_of_row = self._owners(library)
         for write in writes:
@@ -1508,7 +1518,7 @@ class SyncEngine:
             except Exception:
                 self.rating_writes.append(write)
                 continue
-            if row is None or (kind, kodi_id) in library.server_backed or is_server_backed(row.key.file):
+            if row is None or (kind, kodi_id) in server or is_server_backed(row.key.file):
                 # A media server add-on's item: it syncs that item with its server itself.
                 continue
             batch = Batch()
