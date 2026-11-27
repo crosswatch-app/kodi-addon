@@ -1,6 +1,34 @@
 CrossWatch for Kodi Changelog
 =============================
 
+v1.1.3 (2026-11-27)
+-------------------
+Bug Fixes:
+  - Fixed: the add-on did not load on Kodi 21 for Windows and Xbox,
+    which bundle Python 3.8.15 (Omega's BuildDependencies); only the
+    depends builds use 3.11.7. Builtin generics and X | Y in
+    annotations raised TypeError when a module loaded. Every module now
+    starts with "from __future__ import annotations" (ruff
+    required-imports enforces it), module-level aliases use typing
+    names, and the remaining 3.9+ calls (dict | dict,
+    str.removeprefix, dataclass kw_only) are gone or applied only from
+    3.10.
+  - Fixed: after an incomplete library read, library sync ran rating
+    scans back to back until the next full, since a scan over an
+    incomplete read never completes. The scan time is now recorded
+    unless the scan was cut short, and an incomplete read asks for a
+    full, which reads the library again.
+  - Fixed: a hand mark on a PlexKodiConnect or Jellyfin for Kodi item
+    (plugin://) added since the last library read, or a rating from the
+    rating window on any media server item, could be recorded and sent.
+    _drain_one checks the freshly read row's file and _rating_writes
+    skips server-backed rows.
+
+Internal:
+  - pyright checks against Python 3.8 and ruff targets py38. pyright's
+    stubs no longer cover 3.8, so the test suite was also run under
+    Python 3.8.20 (pytest 8.3.5): 2570 passed.
+
 v1.1.2 (2026-11-26)
 -------------------
 Bug Fixes:
