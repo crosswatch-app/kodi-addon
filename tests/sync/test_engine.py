@@ -738,6 +738,34 @@ def test_a_rating_window_write_on_a_plugin_row_is_left_out(tmp_path):
     assert store is not None and rig.engine.rating_writes == [] and store.entries("kv-a") == []
 
 
+def test_a_rating_window_write_on_a_row_the_server_add_on_added_since_the_last_read_is_left_out(tmp_path):
+    rig = Rig(tmp_path)
+    rig.kodi.root = str(tmp_path / "kodi")
+    rig.kodi.rpc_handlers["Addons.GetAddonDetails"] = lambda params: {"addon": {"addonid": params["addonid"]}}
+    rig.ready()  # the last read knew no server rows
+    _plex_map(tmp_path / "kodi" / "database", 3)
+    rig.lib.row("movies", 3)["userrating"] = 8
+    rig.engine.on_rating_written("movie", 3, 8, ("kv-a",))
+    rig.engine.step()
+    store = rig.engine._store
+    assert store is not None and rig.engine.rating_writes == [] and store.entries("kv-a") == []
+
+
+def test_an_unreadable_server_map_keeps_the_rating_window_writes(tmp_path):
+    rig = Rig(tmp_path)
+    rig.kodi.root = str(tmp_path / "kodi")
+    rig.kodi.rpc_handlers["Addons.GetAddonDetails"] = lambda params: {"addon": {"addonid": params["addonid"]}}
+    rig.ready()
+    (tmp_path / "kodi" / "database").mkdir(parents=True)
+    (tmp_path / "kodi" / "database" / "plex.db").write_bytes(b"damaged" * 100)
+    rig.lib.row("movies", 3)["userrating"] = 8
+    rig.engine.on_rating_written("movie", 3, 8, ("kv-a",))
+    rig.engine.step()
+    store = rig.engine._store
+    assert store is not None and store.entries("kv-a") == []
+    assert len(rig.engine.rating_writes) == 1 and rig.engine.state.server_map_unreadable
+
+
 def test_an_unreadable_server_map_holds_the_drain(tmp_path):
     rig = Rig(tmp_path)
     rig.kodi.root = str(tmp_path / "kodi")
